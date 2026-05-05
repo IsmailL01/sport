@@ -1,0 +1,28 @@
+name: CI
+
+# Phase 0 / setup: пустой шаблон, чтобы branch protection мог требовать "CI passing".
+# Реальные jobs (lint + test для apps/mobile-rn и apps/mobile_flutter, потом для services/backend)
+# добавляются после bootstrap проектов в P0-B-01 / P0-C-01 и далее.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  noop:
+    name: Phase 0 placeholder
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Phase 0 placeholder check
+        run: |
+          echo "Phase 0 setup CI — пока без lint/test."
+          echo "TODO: добавить jobs:"
+          echo "  - mobile-rn:    cd apps/mobile-rn && npm ci && npm run lint && npm test"
+          echo "  - mobile-flutter: cd apps/mobile_flutter && flutter pub get && flutter analyze && flutter test"
+          echo "  - backend (Phase 2+): cd services/backend && go vet ./... && go test ./..."
+          echo "Markdown sanity check:"
+          test -f README.md && test -f STATUS.md && test -f docs/RUNNING_ECOSYSTEM_TZ.md && test -f docs/DEVELOPMENT_PLAN.md

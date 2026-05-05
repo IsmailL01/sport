@@ -1,0 +1,11 @@
+# CODEOWNERS — кто ревьюит PR
+# Документация: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-customization/customizing-your-repository/about-code-owners
+#
+# 🔄 TODO (P0-A-03): заменить плейсхолдеры на реальные GitHub usernames обоих разработчиков:
+#   - @<owner-github-username>     — владелец проекта (Mapbox account: dragon2015516@gmail.com)
+#   - @<dev-2-github-username>     — второй разработчик
+#
+# Пока — оба разработчика owners на всё. Когда роли разделятся (mobile vs backend)
+# — детализировать по подпапкам.
+
+* @<owner-github-username> @<dev-2-github-username>
