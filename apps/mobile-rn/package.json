@@ -1,0 +1,35 @@
+{
+  "name": "mobile-rn",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild",
+    "lint": "echo 'TODO: configure eslint (P1-A-01)' && exit 0",
+    "test": "echo 'TODO: configure jest (P1-A-01)' && exit 0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rnmapbox/maps": "^10.3.0",
+    "@turf/buffer": "^7.3.5",
+    "@turf/helpers": "^7.3.5",
+    "@turf/simplify": "^7.3.5",
+    "@turf/turf": "^7.3.5",
+    "expo": "~54.0.33",
+    "expo-location": "~19.0.8",
+    "expo-sqlite": "~16.0.10",
+    "expo-status-bar": "~3.0.9",
+    "expo-task-manager": "~14.0.9",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-mmkv": "^4.3.1",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.0",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}

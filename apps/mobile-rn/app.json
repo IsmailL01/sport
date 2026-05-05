@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "Running Ecosystem",
+    "slug": "running-ecosystem-mobile",
+    "scheme": "runningecosystem",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "platforms": ["ios", "android"],
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F1419"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.runningecosystem.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Нужно для трекинга пробежки и отображения вашей позиции на карте.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Нужно для трекинга пробежки в фоне, когда телефон в кармане или экран выключен.",
+        "UIBackgroundModes": ["location", "fetch", "processing"]
+      }
+    },
+    "android": {
+      "package": "com.runningecosystem.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F1419"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "WAKE_LOCK"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Нужно для трекинга пробежки в фоне, когда телефон в кармане или экран выключен.",
+          "locationWhenInUsePermission": "Нужно для трекинга пробежки и отображения вашей позиции на карте.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "expo-task-manager",
+      "expo-sqlite",
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsImpl": "mapbox",
+          "RNMapboxMapsDownloadToken": "$RNMAPBOX_MAPS_DOWNLOAD_TOKEN"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "TODO-eas-project-id-after-eas-init"
+      }
+    }
+  }
+}
