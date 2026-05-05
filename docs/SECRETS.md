@@ -2,7 +2,7 @@
 
 Описание секретов проекта Running Ecosystem: какие есть, как получены, где хранятся, кто имеет доступ.
 
-> ⛔ **В этом файле нет реальных значений токенов.** Только метаданные. Реальные значения — в локальном `.env` каждого разработчика (или в team password manager, когда выберем).
+> ⛔ **В этом файле нет реальных значений токенов.** Только метаданные. Реальные значения — в локальном `~/.netrc` / `.env` каждого разработчика (или в team password manager, когда выберем).
 
 ---
 
@@ -18,11 +18,12 @@
 
 ### Access tokens
 
-| Имя             | Фактический тип | Должен быть | Scopes                                                            | Restrictions                                                              | Когда использовать                             |
-|-----------------|-----------------|-------------|-------------------------------------------------------------------|---------------------------------------------------------------------------|------------------------------------------------|
-| `dev-public`    | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256: **TODO** | Прототипы Phase 0 (RN + Flutter), dev-сборки   |
-| `prod-public`   | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256: **TODO** | Production-сборки (в Phase 0 не используется)  |
-| `server-secret` | ⚠️ Public (`pk.…`) — **ОШИБКА, пересоздать как Secret** | Secret (`sk.…`) | `STYLES:READ`, `TILESETS:READ`, `DATASETS:READ`                    | (нет — добавить IP-restriction когда появится staging)                    | Серверные вызовы Static Maps / Directions (Phase 2+) |
+| Имя             | Фактический тип | Должен быть | Scopes                                                            | Restrictions                                                              | Где используется                                                                                |
+|-----------------|-----------------|-------------|-------------------------------------------------------------------|---------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| `dev-public`    | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256: **TODO** | RN/Flutter runtime: рендер карты в приложении (`MAPBOX_ACCESS_TOKEN` через `.env`)              |
+| `prod-public`   | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256: **TODO** | Production-сборки (в Phase 0 не используется)                                                   |
+| `server-secret` | ⚠️ Public (`pk.…`) — **ОШИБКА, пересоздать как Secret** | Secret (`sk.…`) | `STYLES:READ`, `TILESETS:READ`, `DATASETS:READ`                    | (нет — добавить IP-restriction когда появится staging)                    | Серверные вызовы Static Maps / Directions (Phase 2+)                                            |
+| `dev-downloads` | Secret (`sk.…`) ✅ | Secret      | `DOWNLOADS:READ`                                                  | (нет — secret token, доступен только после auth)                          | Скачивание Mapbox SDK при `pod install` (iOS) и `gradle build` (Android). Хранится в `~/.netrc` |
 
 > Default public token из аккаунта **не использовать** — он не ограничен Bundle ID и его сложнее ротировать.
 
@@ -30,13 +31,13 @@
 
 1. **`server-secret` создан как public.** Префикс `pk.` означает public access token. Secret-токен Mapbox имеет префикс `sk.` и создаётся через UI с галочкой "Secret access token" — её и нужно поставить при пересоздании. Не критично для Phase 0 (серверные вызовы появятся только в Phase 2+), но **надо пересоздать перед началом работ по бэкенду**.
 
-2. **Все 3 токена однажды попали в чат с AI-ассистентом** (на этапе создания P0-A-01). Для Phase 0 dev-работы не критично — токены ограничены iOS Bundle ID, скоупы минимальны, биллинг под контролем. Но:
-   - 🔒 Перед публичным релизом приложения и/или подключением биллинговой карты — **ротировать все 3 токена** (revoke + создать новые).
+2. **Все 4 токена однажды попали в чат с AI-ассистентом** (на этапе создания P0-A-01 и `P0-B-01` netrc setup). Для Phase 0 dev-работы не критично — public токены ограничены iOS Bundle ID, скоупы минимальны, биллинг под контролем; download token имеет только `DOWNLOADS:READ`. Но:
+   - 🔒 Перед публичным релизом приложения и/или подключением биллинговой карты — **ротировать все 4 токена** (revoke + создать новые).
    - 🔒 До тех пор не ставить эти токены на production-сборку.
 
-### Verification (P0-A-01)
+### Verification
 
-Smoke-test через Mapbox Styles API (выполнен 2026-05-06):
+Smoke-test через Mapbox Styles API (выполнен 2026-05-06, P0-A-01):
 ```
 curl "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12?access_token=<token>"
 ```
@@ -44,6 +45,9 @@ curl "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12?access_token=<token>"
 - `dev-public` → HTTP 200 ✅
 - `prod-public` → HTTP 200 ✅
 - `server-secret` → HTTP 200 ✅ (ожидаемо, потому что фактически он public)
+
+Smoke-test download token (выполнен 2026-05-06, при настройке `~/.netrc`):
+- `dev-downloads` → проверен через `expo prebuild --platform android` (P0-B-01): успешно, gradle.properties записан с placeholder `$RNMAPBOX_MAPS_DOWNLOAD_TOKEN` (значение подставляется из env при runtime, в файл не утекает) ✅
 
 > Важно: smoke-test через `curl` **не проверяет** iOS Bundle ID restriction — Mapbox restrictions enforced only внутри SDK через специфические заголовки. Для проверки restriction нужна реальная мобильная сборка с правильным/неправильным Bundle ID — это сделается в `P0-B-02` / `P0-C-02`.
 
@@ -54,17 +58,40 @@ curl "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12?access_token=<token>"
 mapbox://styles/mapbox/outdoors-v12
 ```
 
-Кастомный стиль (`P0-A-02`) отложен на Phase 1 (см. [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) §2.1).
+Кастомный стиль (`P0-A-02`) отложен на Phase 1.
 
-### Как получить токен (новый разработчик)
+### Как настроить окружение (новый разработчик)
 
-1. Запросить `dev-public` у владельца Mapbox-аккаунта через защищённый канал (Signal, Telegram secret chat, или однократный share-link через 1Password).
-2. Сохранить значение в локальный `.env` (файл появится в репозитории на этапе `P0-A-03` / `P0-B-01` / `P0-C-01`):
+1. **Запросить токены** у владельца Mapbox-аккаунта через защищённый канал (Signal / Telegram secret chat / 1Password share):
+   - `dev-public` — рантайм-токен для рендера карты
+   - `dev-downloads` — для CocoaPods/Gradle (только `DOWNLOADS:READ`)
+
+2. **Настроить `~/.netrc`** для `pod install` (iOS) и `gradle build` (Android):
+   ```bash
+   cat >> ~/.netrc <<'EOF'
+   machine api.mapbox.com
+     login mapbox
+     password sk.<dev-downloads_token>
+   EOF
+   chmod 600 ~/.netrc
    ```
-   MAPBOX_ACCESS_TOKEN=<значение_dev-public>
+
+3. **Экспортировать env variable** для Expo prebuild:
+   ```bash
+   # В ~/.zshrc или per-session:
+   export RNMAPBOX_MAPS_DOWNLOAD_TOKEN=sk.<dev-downloads_token>
    ```
-3. **Никогда** не коммитить `.env` в git. Проверить, что `.env` есть в `.gitignore`.
-4. Для iOS-сборок дополнительно нужен Mapbox **download token** в `~/.netrc` (для CocoaPods, см. [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) `P0-B-01`). Получается отдельно через https://account.mapbox.com/access-tokens/ → "Create a token" с scope `DOWNLOADS:READ`.
+
+4. **Создать локальные `.env`-файлы** в проектах из `.env.example`:
+   ```bash
+   cd apps/mobile-rn && cp .env.example .env
+   # Открыть .env, подставить значение dev-public в EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN
+
+   cd apps/mobile_flutter && cp .env.example .env
+   # Подставить dev-public в MAPBOX_ACCESS_TOKEN
+   ```
+
+   `.env` находится в `.gitignore` — НИКОГДА не коммитить.
 
 ### Ротация
 
@@ -75,12 +102,13 @@ mapbox://styles/mapbox/outdoors-v12
 ### Известные TODO
 
 - [ ] **Пересоздать `server-secret` как настоящий Secret-токен** (`sk.` prefix) — перед началом Phase 2 (бэкенд). При создании в Mapbox UI — поставить галочку "Secret access token".
-- [ ] **Ротировать все 3 текущих токена** — перед публичным релизом приложения / подключением биллинга (значения попадали в чат с AI).
+- [ ] **Ротировать все 4 текущих токена** — перед публичным релизом приложения / подключением биллинга (значения попадали в чат с AI).
 - [ ] Перенос ownership Mapbox account на team-аккаунт (когда юр. возможно)
-- [ ] Добавить Android SHA-256 fingerprint в restrictions `dev-public` и `prod-public` после `P0-B-01` / `P0-C-01` (когда сгенерируются debug certificates)
+- [ ] Добавить Android SHA-256 fingerprint в restrictions `dev-public` и `prod-public` после первого `expo run:android` / `flutter run` (когда сгенерируются debug certificates)
 - [ ] Выбрать team password manager (1Password / Bitwarden), мигрировать секреты туда
 - [ ] IP-restriction на `server-secret` при появлении staging-окружения
 - [ ] Календарный reminder на 6-месячную ротацию
+- [ ] Для CI (GitHub Actions) — добавить `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` и `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` в repository secrets
 
 ---
 
