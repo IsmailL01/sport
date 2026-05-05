@@ -20,8 +20,8 @@
 
 | Имя             | Фактический тип | Должен быть | Scopes                                                            | Restrictions                                                              | Где используется                                                                                |
 |-----------------|-----------------|-------------|-------------------------------------------------------------------|---------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
-| `dev-public`    | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256: **TODO** | RN/Flutter runtime: рендер карты в приложении (`MAPBOX_ACCESS_TOKEN` через `.env`)              |
-| `prod-public`   | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256: **TODO** | Production-сборки (в Phase 0 не используется)                                                   |
+| `dev-public`    | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256 (debug.keystore владельца): `B3:63:9A:C1:B7:D4:53:74:BF:A6:26:3C:C4:F5:99:6E:BA:C2:87:3E:DC:CA:9E:FB:27:A0:5D:7F:1F:C5:3D:24`<br>🔄 TODO добавить fingerprints второго разработчика и production keystore | RN/Flutter runtime: рендер карты в приложении (`MAPBOX_ACCESS_TOKEN` через `.env`)              |
+| `prod-public`   | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256 (debug.keystore владельца): `B3:63:9A:C1:B7:D4:53:74:BF:A6:26:3C:C4:F5:99:6E:BA:C2:87:3E:DC:CA:9E:FB:27:A0:5D:7F:1F:C5:3D:24`<br>🔄 TODO добавить fingerprints второго разработчика и production keystore | Production-сборки (в Phase 0 не используется)                                                   |
 | `server-secret` | ⚠️ Public (`pk.…`) — **ОШИБКА, пересоздать как Secret** | Secret (`sk.…`) | `STYLES:READ`, `TILESETS:READ`, `DATASETS:READ`                    | (нет — добавить IP-restriction когда появится staging)                    | Серверные вызовы Static Maps / Directions (Phase 2+)                                            |
 | `dev-downloads` | Secret (`sk.…`) ✅ | Secret      | `DOWNLOADS:READ`                                                  | (нет — secret token, доступен только после auth)                          | Скачивание Mapbox SDK при `pod install` (iOS) и `gradle build` (Android). Хранится в `~/.netrc` |
 
@@ -104,7 +104,11 @@ mapbox://styles/mapbox/outdoors-v12
 - [ ] **Пересоздать `server-secret` как настоящий Secret-токен** (`sk.` prefix) — перед началом Phase 2 (бэкенд). При создании в Mapbox UI — поставить галочку "Secret access token".
 - [ ] **Ротировать все 4 текущих токена** — перед публичным релизом приложения / подключением биллинга (значения попадали в чат с AI).
 - [ ] Перенос ownership Mapbox account на team-аккаунт (когда юр. возможно)
-- [ ] Добавить Android SHA-256 fingerprint в restrictions `dev-public` и `prod-public` после первого `expo run:android` / `flutter run` (когда сгенерируются debug certificates)
+- [ ] Добавить Android SHA-256 fingerprints в restrictions `dev-public` и `prod-public` через Mapbox dashboard:
+  - **Debug (этой машины):** SHA1 `CF:4B:EC:94:09:C2:6F:2C:65:27:2A:3A:A2:29:AF:F1:65:8D:B3:DA`, SHA-256 `B3:63:9A:C1:B7:D4:53:74:BF:A6:26:3C:C4:F5:99:6E:BA:C2:87:3E:DC:CA:9E:FB:27:A0:5D:7F:1F:C5:3D:24`
+  - Получено через `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`
+  - 🔄 Когда появится второй разработчик — добавить его debug fingerprint
+  - 🔄 Когда будет production release keystore — добавить production fingerprint
 - [ ] Выбрать team password manager (1Password / Bitwarden), мигрировать секреты туда
 - [ ] IP-restriction на `server-secret` при появлении staging-окружения
 - [ ] Календарный reminder на 6-месячную ротацию
