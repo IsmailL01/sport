@@ -13,12 +13,12 @@
 
 ### Setup
 - [x] `P0-A-01` Создание Mapbox-аккаунта и токенов
-- [ ] `P0-A-02` Кастомный стиль карты
-- [ ] `P0-A-03` GitHub репозитории
-- [ ] `P0-A-04` Тестовые устройства
+- [⏸] `P0-A-02` Кастомный стиль карты — отложен на Phase 1 по решению команды
+- [~] `P0-A-03` GitHub репозитории — локально готово (git init + 2 commits); push в GitHub отложен (нужен `gh` CLI или ручное создание)
+- [ ] `P0-A-04` Тестовые устройства — организационная задача (закупка/выдача)
 
 ### Прототип RN
-- [ ] `P0-B-01` Bootstrap RN-проекта
+- [~] `P0-B-01` Bootstrap RN-проекта — code/config готов и зелёный (typecheck ✅); iOS run требует Mapbox download token в `~/.netrc` (см. SECRETS.md TODO)
 - [ ] `P0-B-02` Карта Mapbox с user location
 - [ ] `P0-B-03` Запись точек GPS
 - [ ] `P0-B-04` Live полилиния на карте
@@ -27,7 +27,7 @@
 - [ ] `P0-B-07` SQLite persistence
 
 ### Прототип Flutter
-- [ ] `P0-C-01` Bootstrap Flutter-проекта
+- [~] `P0-C-01` Bootstrap Flutter-проекта — code/config готов и зелёный (`flutter analyze` ✅, `flutter test` ✅); iOS run требует Mapbox download token в `~/.netrc`
 - [ ] `P0-C-02` Карта Mapbox с user location
 - [ ] `P0-C-03` Запись точек GPS
 - [ ] `P0-C-04` Live полилиния
@@ -36,11 +36,13 @@
 - [ ] `P0-C-07` SQLite persistence
 
 ### Полевые тесты
-- [ ] `P0-D-01` Тестовый протокол на бумаге
+- [x] `P0-D-01` Тестовый протокол на бумаге — [tests/FIELD_PROTOCOL.md](tests/FIELD_PROTOCOL.md)
 - [ ] `P0-D-02` Прогон тестов на iPhone
 - [ ] `P0-D-03` Прогон тестов на Pixel
 - [ ] `P0-D-04` Прогон тестов на китайском Android
 - [ ] `P0-D-05` Decision Matrix → DECISION.md
+
+> **Обозначения:** `[x]` done, `[~]` partial (заблокировано user action), `[⏸]` отложено по решению, `[ ]` не начато.
 
 ## История
 
@@ -57,6 +59,59 @@
     - `server-secret` создан как public (`pk.…`) вместо secret (`sk.…`) — пересоздать перед началом Phase 2
     - Все 3 токена однажды передавались в чат с AI — ротировать перед публичным релизом / биллингом
     - Android SHA-256 restriction добавить после bootstrap RN/Flutter проектов
+
+- ⏸ `P0-A-02` Кастомный Mapbox Studio стиль — отложен на Phase 1 по решению; на прототипе используется стандартный `outdoors-v12`
+
+- 🟡 `P0-A-03` GitHub репозитории — **локально готово, push отложен**
+  - Структура монорепо: `apps/{mobile-rn, mobile_flutter}/`, `services/backend/`, `tests/`, `docs/{DECISIONS/}`, `.github/workflows/ci.yml`
+  - `README.md`, `.gitignore` (Node + Flutter + macOS + .env), `.editorconfig`, `CODEOWNERS` (с TODO заполнить usernames)
+  - `git init` + 2 commits на `main`
+  - 🔄 TODO для пользователя: установить `gh` (`brew install gh`) или создать репо вручную в браузере → `git remote add origin … && git push -u origin main` → branch protection в GitHub UI
+
+- ✅ `P0-D-01` Тестовый протокол на бумаге — [tests/FIELD_PROTOCOL.md](tests/FIELD_PROTOCOL.md)
+  - 10 сценариев T1–T10 (Phase 0) + 5 для Phase 1 (T11–T15)
+  - Шаблон отчёта с pre-test чеклистом и таблицей метрик
+
+- 🟡 `P0-B-01` Bootstrap Expo RN-проекта (`apps/mobile-rn`)
+  - Expo SDK 54.0.33, RN 0.81.5, React 19.1, TypeScript 5.9, blank-typescript template
+  - Зависимости: `expo-location`, `expo-task-manager`, `expo-sqlite`, `@rnmapbox/maps ^10.3`, `react-native-mmkv ^4.3`, `zustand ^5.0`, `@turf/{turf,helpers,buffer,simplify} ^7.3`
+  - `app.json` обновлён: bundleId `com.runningecosystem.mobile`, iOS `UIBackgroundModes [location, fetch, processing]`, Android `FOREGROUND_SERVICE_LOCATION` + `ACCESS_BACKGROUND_LOCATION`, config plugins (`expo-location`, `expo-task-manager`, `expo-sqlite`, `@rnmapbox/maps`)
+  - `eas.json` создан: development / preview / production профили
+  - `App.tsx` — bootstrap screen (тёмная тема, placeholder)
+  - `.env.example` — `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`, `RNMAPBOX_MAPS_DOWNLOAD_TOKEN`
+  - ✅ `tsc --noEmit` — без ошибок
+  - 🔄 TODO для запуска на iOS: создать Mapbox **download token** (scope `DOWNLOADS:READ`) и добавить в `~/.netrc` (см. SECRETS.md)
+
+- 🟡 `P0-C-01` Bootstrap Flutter-проекта (`apps/mobile_flutter`)
+  - Flutter, Dart 3.x, org `com.runningecosystem`, platforms `ios+android` (без web/desktop)
+  - Зависимости: `mapbox_maps_flutter ^2.23`, `geolocator ^14`, `flutter_background_service ^5.1`, `sqflite ^2.4`, `path_provider ^2.1`, `flutter_riverpod ^3.3`
+  - `ios/Runner/Info.plist`: NSLocation* descriptions + `UIBackgroundModes [location, fetch, processing]`
+  - `android/app/src/main/AndroidManifest.xml`: ACCESS_*_LOCATION + FOREGROUND_SERVICE_LOCATION + service `id.flutter.flutter_background_service.BackgroundService` (foregroundServiceType=location)
+  - `lib/main.dart` — bootstrap screen (тёмная Material 3 тема, placeholder)
+  - `test/widget_test.dart` — smoke-тест ✅ (1 passed)
+  - ✅ `flutter analyze` — No issues found
+  - 🔄 TODO для запуска на iOS: тот же Mapbox download token в `~/.netrc` (для CocoaPods)
+
+#### 🔄 Открытые TODO для пользователя (блокеры дальнейших задач)
+
+1. **Mapbox download token** (scope `DOWNLOADS:READ`, отдельный от dev-public/prod-public/server-secret) — необходим для CocoaPods на iOS, без него `pod install` упадёт. Создать в Mapbox dashboard → "Create a token" → scope `DOWNLOADS:READ` → сохранить в `~/.netrc`:
+   ```
+   machine api.mapbox.com
+     login mapbox
+     password sk.<...DOWNLOADS:READ token...>
+   ```
+   После — задачи `P0-B-02` (карта в RN) и `P0-C-02` (карта в Flutter) могут стартовать.
+
+2. **GitHub репо** — `gh` CLI не установлен. Варианты:
+   - `brew install gh && gh auth login && gh repo create runningecosystem/running-app --private --source=. --push` (предпочтительно)
+   - Либо вручную в браузере: создать пустое репо `running-app` → `git remote add origin git@github.com:<owner>/running-app.git && git push -u origin main`
+   - В обоих случаях: добавить второго разработчика как collaborator + branch protection на `main` (требовать PR + review + CI passing)
+
+3. **Тестовые устройства** (`P0-A-04`) — организационно: 1 iPhone (iOS 16+), 1 Pixel (Android 13+), 1 китайский флагман.
+
+4. **Android SHA-256 fingerprint** для Mapbox token restrictions — будет доступен после первого `expo run:android` / `flutter run` (debug certificate generates автоматически). Тогда — добавить в Mapbox dashboard.
+
+5. **CODEOWNERS** — заполнить GitHub usernames обоих разработчиков в [CODEOWNERS](CODEOWNERS).
 
 ## Заметки
 
