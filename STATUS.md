@@ -72,7 +72,7 @@
   - 10 сценариев T1–T10 (Phase 0) + 5 для Phase 1 (T11–T15)
   - Шаблон отчёта с pre-test чеклистом и таблицей метрик
 
-- 🟡 `P0-B-01` Bootstrap Expo RN-проекта (`apps/mobile-rn`)
+- ✅ `P0-B-01` Bootstrap Expo RN-проекта (`apps/mobile-rn`) — Android verified, iOS требует Xcode
   - Expo SDK 54.0.33, RN 0.81.5, React 19.1, TypeScript 5.9, blank-typescript template
   - Зависимости: `expo-location`, `expo-task-manager`, `expo-sqlite`, `@rnmapbox/maps ^10.3`, `react-native-mmkv ^4.3`, `zustand ^5.0`, `@turf/{turf,helpers,buffer,simplify} ^7.3`
   - `app.json` обновлён: bundleId `com.runningecosystem.mobile`, iOS `UIBackgroundModes [location, fetch, processing]`, Android `FOREGROUND_SERVICE_LOCATION` + `ACCESS_BACKGROUND_LOCATION`, config plugins (`expo-location`, `expo-task-manager`, `expo-sqlite`, `@rnmapbox/maps`)
@@ -80,27 +80,28 @@
   - `App.tsx` — bootstrap screen (тёмная тема, placeholder)
   - `.env.example` — `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`, `RNMAPBOX_MAPS_DOWNLOAD_TOKEN`
   - ✅ `tsc --noEmit` — без ошибок
-  - 🔄 TODO для запуска на iOS: создать Mapbox **download token** (scope `DOWNLOADS:READ`) и добавить в `~/.netrc` (см. SECRETS.md)
+  - ✅ **Android build verified:** `./gradlew assembleDebug` → BUILD SUCCESSFUL 15m20s, app-debug.apk 215MB. Mapbox Android SDK успешно скачан через Maven с download token из `~/.gradle/gradle.properties`.
+  - 🔄 TODO для запуска на iOS: установить **Xcode** из App Store (~7GB) либо использовать `eas build --platform ios` (cloud)
 
-- 🟡 `P0-C-01` Bootstrap Flutter-проекта (`apps/mobile_flutter`)
+- ✅ `P0-C-01` Bootstrap Flutter-проекта (`apps/mobile_flutter`) — Android verified, iOS требует Xcode
   - Flutter, Dart 3.x, org `com.runningecosystem`, platforms `ios+android` (без web/desktop)
   - Зависимости: `mapbox_maps_flutter ^2.23`, `geolocator ^14`, `flutter_background_service ^5.1`, `sqflite ^2.4`, `path_provider ^2.1`, `flutter_riverpod ^3.3`
   - `ios/Runner/Info.plist`: NSLocation* descriptions + `UIBackgroundModes [location, fetch, processing]`
   - `android/app/src/main/AndroidManifest.xml`: ACCESS_*_LOCATION + FOREGROUND_SERVICE_LOCATION + service `id.flutter.flutter_background_service.BackgroundService` (foregroundServiceType=location)
   - `lib/main.dart` — bootstrap screen (тёмная Material 3 тема, placeholder)
   - `test/widget_test.dart` — smoke-тест ✅ (1 passed)
-  - ✅ `flutter analyze` — No issues found
-  - 🔄 TODO для запуска на iOS: тот же Mapbox download token в `~/.netrc` (для CocoaPods)
+  - ✅ `flutter analyze` — No issues found, `flutter test` — 1 passed
+  - ✅ **Android build verified:** `flutter build apk --debug` → ✓ Built app-debug.apk 215MB, 251s. Mapbox Android SDK успешно скачан.
+  - 🛠 По ходу build пришлось пофиксить manifest merger конфликт между нашим `<service>` и тем что добавляет плагин `flutter_background_service` — добавлен `xmlns:tools` + `tools:replace="android:foregroundServiceType"`
+  - 🔄 TODO для запуска на iOS: установить **Xcode** или использовать Codemagic/Bitrise (cloud)
 
 #### 🔄 Открытые TODO для пользователя (блокеры дальнейших задач)
 
-1. **Mapbox download token** (scope `DOWNLOADS:READ`, отдельный от dev-public/prod-public/server-secret) — необходим для CocoaPods на iOS, без него `pod install` упадёт. Создать в Mapbox dashboard → "Create a token" → scope `DOWNLOADS:READ` → сохранить в `~/.netrc`:
-   ```
-   machine api.mapbox.com
-     login mapbox
-     password sk.<...DOWNLOADS:READ token...>
-   ```
-   После — задачи `P0-B-02` (карта в RN) и `P0-C-02` (карта в Flutter) могут стартовать.
+1. **iOS toolchain** — `Xcode.app` не установлен (есть только CommandLineTools). Без Xcode iOS-сборки невозможны локально. Варианты:
+   - **Установить Xcode** из Mac App Store (~7GB, несколько часов скачки) — позволит локально запускать iOS Simulator + физический iPhone
+   - **EAS Build (cloud)** для RN — `eas build --profile development --platform ios` (требует Apple Developer account $99/год для signing)
+   - **Codemagic / Bitrise** для Flutter — аналогично cloud build
+   - **Только Android** для Phase 0 — проще всего; принять, что прототип проигравшего фреймворка по iOS не тестируется до Phase 1
 
 2. **GitHub репо** — `gh` CLI не установлен. Варианты:
    - `brew install gh && gh auth login && gh repo create runningecosystem/running-app --private --source=. --push` (предпочтительно)
@@ -109,7 +110,11 @@
 
 3. **Тестовые устройства** (`P0-A-04`) — организационно: 1 iPhone (iOS 16+), 1 Pixel (Android 13+), 1 китайский флагман.
 
-4. **Android SHA-256 fingerprint** для Mapbox token restrictions — будет доступен после первого `expo run:android` / `flutter run` (debug certificate generates автоматически). Тогда — добавить в Mapbox dashboard.
+4. **Android SHA-256 fingerprint** для Mapbox token restrictions — debug.keystore уже сгенерирован при build'е. Получить fingerprint:
+   ```bash
+   keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep SHA-256
+   ```
+   Добавить значение в Mapbox dashboard на токенах `dev-public` и `prod-public`.
 
 5. **CODEOWNERS** — заполнить GitHub usernames обоих разработчиков в [CODEOWNERS](CODEOWNERS).
 
