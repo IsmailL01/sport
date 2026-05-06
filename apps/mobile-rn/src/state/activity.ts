@@ -1,11 +1,17 @@
 import { create } from 'zustand';
+
 import type { ActivityState, RawPoint } from '../domain/types';
 import {
   appendPoints,
-  deleteSession,
-  getLastSessionId,
   loadPointsForSession,
 } from '../storage/pointRepository';
+import {
+  createSession,
+  deleteSession,
+  finalizeSession,
+  findActiveSession,
+} from '../storage/sessionRepository';
+import { computeArea, isClosed, totalDistance } from '../util/geo';
 
 const FLUSH_THRESHOLD = 10;
 
@@ -26,10 +32,9 @@ type ActivityStore = {
   recoverLast: () => void;
 };
 
-// Buffer вне store — не нужен в UI, но удобно держать живой.
 let buffer: RawPoint[] = [];
 
-function flushBufferIfReady(sessionId: number | null, force: boolean): number {
+function flushBuffer(sessionId: number | null, force: boolean): number {
   if (sessionId === null) return 0;
   if (!force && buffer.length < FLUSH_THRESHOLD) return buffer.length;
   if (buffer.length === 0) return 0;
@@ -53,6 +58,11 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   start: () => {
     const sessionId = Date.now();
     buffer = [];
+    try {
+      createSession({ id: sessionId, startedAt: sessionId });
+    } catch (e) {
+      console.error('[activity] createSession failed', e);
+    }
     set({
       state: 'recording',
       points: [],
@@ -64,10 +74,27 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   },
 
   stop: () => {
-    const { sessionId, state } = get();
+    const { sessionId, state, points } = get();
     if (state !== 'recording') return;
-    const remaining = flushBufferIfReady(sessionId, true);
-    set({ state: 'stopped', endedAt: Date.now(), bufferedCount: remaining });
+    const remainingBuffered = flushBuffer(sessionId, true);
+    const endedAt = Date.now();
+    if (sessionId !== null) {
+      const distance = totalDistance(points);
+      const closed = isClosed(points, distance);
+      const area = closed ? computeArea(points) : null;
+      try {
+        finalizeSession(sessionId, {
+          endedAt,
+          isClosed: closed,
+          distanceM: distance,
+          areaM2: area,
+          calcMethod: closed ? 'shoelace_simple' : null,
+        });
+      } catch (e) {
+        console.error('[activity] finalizeSession failed', e);
+      }
+    }
+    set({ state: 'stopped', endedAt, bufferedCount: remainingBuffered });
   },
 
   addPoint: (point) => {
@@ -78,7 +105,7 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       points: [...s.points, point],
       bufferedCount: buffer.length,
     }));
-    const after = flushBufferIfReady(sessionId, false);
+    const after = flushBuffer(sessionId, false);
     if (after !== buffer.length || buffer.length === 0) {
       set({ bufferedCount: after });
     }
@@ -106,26 +133,26 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
 
   recoverLast: () => {
     const { state } = get();
-    if (state !== 'idle') return; // не перезаписываем активную запись
-    let sid: number | null = null;
+    if (state !== 'idle') return;
+    let session = null;
     let pts: RawPoint[] = [];
     try {
-      sid = getLastSessionId();
-      if (sid !== null) {
-        pts = loadPointsForSession(sid);
+      session = findActiveSession();
+      if (session !== null) {
+        pts = loadPointsForSession(session.id);
       }
     } catch (e) {
       console.error('[activity] recover failed', e);
       return;
     }
-    if (sid === null || pts.length === 0) return;
+    if (session === null || pts.length === 0) return;
     buffer = [];
     set({
       state: 'stopped',
       points: pts,
-      startedAt: pts[0]?.timestamp ?? null,
-      endedAt: pts[pts.length - 1]?.timestamp ?? null,
-      sessionId: sid,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt ?? pts[pts.length - 1]?.timestamp ?? null,
+      sessionId: session.id,
       bufferedCount: 0,
     });
   },

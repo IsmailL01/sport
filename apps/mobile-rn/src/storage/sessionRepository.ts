@@ -1,0 +1,117 @@
+import type { Session } from '../domain/types';
+import { getDatabase } from './database';
+
+type SessionRow = {
+  id: number;
+  started_at: number;
+  ended_at: number | null;
+  is_closed: number | null;
+  distance_m: number | null;
+  area_m2: number | null;
+  calc_method: string | null;
+  note: string | null;
+};
+
+function rowToSession(row: SessionRow): Session {
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    isClosed: row.is_closed === null ? null : row.is_closed === 1,
+    distanceM: row.distance_m,
+    areaM2: row.area_m2,
+    calcMethod: (row.calc_method ?? null) as Session['calcMethod'],
+    note: row.note,
+  };
+}
+
+/**
+ * Создать запись сессии в момент Start. id = startedAt (Unix epoch ms),
+ * совпадает с session_id в таблице points.
+ */
+export function createSession(session: {
+  id: number;
+  startedAt: number;
+}): void {
+  const db = getDatabase();
+  db.runSync(
+    `INSERT OR REPLACE INTO sessions (id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note)
+     VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, NULL);`,
+    [session.id, session.startedAt],
+  );
+}
+
+/**
+ * Финализировать сессию при Stop: записать ended_at + итоговые метрики.
+ */
+export function finalizeSession(
+  id: number,
+  finals: {
+    endedAt: number;
+    isClosed: boolean | null;
+    distanceM: number | null;
+    areaM2: number | null;
+    calcMethod: Session['calcMethod'];
+  },
+): void {
+  const db = getDatabase();
+  db.runSync(
+    `UPDATE sessions
+     SET ended_at = ?, is_closed = ?, distance_m = ?, area_m2 = ?, calc_method = ?
+     WHERE id = ?;`,
+    [
+      finals.endedAt,
+      finals.isClosed === null ? null : finals.isClosed ? 1 : 0,
+      finals.distanceM,
+      finals.areaM2,
+      finals.calcMethod,
+      id,
+    ],
+  );
+}
+
+export function setSessionNote(id: number, note: string | null): void {
+  const db = getDatabase();
+  db.runSync(`UPDATE sessions SET note = ? WHERE id = ?;`, [note, id]);
+}
+
+export function getSession(id: number): Session | null {
+  const db = getDatabase();
+  const row = db.getFirstSync<SessionRow>(
+    `SELECT id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note
+     FROM sessions WHERE id = ?;`,
+    [id],
+  );
+  return row ? rowToSession(row) : null;
+}
+
+export function listSessions(limit = 100): Session[] {
+  const db = getDatabase();
+  const rows = db.getAllSync<SessionRow>(
+    `SELECT id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note
+     FROM sessions ORDER BY started_at DESC LIMIT ?;`,
+    [limit],
+  );
+  return rows.map(rowToSession);
+}
+
+/**
+ * Найти последнюю незавершённую сессию (для crash recovery, см. ТЗ §4.5).
+ */
+export function findActiveSession(): Session | null {
+  const db = getDatabase();
+  const row = db.getFirstSync<SessionRow>(
+    `SELECT id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note
+     FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1;`,
+  );
+  return row ? rowToSession(row) : null;
+}
+
+export function deleteSession(id: number): void {
+  const db = getDatabase();
+  // Удаляем точки и сам session-row атомарно.
+  db.withTransactionSync(() => {
+    db.runSync(`DELETE FROM points WHERE session_id = ?;`, [id]);
+    db.runSync(`DELETE FROM sessions WHERE id = ?;`, [id]);
+  });
+}

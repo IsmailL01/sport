@@ -1,8 +1,9 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 
-import type { RawPoint } from '../domain/types';
-import { useActivityStore } from '../state/activity';
+import type { RawPoint } from '../../domain/types';
+import { useActivityStore } from '../../state/activity';
+import type { LocationAdapter } from '../LocationAdapter';
 
 const TASK_NAME = 'BACKGROUND_LOCATION_TASK';
 
@@ -42,13 +43,14 @@ function toRawPoint(location: Location.LocationObject): RawPoint {
 }
 
 /**
- * Обёртка над expo-location + expo-task-manager для background-tracking.
- * Listener pattern не нужен — TaskManager сам запушит точки в store.
+ * Реализация LocationAdapter через expo-location + expo-task-manager.
+ * Подходит для Phase 0/1: foreground + background через TaskManager.
+ * При проблемах с background reliability на китайских OEM — fallback на
+ * нативный module (Phase 1 P1-I-04).
  */
-export class LocationAdapter {
+export class ExpoLocationAdapter implements LocationAdapter {
   async start(): Promise<void> {
-    const already = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
-    if (already) return;
+    if (await this.isRunning()) return;
     await Location.startLocationUpdatesAsync(TASK_NAME, {
       accuracy: Location.Accuracy.BestForNavigation,
       distanceInterval: 5,
@@ -59,14 +61,12 @@ export class LocationAdapter {
         notificationBody: 'Running Ecosystem отслеживает вашу позицию.',
         notificationColor: '#10B981',
       },
-      // Adaptive sampling: если стоим — снижается частота (Android only).
       activityType: Location.ActivityType.Fitness,
     });
   }
 
   async stop(): Promise<void> {
-    const started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
-    if (started) {
+    if (await this.isRunning()) {
       await Location.stopLocationUpdatesAsync(TASK_NAME);
     }
   }
@@ -75,11 +75,13 @@ export class LocationAdapter {
     return Location.hasStartedLocationUpdatesAsync(TASK_NAME);
   }
 
-  /** Запрашивает background permission. Возвращает true если разрешено. */
+  async requestForegroundPermission(): Promise<boolean> {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    return status === 'granted';
+  }
+
   async requestBackgroundPermission(): Promise<boolean> {
     const { status } = await Location.requestBackgroundPermissionsAsync();
     return status === 'granted';
   }
 }
-
-export const locationAdapter = new LocationAdapter();

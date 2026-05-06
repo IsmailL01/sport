@@ -54,15 +54,11 @@ export function loadPointsForSession(sessionId: number): RawPoint[] {
   }));
 }
 
-export function getLastSessionId(): number | null {
-  const db = getDatabase();
-  const row = db.getFirstSync<{ session_id: number | null }>(
-    `SELECT MAX(session_id) AS session_id FROM points;`,
-  );
-  return row?.session_id ?? null;
-}
-
-export function deleteSession(sessionId: number): void {
+/**
+ * Удалить точки сессии (без удаления самой записи в `sessions` —
+ * для атомарного удаления используйте sessionRepository.deleteSession).
+ */
+export function deletePointsForSession(sessionId: number): void {
   const db = getDatabase();
   db.runSync(`DELETE FROM points WHERE session_id = ?;`, [sessionId]);
 }
