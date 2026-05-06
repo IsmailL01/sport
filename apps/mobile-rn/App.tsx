@@ -1,10 +1,17 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Mapbox, { MapView, Camera, LocationPuck } from '@rnmapbox/maps';
+import Mapbox, {
+  MapView,
+  Camera,
+  LocationPuck,
+  ShapeSource,
+  LineLayer,
+} from '@rnmapbox/maps';
 import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
 import { locationAdapter } from './src/location/locationAdapter';
 import { useActivityStore } from './src/state/activity';
+import { pointsToLineString } from './src/util/geojson';
 
 const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
 const MAPBOX_STYLE = 'mapbox://styles/mapbox/outdoors-v12';
@@ -154,12 +161,25 @@ function MapScreen() {
 
   const elapsedSec = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
   const lastPoint = points[points.length - 1];
+  const trackShape = pointsToLineString(points);
 
   return (
     <View style={styles.container}>
       <MapView style={styles.map} styleURL={MAPBOX_STYLE} compassEnabled scaleBarEnabled={false}>
         <Camera followUserLocation followZoomLevel={16} />
         <LocationPuck puckBearingEnabled pulsing={{ isEnabled: true }} />
+        <ShapeSource id="track-source" shape={trackShape}>
+          <LineLayer
+            id="track-line"
+            style={{
+              lineColor: '#10B981',
+              lineWidth: 6,
+              lineCap: 'round',
+              lineJoin: 'round',
+              lineOpacity: 0.9,
+            }}
+          />
+        </ShapeSource>
       </MapView>
 
       <View style={styles.topOverlay} pointerEvents="none">

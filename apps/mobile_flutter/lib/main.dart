@@ -6,6 +6,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'src/domain/types.dart';
 import 'src/location/location_adapter.dart';
 import 'src/state/activity.dart';
+import 'src/util/geojson.dart';
 
 const String _kMapboxAccessToken = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
 const String _kMapboxStyle = MapboxStyles.OUTDOORS;
@@ -88,6 +89,8 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
   _PermissionState _permissionState = _PermissionState.pending;
   String? _permissionError;
   String? _mapError;
+  MapboxMap? _map;
+  bool _trackLayerAdded = false;
 
   @override
   void initState() {
@@ -126,6 +129,7 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
   }
 
   Future<void> _onMapCreated(MapboxMap map) async {
+    _map = map;
     try {
       await map.location.updateSettings(
         LocationComponentSettings(
@@ -135,10 +139,46 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
         ),
       );
       await map.setCamera(CameraOptions(zoom: 16.0));
+      await _ensureTrackLayer();
     } catch (e, st) {
       debugPrint('[App] map init error: $e\n$st');
       if (!mounted) return;
       setState(() => _mapError = e.toString());
+    }
+  }
+
+  Future<void> _ensureTrackLayer() async {
+    final map = _map;
+    if (map == null || _trackLayerAdded) return;
+    try {
+      await map.style.addSource(
+        GeoJsonSource(id: 'track-source', data: pointsToLineStringJson([])),
+      );
+      await map.style.addLayer(
+        LineLayer(
+          id: 'track-line',
+          sourceId: 'track-source',
+          lineColor: 0xFF10B981,
+          lineWidth: 6.0,
+          lineCap: LineCap.ROUND,
+          lineJoin: LineJoin.ROUND,
+          lineOpacity: 0.9,
+        ),
+      );
+      _trackLayerAdded = true;
+    } catch (e, st) {
+      debugPrint('[App] add track layer failed: $e\n$st');
+    }
+  }
+
+  Future<void> _updateTrackOnMap(List<RawPoint> points) async {
+    final map = _map;
+    if (map == null || !_trackLayerAdded) return;
+    final json = pointsToLineStringJson(points);
+    try {
+      await map.style.setStyleSourceProperty('track-source', 'data', json);
+    } catch (e) {
+      debugPrint('[App] update track source failed: $e');
     }
   }
 
@@ -172,6 +212,12 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Реагируем на новые точки — обновляем track на карте.
+    ref.listen<ActivityRecording>(activityProvider, (prev, next) {
+      if (prev?.points.length == next.points.length) return;
+      _updateTrackOnMap(next.points);
+    });
+
     if (_mapError != null) {
       return _ErrorScreen(
         title: 'Mapbox runtime error',
