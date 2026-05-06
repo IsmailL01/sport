@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import { calculateArea, type AreaWarning } from '../domain/AreaCalculator';
+import { ClosureDetector } from '../domain/ClosureDetector';
 import type { ActivityState, Point } from '../domain/types';
 import {
   createDefaultPipeline,
@@ -16,7 +18,7 @@ import {
   finalizeSession,
   findActiveSession,
 } from '../storage/sessionRepository';
-import { computeArea, isClosed, totalDistance } from '../util/geo';
+import { isClosed, totalDistance } from '../util/geo';
 
 const FLUSH_THRESHOLD = 10;
 
@@ -33,6 +35,11 @@ type ActivityStore = {
   droppedCount: number;
   /** На паузе ли запись (auto-pause из PauseDetector). */
   isPaused: boolean;
+  /** true когда трек впервые замкнулся (см. ClosureDetector). Сбрасывается при reset. */
+  closureFired: boolean;
+  /** Площадь и предупреждения от AreaCalculator (актуальны если isClosedNow). */
+  areaM2: number | null;
+  areaWarnings: AreaWarning[];
 
   start: () => void;
   stop: () => void;
@@ -43,6 +50,8 @@ type ActivityStore = {
   /** Внутренние счётчики. */
   incrementDropped: () => void;
   setPaused: (paused: boolean) => void;
+  setClosureFired: () => void;
+  setArea: (areaM2: number | null, warnings: AreaWarning[]) => void;
 };
 
 let buffer: Point[] = [];
@@ -78,6 +87,33 @@ const pauseDetector = new PauseDetector((event: PauseEvent) => {
   }
 });
 
+const closureDetector = new ClosureDetector((event) => {
+  useActivityStore.getState().setClosureFired();
+  // Сразу пересчитываем площадь по AreaCalculator (с warnings).
+  const points = useActivityStore.getState().points;
+  const result = calculateArea(points);
+  useActivityStore.getState().setArea(result.areaM2, result.warnings);
+  if (__DEV__) {
+    console.log(
+      `[closure] fired (dist=${event.totalDistanceM.toFixed(0)}m, gap=${event.closeGapM.toFixed(0)}m, area=${result.areaM2?.toFixed(0)}m²)`,
+    );
+  }
+});
+
+// Throttle для recompute area (не каждые 1 точку — каждые 30с).
+let lastAreaRecompute = 0;
+const AREA_RECOMPUTE_INTERVAL_MS = 30_000;
+
+function maybeRecomputeArea(): void {
+  if (!useActivityStore.getState().closureFired) return;
+  const now = Date.now();
+  if (now - lastAreaRecompute < AREA_RECOMPUTE_INTERVAL_MS) return;
+  lastAreaRecompute = now;
+  const points = useActivityStore.getState().points;
+  const result = calculateArea(points);
+  useActivityStore.getState().setArea(result.areaM2, result.warnings);
+}
+
 /**
  * Точка входа из LocationAdapter — вызывается на каждом raw-event.
  * Пропускает через pipeline, если принято — добавляет в state.
@@ -106,12 +142,17 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   bufferedCount: 0,
   droppedCount: 0,
   isPaused: false,
+  closureFired: false,
+  areaM2: null,
+  areaWarnings: [],
 
   start: () => {
     const sessionId = Date.now();
     buffer = [];
     pipeline.reset();
     pauseDetector.reset();
+    closureDetector.reset();
+    lastAreaRecompute = 0;
     try {
       createSession({ id: sessionId, startedAt: sessionId });
     } catch (e) {
@@ -126,6 +167,9 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       bufferedCount: 0,
       droppedCount: 0,
       isPaused: false,
+      closureFired: false,
+      areaM2: null,
+      areaWarnings: [],
     });
   },
 
@@ -137,25 +181,37 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     if (sessionId !== null) {
       const distance = totalDistance(points);
       const closed = isClosed(points, distance);
-      const area = closed ? computeArea(points) : null;
+      // Финальный пересчёт через AreaCalculator (с упрощением + детектом самопересечения).
+      const areaResult = closed
+        ? calculateArea(points)
+        : { areaM2: null, method: null, warnings: [] as AreaWarning[] };
       try {
         finalizeSession(sessionId, {
           endedAt,
           isClosed: closed,
           distanceM: distance,
-          areaM2: area,
-          calcMethod: closed ? 'shoelace_simple' : null,
+          areaM2: areaResult.areaM2,
+          calcMethod: areaResult.method,
         });
       } catch (e) {
         console.error('[activity] finalizeSession failed', e);
       }
+      set({
+        state: 'stopped',
+        endedAt,
+        bufferedCount: remainingBuffered,
+        isPaused: false,
+        areaM2: areaResult.areaM2,
+        areaWarnings: areaResult.warnings,
+      });
+    } else {
+      set({
+        state: 'stopped',
+        endedAt,
+        bufferedCount: remainingBuffered,
+        isPaused: false,
+      });
     }
-    set({
-      state: 'stopped',
-      endedAt,
-      bufferedCount: remainingBuffered,
-      isPaused: false,
-    });
   },
 
   acceptPoint: (point) => {
@@ -170,6 +226,10 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     if (after !== buffer.length || buffer.length === 0) {
       set({ bufferedCount: after });
     }
+    // Пробуем детект замыкания и пересчёт площади.
+    const fresh = useActivityStore.getState().points;
+    closureDetector.check(fresh);
+    maybeRecomputeArea();
   },
 
   reset: () => {
@@ -184,6 +244,8 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     buffer = [];
     pipeline.reset();
     pauseDetector.reset();
+    closureDetector.reset();
+    lastAreaRecompute = 0;
     set({
       state: 'idle',
       points: [],
@@ -193,6 +255,9 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       bufferedCount: 0,
       droppedCount: 0,
       isPaused: false,
+      closureFired: false,
+      areaM2: null,
+      areaWarnings: [],
     });
   },
 
@@ -214,6 +279,10 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     buffer = [];
     pipeline.reset();
     pauseDetector.reset();
+    closureDetector.reset();
+    lastAreaRecompute = 0;
+    // Если у session уже есть закрытие (recovered after stop) — переопределим area.
+    const recoveredArea = session.areaM2;
     set({
       state: 'stopped',
       points: pts,
@@ -223,9 +292,15 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       bufferedCount: 0,
       droppedCount: 0,
       isPaused: false,
+      closureFired: session.isClosed === true,
+      areaM2: recoveredArea,
+      areaWarnings:
+        session.calcMethod === 'shoelace_with_warning' ? ['self-intersection'] : [],
     });
   },
 
   incrementDropped: () => set((s) => ({ droppedCount: s.droppedCount + 1 })),
   setPaused: (isPaused) => set({ isPaused }),
+  setClosureFired: () => set({ closureFired: true }),
+  setArea: (areaM2, areaWarnings) => set({ areaM2, areaWarnings }),
 }));

@@ -18,11 +18,14 @@ type SettingsStore = {
   weightKg: number;
   /** Координаты "домашней зоны" — для авто-загрузки offline tile pack (P1-K-03). */
   homeLocation: { latitude: number; longitude: number } | null;
+  /** Был ли уже показан battery-optimization-hint (показываем 1 раз). */
+  batteryHintShown: boolean;
 
   setUnits: (units: Units) => void;
   setTheme: (theme: Theme) => void;
   setWeight: (weightKg: number) => void;
   setHomeLocation: (loc: { latitude: number; longitude: number } | null) => void;
+  markBatteryHintShown: () => void;
 };
 
 const mmkv = createMMKV();
@@ -47,11 +50,13 @@ export const useSettingsStore = create<SettingsStore>()(
       theme: 'auto',
       weightKg: 70,
       homeLocation: null,
+      batteryHintShown: false,
 
       setUnits: (units) => set({ units }),
       setTheme: (theme) => set({ theme }),
       setWeight: (weightKg) => set({ weightKg }),
       setHomeLocation: (homeLocation) => set({ homeLocation }),
+      markBatteryHintShown: () => set({ batteryHintShown: true }),
     }),
     {
       name: 'running-ecosystem-settings',

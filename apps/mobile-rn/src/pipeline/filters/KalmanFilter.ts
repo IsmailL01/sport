@@ -21,22 +21,33 @@ export class KalmanFilter implements Filter {
   private P: number[] | null = null;
   private lastTimestamp: number | null = null;
 
+  /** Process-noise в deg²/с⁴ (производное от user-friendly m²/с⁴). */
+  private readonly qDeg2: number;
+
   constructor(
     /**
      * Ускорение модели (м²/с⁴). 0.25 разумно для бегуна (порядка 0.5 м/с² noise).
+     * Внутри конвертируется в deg² для согласованности со state в градусах.
      */
-    private readonly q: number = 0.25,
-  ) {}
+    qMps2: number = 0.25,
+  ) {
+    // 1 deg ≈ 111320 м → 1 м² ≈ 1/111320² deg²
+    this.qDeg2 = qMps2 / (111320 * 111320);
+  }
 
   apply(point: Point): Point | null {
     if (this.state === null || this.P === null || this.lastTimestamp === null) {
       // Initial state: измерение = state, скорость = 0, P большое для координат и малое для скорости.
       this.state = [point.latitude, point.longitude, 0, 0];
+      // Initial P: стартуем с большой неопределённости по координатам и скорости,
+      // чтобы фильтр быстро подстраивался под первые точки. Значения в deg²/с².
+      const accDeg = (point.accuracy ?? 10) / 111320;
+      const sigma2 = accDeg * accDeg;
       this.P = [
-        100, 0, 0, 0,
-        0, 100, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1,
+        sigma2 * 4, 0, 0, 0,
+        0, sigma2 * 4, 0, 0,
+        0, 0, sigma2 * 100, 0,
+        0, 0, 0, sigma2 * 100,
       ];
       this.lastTimestamp = point.timestamp;
       return point; // первая точка — без сглаживания
@@ -153,7 +164,7 @@ export class KalmanFilter implements Filter {
   }
 
   private makeQ(dt: number): number[] {
-    const q = this.q;
+    const q = this.qDeg2;
     const dt2 = dt * dt;
     const dt3 = dt2 * dt;
     const dt4 = dt2 * dt2;

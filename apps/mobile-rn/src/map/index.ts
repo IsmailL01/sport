@@ -6,3 +6,12 @@ export { MapboxView, setMapboxAccessToken } from './MapboxView';
 export { LocationPuckLayer } from './components/LocationPuckLayer';
 export { TrackLayer } from './components/TrackLayer';
 export { ZoneLayer } from './components/ZoneLayer';
+export { CorridorLayer } from './components/CorridorLayer';
+export { HistoryTerritoryLayer } from './components/HistoryTerritoryLayer';
+export {
+  deleteHomeRegion,
+  deleteOfflinePack,
+  downloadHomeRegion,
+  listOfflinePacks,
+  type OfflinePack,
+} from './offline';

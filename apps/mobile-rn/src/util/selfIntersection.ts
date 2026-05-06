@@ -5,20 +5,28 @@ export type Point2D = { x: number; y: number };
 
 /**
  * Возвращает true если в полилинии есть пересекающиеся не-соседние рёбра.
+ * Считает полигон замкнутым (implicit edge n-1 → 0), как требует shoelace.
  * Соседние рёбра (общая вершина) пропускаются.
  */
-export function hasSelfIntersection(points: Point2D[]): boolean {
+export function hasSelfIntersection(points: readonly Point2D[]): boolean {
   const n = points.length;
   if (n < 4) return false;
-  for (let i = 0; i < n - 1; i += 1) {
-    const a1 = points[i];
-    const a2 = points[i + 1];
-    for (let j = i + 2; j < n - 1; j += 1) {
-      // Пропускаем смежные рёбра.
-      if (i === 0 && j === n - 2) continue;
-      const b1 = points[j];
-      const b2 = points[j + 1];
-      if (segmentsIntersect(a1, a2, b1, b2)) return true;
+
+  // Список рёбер в виде пар индексов вершин (с замыканием polygon).
+  const edges: [number, number][] = [];
+  for (let i = 0; i < n; i += 1) {
+    edges.push([i, (i + 1) % n]);
+  }
+
+  for (let i = 0; i < edges.length; i += 1) {
+    for (let j = i + 1; j < edges.length; j += 1) {
+      const [a, b] = edges[i];
+      const [c, d] = edges[j];
+      // Пропускаем рёбра, делящие хотя бы одну вершину.
+      if (a === c || a === d || b === c || b === d) continue;
+      if (segmentsIntersect(points[a], points[b], points[c], points[d])) {
+        return true;
+      }
     }
   }
   return false;

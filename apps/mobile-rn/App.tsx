@@ -6,23 +6,37 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
+import { serializeToGpx } from './src/domain/gpx';
 import {
+  CorridorLayer,
   LocationPuckLayer,
   MapboxView,
   TrackLayer,
   ZoneLayer,
+  downloadHomeRegion,
   setMapboxAccessToken,
 } from './src/map';
 import { locationAdapter } from './src/location';
 import { useActivityStore } from './src/state/activity';
-import {
-  computeArea,
-  isClosed as detectIsClosed,
-  totalDistance,
-} from './src/util/geo';
+import { useHistoryStore } from './src/state/history';
+import { useSettingsStore } from './src/state/settings';
+import { currentSpeed } from './src/domain/metrics';
+import { HistoryTerritoryLayer } from './src/map';
+import { HistoryModal } from './src/ui/HistoryModal';
+import { MetricsBar } from './src/ui/MetricsBar';
+import { totalDistance } from './src/util/geo';
 
 const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
 
@@ -91,10 +105,30 @@ function Inner() {
     };
   }, []);
 
-  // На старте приложения — попробовать восстановить последнюю сессию из SQLite
+  // На старте приложения — попробовать восстановить последнюю сессию из SQLite,
+  // и если что-то восстановилось — показать диалог с выбором (Phase 1 / P1-J).
   const recoverLast = useActivityStore((s) => s.recoverLast);
   useEffect(() => {
     recoverLast();
+    // setTimeout: даём React-у dispatch и re-render до alert.
+    const id = setTimeout(() => {
+      const s = useActivityStore.getState();
+      if (s.state === 'stopped' && s.points.length > 0) {
+        Alert.alert(
+          'Найдена прошлая запись',
+          `${s.points.length} точек. Что сделать?`,
+          [
+            {
+              text: 'Удалить',
+              style: 'destructive',
+              onPress: () => useActivityStore.getState().reset(),
+            },
+            { text: 'Оставить', style: 'cancel' },
+          ],
+        );
+      }
+    }, 300);
+    return () => clearTimeout(id);
   }, [recoverLast]);
 
   const tokenPreview = MAPBOX_ACCESS_TOKEN
@@ -131,7 +165,60 @@ function Inner() {
     );
   }
 
-  return <MapScreen />;
+  return (
+    <>
+      <HomeRegionAutoDownload permissionGranted={permissionStatus === 'granted'} />
+      <MapScreen />
+    </>
+  );
+}
+
+/**
+ * После того как permission на геолокацию дано, проверяем — есть ли уже
+ * homeLocation в settings. Если нет — берём текущую позицию, запоминаем и
+ * запускаем фоновую загрузку tile-пака 10×10км вокруг (P1-K-03).
+ */
+function HomeRegionAutoDownload({
+  permissionGranted,
+}: {
+  permissionGranted: boolean;
+}) {
+  const homeLocation = useSettingsStore((s) => s.homeLocation);
+  const setHomeLocation = useSettingsStore((s) => s.setHomeLocation);
+
+  useEffect(() => {
+    if (!permissionGranted) return;
+    if (homeLocation !== null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        const loc = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
+        setHomeLocation(loc);
+        // Не блокируем UI — fire-and-forget.
+        downloadHomeRegion({
+          ...loc,
+          onProgress: (pct) => {
+            if (__DEV__) console.log(`[offline] home region: ${pct.toFixed(0)}%`);
+          },
+        }).catch((e) => {
+          console.warn('[offline] downloadHomeRegion failed', e);
+        });
+      } catch (e) {
+        if (__DEV__) console.warn('[App] getCurrentPositionAsync failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [permissionGranted, homeLocation, setHomeLocation]);
+  return null;
 }
 
 function MapScreen() {
@@ -140,9 +227,23 @@ function MapScreen() {
   const startedAt = useActivityStore((s) => s.startedAt);
   const droppedCount = useActivityStore((s) => s.droppedCount);
   const isPaused = useActivityStore((s) => s.isPaused);
+  const closureFired = useActivityStore((s) => s.closureFired);
+  const areaM2 = useActivityStore((s) => s.areaM2);
+  const areaWarnings = useActivityStore((s) => s.areaWarnings);
   const start = useActivityStore((s) => s.start);
   const stop = useActivityStore((s) => s.stop);
   const reset = useActivityStore((s) => s.reset);
+  const closedSessionsPoints = useHistoryStore((s) => s.closedSessionsPoints);
+  const refreshHistory = useHistoryStore((s) => s.refresh);
+  const loadAllPoints = useHistoryStore((s) => s.loadAllPoints);
+  const [historyVisible, setHistoryVisible] = useState(false);
+
+  // На старте экрана — загрузить список + точки всех закрытых сессий
+  // (для отрисовки all-time territory layer на карте).
+  useEffect(() => {
+    refreshHistory();
+    loadAllPoints();
+  }, [refreshHistory, loadAllPoints]);
 
   const handleStart = async () => {
     start();
@@ -157,11 +258,48 @@ function MapScreen() {
       console.error('[App] locationAdapter.start failed', e);
       stop();
     }
+    // Battery-optimization hint для Android — один раз при первом старте.
+    if (Platform.OS === 'android') {
+      const settingsState = useSettingsStore.getState();
+      if (!settingsState.batteryHintShown) {
+        settingsState.markBatteryHintShown();
+        Alert.alert(
+          'Запись в фоне',
+          'Если на твоём Android (особенно Xiaomi/Huawei/Oppo) запись прерывается '
+            + 'после нескольких минут в фоне — открой Настройки → Apps → Running Ecosystem '
+            + '→ Battery → Unrestricted (или "No restrictions"). Это нужно сделать один раз.',
+          [{ text: 'Понятно' }],
+        );
+      }
+    }
   };
 
   const handleStop = async () => {
-    await locationAdapter.stop();
-    stop();
+    Alert.alert(
+      'Завершить запись?',
+      'Сохранить пробежку или удалить?',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            await locationAdapter.stop();
+            stop();
+            // Сразу удаляем — finalize прошёл, теперь reset чистит.
+            reset();
+          },
+        },
+        {
+          text: 'Сохранить',
+          isPreferred: true,
+          onPress: async () => {
+            await locationAdapter.stop();
+            stop();
+          },
+        },
+      ],
+    );
   };
 
   const handleReset = async () => {
@@ -169,51 +307,69 @@ function MapScreen() {
     reset();
   };
 
-  const elapsedSec = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
+  const handleExportGpx = async () => {
+    if (points.length === 0) {
+      Alert.alert('Нет данных', 'Сначала запишите пробежку.');
+      return;
+    }
+    if (startedAt === null) {
+      Alert.alert('Нет данных', 'Trackedanных недостаточно для экспорта.');
+      return;
+    }
+    try {
+      const gpx = serializeToGpx(
+        { startedAt, endedAt: useActivityStore.getState().endedAt },
+        points,
+      );
+      await Share.share({
+        message: gpx,
+        title: `Running Ecosystem — пробежка ${new Date(startedAt).toLocaleString('ru-RU')}`,
+      });
+    } catch (e) {
+      console.error('[App] GPX export failed', e);
+      Alert.alert('Не получилось экспортировать', String(e));
+    }
+  };
+
   const lastPoint = points[points.length - 1];
   const distance = useMemo(() => totalDistance(points), [points]);
-  const closed = useMemo(
-    () => detectIsClosed(points, distance),
-    [points, distance],
-  );
-  const area = useMemo(
-    () => (closed ? computeArea(points) : null),
-    [closed, points],
-  );
+  const speedMs = useMemo(() => currentSpeed(points), [points]);
 
   return (
     <View style={styles.container}>
       <MapboxView followUserLocation followZoomLevel={16}>
         <LocationPuckLayer />
+        {/* All-time territory из закрытых сессий (P1-L-02). Внизу стека — поверх
+            идут активный трек и зона текущей сессии. */}
+        <HistoryTerritoryLayer closedSessionsPoints={closedSessionsPoints} />
+        {/* Коридор для незамкнутых треков (ТЗ §6.6 Подход B). */}
+        {!closureFired && state !== 'idle' && <CorridorLayer points={points} />}
         <TrackLayer points={points} />
-        {closed && <ZoneLayer points={points} />}
+        {closureFired && <ZoneLayer points={points} />}
       </MapboxView>
 
+      <Pressable
+        style={styles.historyBtn}
+        onPress={() => setHistoryVisible(true)}
+      >
+        <Text style={styles.historyBtnText}>История</Text>
+      </Pressable>
+
+      <HistoryModal visible={historyVisible} onClose={() => setHistoryVisible(false)} />
+
       <View style={styles.topOverlay} pointerEvents="none">
-        <Text style={styles.statTitle}>
-          {state === 'idle' && 'Готов к записи'}
-          {state === 'recording' &&
-            (isPaused
-              ? `⏸ Авто-пауза · ${formatTime(elapsedSec)}`
-              : `🔴 Запись · ${formatTime(elapsedSec)}`)}
-          {state === 'stopped' && '⏸ Остановлено'}
-        </Text>
-        <Text style={styles.statSubtitle}>
-          {formatDistance(distance)}  ·  {points.length} точек
-          {droppedCount > 0 && (
-            <Text style={styles.droppedText}>{'  ·  '}отбр.: {droppedCount}</Text>
-          )}
-          {lastPoint && (
-            <Text>
-              {'  ·  '}±{lastPoint.accuracy?.toFixed(1) ?? '?'}m
-            </Text>
-          )}
-        </Text>
-        {closed && area != null && (
-          <Text style={styles.areaText}>
-            🏆 Зона: {formatArea(area)}
-          </Text>
-        )}
+        <MetricsBar
+          state={state}
+          isPaused={isPaused}
+          startedAt={startedAt}
+          distanceM={distance}
+          currentSpeedMs={speedMs}
+          pointCount={points.length}
+          lastAccuracyM={lastPoint?.accuracy ?? null}
+          droppedCount={droppedCount}
+          areaM2={closureFired ? areaM2 : null}
+          warnings={areaWarnings}
+        />
       </View>
 
       <View style={styles.bottomOverlay}>
@@ -228,36 +384,26 @@ function MapScreen() {
           </Pressable>
         )}
         {state === 'stopped' && (
-          <Pressable style={[styles.fab, styles.fabReset]} onPress={handleReset}>
-            <Text style={styles.fabText}>RESET</Text>
-          </Pressable>
+          <View style={styles.bottomRow}>
+            <Pressable
+              style={[styles.fab, styles.fabReset, styles.fabSmall]}
+              onPress={handleReset}
+            >
+              <Text style={styles.fabText}>RESET</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.fab, styles.fabExport, styles.fabSmall]}
+              onPress={handleExportGpx}
+            >
+              <Text style={styles.fabText}>EXPORT GPX</Text>
+            </Pressable>
+          </View>
         )}
       </View>
 
       <StatusBar style="light" />
     </View>
   );
-}
-
-function formatTime(totalSec: number): string {
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function formatDistance(m: number): string {
-  if (m < 1000) return `${m.toFixed(0)} м`;
-  return `${(m / 1000).toFixed(2)} км`;
-}
-
-function formatArea(m2: number): string {
-  if (m2 < 10_000) return `${m2.toFixed(0)} м²`;
-  if (m2 < 1_000_000) return `${(m2 / 10_000).toFixed(2)} га`;
-  return `${(m2 / 1_000_000).toFixed(3)} км²`;
 }
 
 function ErrorScreen({ title, message }: { title: string; message: string }) {
@@ -284,16 +430,8 @@ const styles = StyleSheet.create({
     top: 56,
     left: 16,
     right: 16,
-    backgroundColor: 'rgba(15, 20, 25, 0.85)',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
   },
-  statTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  statSubtitle: { color: '#94A3B8', fontSize: 13, marginTop: 4 },
   statText: { color: '#94A3B8', fontSize: 14 },
-  areaText: { color: '#10B981', fontSize: 14, fontWeight: '600', marginTop: 8 },
-  droppedText: { color: '#F59E0B' },
   bottomOverlay: {
     position: 'absolute',
     bottom: 48,
@@ -316,7 +454,20 @@ const styles = StyleSheet.create({
   fabStart: { backgroundColor: '#10B981' },
   fabStop: { backgroundColor: '#EF4444' },
   fabReset: { backgroundColor: '#3B82F6' },
+  fabExport: { backgroundColor: '#8B5CF6' },
+  fabSmall: { paddingHorizontal: 20, paddingVertical: 14, minWidth: 120 },
   fabText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+  bottomRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16 },
+  historyBtn: {
+    position: 'absolute',
+    top: 56,
+    right: 16,
+    backgroundColor: 'rgba(15, 20, 25, 0.85)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  historyBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
   errorContainer: {
     flexGrow: 1,
     backgroundColor: '#0F1419',
