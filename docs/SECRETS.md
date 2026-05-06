@@ -18,21 +18,26 @@
 
 ### Access tokens
 
-| Имя             | Фактический тип | Должен быть | Scopes                                                            | Restrictions                                                              | Где используется                                                                                |
-|-----------------|-----------------|-------------|-------------------------------------------------------------------|---------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
-| `dev-public`    | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256 (debug.keystore владельца): `B3:63:9A:C1:B7:D4:53:74:BF:A6:26:3C:C4:F5:99:6E:BA:C2:87:3E:DC:CA:9E:FB:27:A0:5D:7F:1F:C5:3D:24`<br>🔄 TODO добавить fingerprints второго разработчика и production keystore | RN/Flutter runtime: рендер карты в приложении (`MAPBOX_ACCESS_TOKEN` через `.env`)              |
-| `prod-public`   | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256 (debug.keystore владельца): `B3:63:9A:C1:B7:D4:53:74:BF:A6:26:3C:C4:F5:99:6E:BA:C2:87:3E:DC:CA:9E:FB:27:A0:5D:7F:1F:C5:3D:24`<br>🔄 TODO добавить fingerprints второго разработчика и production keystore | Production-сборки (в Phase 0 не используется)                                                   |
-| `server-secret` | ⚠️ Public (`pk.…`) — **ОШИБКА, пересоздать как Secret** | Secret (`sk.…`) | `STYLES:READ`, `TILESETS:READ`, `DATASETS:READ`                    | (нет — добавить IP-restriction когда появится staging)                    | Серверные вызовы Static Maps / Directions (Phase 2+)                                            |
-| `dev-downloads` | Secret (`sk.…`) ✅ | Secret      | `DOWNLOADS:READ`                                                  | (нет — secret token, доступен только после auth)                          | Скачивание Mapbox SDK при `pod install` (iOS) и `gradle build` (Android). Хранится в `~/.netrc` |
+| Имя              | Фактический тип | Должен быть | Scopes                                                            | Restrictions                                                              | Где используется                                                                                |
+|------------------|-----------------|-------------|-------------------------------------------------------------------|---------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| ~~`dev-public`~~ | ~~Public (`pk.…`)~~ | — | ❌ **сломан** — добавлен `OFFLINE:READ`, который не разрешён на public token. Style API возвращает 200, но Tiles API → 403. | — | ⛔ **Не используется.** TODO: revoke в дашборде. |
+| `dev-public-v2`  | Public (`pk.…`) ✅ | Public | Только дефолтные: `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `VISION:READ` | (без restrictions для теста; добавить SHA-256 + Bundle ID после успешного runtime) | RN/Flutter runtime: рендер карты в приложении (`MAPBOX_ACCESS_TOKEN` через `.env`)              |
+| `prod-public`    | Public (`pk.…`) | Public      | `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `OFFLINE:READ`, `TILES:READ` (⚠️ возможно тоже сломан, проверить перед prod) | iOS Bundle ID: `com.runningecosystem.mobile`<br>Android SHA-256 (debug.keystore владельца): `B3:63:9A:C1:B7:D4:53:74:BF:A6:26:3C:C4:F5:99:6E:BA:C2:87:3E:DC:CA:9E:FB:27:A0:5D:7F:1F:C5:3D:24` | Production-сборки (в Phase 0 не используется; перед использованием — проверить через curl /tiles/) |
+| `server-secret`  | ⚠️ Public (`pk.…`) — **ОШИБКА, пересоздать как Secret** | Secret (`sk.…`) | `STYLES:READ`, `TILESETS:READ`, `DATASETS:READ`                    | (нет — добавить IP-restriction когда появится staging)                    | Серверные вызовы Static Maps / Directions (Phase 2+)                                            |
+| `dev-downloads`  | Secret (`sk.…`) ✅ | Secret      | `DOWNLOADS:READ`                                                  | (нет — secret token, доступен только после auth)                          | Скачивание Mapbox SDK при `pod install` (iOS) и `gradle build` (Android). Хранится в `~/.netrc` |
 
 > Default public token из аккаунта **не использовать** — он не ограничен Bundle ID и его сложнее ротировать.
 
 ### ⚠️ Известные проблемы текущего стейта
 
-1. **`server-secret` создан как public.** Префикс `pk.` означает public access token. Secret-токен Mapbox имеет префикс `sk.` и создаётся через UI с галочкой "Secret access token" — её и нужно поставить при пересоздании. Не критично для Phase 0 (серверные вызовы появятся только в Phase 2+), но **надо пересоздать перед началом работ по бэкенду**.
+1. **`dev-public` (первый) сломан и должен быть revoke'нут.** При создании ему добавили `OFFLINE:READ` scope — этот scope доступен только на secret-токенах (`sk.…`). Mapbox принимает токен на Style API (200), но на Tiles API возвращает 403 — карта рендерится белым фоном. Замена: `dev-public-v2` создан с дефолтными scopes (`STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `VISION:READ`) и **проверен через curl на /tiles/ → 200**.
 
-2. **Все 4 токена однажды попали в чат с AI-ассистентом** (на этапе создания P0-A-01 и `P0-B-01` netrc setup). Для Phase 0 dev-работы не критично — public токены ограничены iOS Bundle ID, скоупы минимальны, биллинг под контролем; download token имеет только `DOWNLOADS:READ`. Но:
-   - 🔒 Перед публичным релизом приложения и/или подключением биллинговой карты — **ротировать все 4 токена** (revoke + создать новые).
+2. **`server-secret` создан как public.** Префикс `pk.` означает public access token. Secret-токен Mapbox имеет префикс `sk.` и создаётся через UI с галочкой "Secret access token" — её и нужно поставить при пересоздании. Не критично для Phase 0 (серверные вызовы появятся только в Phase 2+), но **надо пересоздать перед началом работ по бэкенду**.
+
+3. **`prod-public` создан с теми же кривыми scopes что и старый `dev-public`.** Скорее всего тоже сломан на /tiles/. Перед production-сборкой — проверить через curl, и если 403 — пересоздать с дефолтными scopes.
+
+4. **Все 5 токенов однажды попали в чат с AI-ассистентом** (на этапе создания P0-A-01, `P0-B-01` netrc setup, и при диагностике 403 в P0-B-02). Для Phase 0 dev-работы не критично, но:
+   - 🔒 Перед публичным релизом приложения и/или подключением биллинговой карты — **ротировать все токены** (revoke + создать новые в Mapbox dashboard).
    - 🔒 До тех пор не ставить эти токены на production-сборку.
 
 ### Verification
@@ -101,8 +106,11 @@ mapbox://styles/mapbox/outdoors-v12
 
 ### Известные TODO
 
+- [ ] **Revoke старый `dev-public`** (тот что с `OFFLINE:READ`) в Mapbox dashboard — он сломан, не используется.
+- [ ] **Пересоздать `prod-public` с дефолтными scopes** (или проверить текущий — если /tiles/ → 200, оставить).
 - [ ] **Пересоздать `server-secret` как настоящий Secret-токен** (`sk.` prefix) — перед началом Phase 2 (бэкенд). При создании в Mapbox UI — поставить галочку "Secret access token".
-- [ ] **Ротировать все 4 текущих токена** — перед публичным релизом приложения / подключением биллинга (значения попадали в чат с AI).
+- [ ] **Добавить URL restrictions на `dev-public-v2`** (когда runtime карта подтвердится): iOS Bundle ID `com.runningecosystem.mobile`, Android SHA-256 (см. ниже).
+- [ ] **Ротировать все 5 токенов** — перед публичным релизом приложения / подключением биллинга (значения попадали в чат с AI).
 - [ ] Перенос ownership Mapbox account на team-аккаунт (когда юр. возможно)
 - [ ] Добавить Android SHA-256 fingerprints в restrictions `dev-public` и `prod-public` через Mapbox dashboard:
   - **Debug (этой машины):** SHA1 `CF:4B:EC:94:09:C2:6F:2C:65:27:2A:3A:A2:29:AF:F1:65:8D:B3:DA`, SHA-256 `B3:63:9A:C1:B7:D4:53:74:BF:A6:26:3C:C4:F5:99:6E:BA:C2:87:3E:DC:CA:9E:FB:27:A0:5D:7F:1F:C5:3D:24`
