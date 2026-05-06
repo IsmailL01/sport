@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 
-import type { ActivityState, RawPoint } from '../domain/types';
+import type { ActivityState, Point } from '../domain/types';
+import {
+  createDefaultPipeline,
+  PauseDetector,
+  type PauseEvent,
+} from '../pipeline';
 import {
   appendPoints,
   loadPointsForSession,
@@ -17,22 +22,30 @@ const FLUSH_THRESHOLD = 10;
 
 type ActivityStore = {
   state: ActivityState;
-  points: RawPoint[];
+  /** Принятые точки (после pipeline). */
+  points: Point[];
   startedAt: number | null;
   endedAt: number | null;
   sessionId: number | null;
   /** Сколько ещё точек в буфере не сохранено в БД (для отладки). */
   bufferedCount: number;
+  /** Сколько raw-точек прошло через pipeline и было отброшено фильтрами. */
+  droppedCount: number;
+  /** На паузе ли запись (auto-pause из PauseDetector). */
+  isPaused: boolean;
 
   start: () => void;
   stop: () => void;
-  addPoint: (point: RawPoint) => void;
+  /** Внутренний — вызывается из LocationAdapter после pipeline. */
+  acceptPoint: (point: Point) => void;
   reset: () => void;
-  /** Восстановить последнюю незавершённую сессию из БД. */
   recoverLast: () => void;
+  /** Внутренние счётчики. */
+  incrementDropped: () => void;
+  setPaused: (paused: boolean) => void;
 };
 
-let buffer: RawPoint[] = [];
+let buffer: Point[] = [];
 
 function flushBuffer(sessionId: number | null, force: boolean): number {
   if (sessionId === null) return 0;
@@ -47,6 +60,43 @@ function flushBuffer(sessionId: number | null, force: boolean): number {
   return 0;
 }
 
+// Pipeline и PauseDetector — singletons на module level.
+// LocationAdapter callback вызывает их через exported helpers (см. ниже).
+const pipeline = createDefaultPipeline({
+  onDrop: (event) => {
+    if (__DEV__) {
+      console.log(`[pipeline] dropped by ${event.filterName}`);
+    }
+    useActivityStore.getState().incrementDropped();
+  },
+});
+
+const pauseDetector = new PauseDetector((event: PauseEvent) => {
+  useActivityStore.getState().setPaused(event.type === 'auto-paused');
+  if (__DEV__) {
+    console.log(`[pause] ${event.type}`);
+  }
+});
+
+/**
+ * Точка входа из LocationAdapter — вызывается на каждом raw-event.
+ * Пропускает через pipeline, если принято — добавляет в state.
+ */
+export function ingestRawPoint(raw: {
+  timestamp: number;
+  latitude: number;
+  longitude: number;
+  altitude: number | null;
+  accuracy: number | null;
+  speed: number | null;
+  heading: number | null;
+}): void {
+  const accepted = pipeline.process(raw);
+  if (accepted === null) return;
+  pauseDetector.observe(accepted);
+  useActivityStore.getState().acceptPoint(accepted);
+}
+
 export const useActivityStore = create<ActivityStore>((set, get) => ({
   state: 'idle',
   points: [],
@@ -54,10 +104,14 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   endedAt: null,
   sessionId: null,
   bufferedCount: 0,
+  droppedCount: 0,
+  isPaused: false,
 
   start: () => {
     const sessionId = Date.now();
     buffer = [];
+    pipeline.reset();
+    pauseDetector.reset();
     try {
       createSession({ id: sessionId, startedAt: sessionId });
     } catch (e) {
@@ -70,6 +124,8 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       endedAt: null,
       sessionId,
       bufferedCount: 0,
+      droppedCount: 0,
+      isPaused: false,
     });
   },
 
@@ -94,10 +150,15 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
         console.error('[activity] finalizeSession failed', e);
       }
     }
-    set({ state: 'stopped', endedAt, bufferedCount: remainingBuffered });
+    set({
+      state: 'stopped',
+      endedAt,
+      bufferedCount: remainingBuffered,
+      isPaused: false,
+    });
   },
 
-  addPoint: (point) => {
+  acceptPoint: (point) => {
     const { state, sessionId } = get();
     if (state !== 'recording') return;
     buffer.push(point);
@@ -121,6 +182,8 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       }
     }
     buffer = [];
+    pipeline.reset();
+    pauseDetector.reset();
     set({
       state: 'idle',
       points: [],
@@ -128,6 +191,8 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       endedAt: null,
       sessionId: null,
       bufferedCount: 0,
+      droppedCount: 0,
+      isPaused: false,
     });
   },
 
@@ -135,7 +200,7 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     const { state } = get();
     if (state !== 'idle') return;
     let session = null;
-    let pts: RawPoint[] = [];
+    let pts: Point[] = [];
     try {
       session = findActiveSession();
       if (session !== null) {
@@ -147,6 +212,8 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     }
     if (session === null || pts.length === 0) return;
     buffer = [];
+    pipeline.reset();
+    pauseDetector.reset();
     set({
       state: 'stopped',
       points: pts,
@@ -154,6 +221,11 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       endedAt: session.endedAt ?? pts[pts.length - 1]?.timestamp ?? null,
       sessionId: session.id,
       bufferedCount: 0,
+      droppedCount: 0,
+      isPaused: false,
     });
   },
+
+  incrementDropped: () => set((s) => ({ droppedCount: s.droppedCount + 1 })),
+  setPaused: (isPaused) => set({ isPaused }),
 }));

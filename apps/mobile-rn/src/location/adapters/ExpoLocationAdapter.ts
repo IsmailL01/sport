@@ -2,17 +2,17 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 
 import type { RawPoint } from '../../domain/types';
-import { useActivityStore } from '../../state/activity';
+import { ingestRawPoint } from '../../state/activity';
 import type { LocationAdapter } from '../LocationAdapter';
 
 const TASK_NAME = 'BACKGROUND_LOCATION_TASK';
 
 /**
  * Background location task. Регистрируется один раз при загрузке модуля.
- * Дёргает activity store напрямую, потому что в headless контексте
- * (приложение в фоне / killed) у нас нет React component lifecycle.
+ * Каждая точка прогоняется через GPS pipeline (Accuracy → Kalman → Jump → MinSegment)
+ * и только если принята — попадает в activity store.
  *
- * См. ТЗ §4.4 — стратегия background для iOS/Android.
+ * См. ТЗ §4.3 (pipeline), §4.4 (стратегия background).
  */
 TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
   TASK_NAME,
@@ -22,9 +22,8 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
       return;
     }
     if (!data || !data.locations) return;
-    const store = useActivityStore.getState();
     for (const loc of data.locations) {
-      store.addPoint(toRawPoint(loc));
+      ingestRawPoint(toRawPoint(loc));
     }
   },
 );

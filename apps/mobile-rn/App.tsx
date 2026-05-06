@@ -138,6 +138,8 @@ function MapScreen() {
   const state = useActivityStore((s) => s.state);
   const points = useActivityStore((s) => s.points);
   const startedAt = useActivityStore((s) => s.startedAt);
+  const droppedCount = useActivityStore((s) => s.droppedCount);
+  const isPaused = useActivityStore((s) => s.isPaused);
   const start = useActivityStore((s) => s.start);
   const stop = useActivityStore((s) => s.stop);
   const reset = useActivityStore((s) => s.reset);
@@ -190,11 +192,17 @@ function MapScreen() {
       <View style={styles.topOverlay} pointerEvents="none">
         <Text style={styles.statTitle}>
           {state === 'idle' && 'Готов к записи'}
-          {state === 'recording' && `🔴 Запись · ${formatTime(elapsedSec)}`}
+          {state === 'recording' &&
+            (isPaused
+              ? `⏸ Авто-пауза · ${formatTime(elapsedSec)}`
+              : `🔴 Запись · ${formatTime(elapsedSec)}`)}
           {state === 'stopped' && '⏸ Остановлено'}
         </Text>
         <Text style={styles.statSubtitle}>
           {formatDistance(distance)}  ·  {points.length} точек
+          {droppedCount > 0 && (
+            <Text style={styles.droppedText}>{'  ·  '}отбр.: {droppedCount}</Text>
+          )}
           {lastPoint && (
             <Text>
               {'  ·  '}±{lastPoint.accuracy?.toFixed(1) ?? '?'}m
@@ -285,6 +293,7 @@ const styles = StyleSheet.create({
   statSubtitle: { color: '#94A3B8', fontSize: 13, marginTop: 4 },
   statText: { color: '#94A3B8', fontSize: 14 },
   areaText: { color: '#10B981', fontSize: 14, fontWeight: '600', marginTop: 8 },
+  droppedText: { color: '#F59E0B' },
   bottomOverlay: {
     position: 'absolute',
     bottom: 48,
