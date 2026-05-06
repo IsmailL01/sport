@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+
+import 'src/domain/types.dart';
+import 'src/location/location_adapter.dart';
+import 'src/state/activity.dart';
 
 const String _kMapboxAccessToken = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
 const String _kMapboxStyle = MapboxStyles.OUTDOORS;
@@ -8,12 +13,11 @@ const String _kMapboxStyle = MapboxStyles.OUTDOORS;
 String _initError = '';
 
 void main() {
-  runZonedGuarded(_main, (error, stack) {
-    debugPrint('[App] Uncaught: $error\n$stack');
-  });
-}
+  FlutterError.onError = (details) {
+    debugPrint('[App] FlutterError: ${details.exception}\n${details.stack}');
+    FlutterError.dumpErrorToConsole(details);
+  };
 
-void _main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (_kMapboxAccessToken.isNotEmpty) {
@@ -25,16 +29,7 @@ void _main() {
     }
   }
 
-  runApp(const RunningEcosystemApp());
-}
-
-void runZonedGuarded(VoidCallback body, void Function(Object, StackTrace) onError) {
-  // Простая обёртка через FlutterError handler — без import dart:async для краткости.
-  FlutterError.onError = (details) {
-    onError(details.exception, details.stack ?? StackTrace.empty);
-    FlutterError.dumpErrorToConsole(details);
-  };
-  body();
+  runApp(const ProviderScope(child: RunningEcosystemApp()));
 }
 
 class RunningEcosystemApp extends StatelessWidget {
@@ -59,8 +54,7 @@ class RunningEcosystemApp extends StatelessWidget {
         title: 'Конфигурация неполна',
         message:
             'MAPBOX_ACCESS_TOKEN не встроен в bundle (token=$tokenPreview).\n\n'
-            'Запустите с --dart-define=MAPBOX_ACCESS_TOKEN=pk....\n'
-            'См. /docs/SECRETS.md.',
+            'Запустите с --dart-define=MAPBOX_ACCESS_TOKEN=pk....',
       );
     } else {
       home = _MapScreen(tokenPreview: tokenPreview);
@@ -80,15 +74,17 @@ class RunningEcosystemApp extends StatelessWidget {
   }
 }
 
-class _MapScreen extends StatefulWidget {
+class _MapScreen extends ConsumerStatefulWidget {
   final String tokenPreview;
   const _MapScreen({required this.tokenPreview});
 
   @override
-  State<_MapScreen> createState() => _MapScreenState();
+  ConsumerState<_MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<_MapScreen> {
+enum _PermissionState { pending, granted, denied }
+
+class _MapScreenState extends ConsumerState<_MapScreen> {
   _PermissionState _permissionState = _PermissionState.pending;
   String? _permissionError;
   String? _mapError;
@@ -97,6 +93,12 @@ class _MapScreenState extends State<_MapScreen> {
   void initState() {
     super.initState();
     _ensurePermission();
+  }
+
+  @override
+  void dispose() {
+    locationAdapter.stop();
+    super.dispose();
   }
 
   Future<void> _ensurePermission() async {
@@ -123,6 +125,51 @@ class _MapScreenState extends State<_MapScreen> {
     }
   }
 
+  Future<void> _onMapCreated(MapboxMap map) async {
+    try {
+      await map.location.updateSettings(
+        LocationComponentSettings(
+          enabled: true,
+          pulsingEnabled: true,
+          showAccuracyRing: true,
+        ),
+      );
+      await map.setCamera(CameraOptions(zoom: 16.0));
+    } catch (e, st) {
+      debugPrint('[App] map init error: $e\n$st');
+      if (!mounted) return;
+      setState(() => _mapError = e.toString());
+    }
+  }
+
+  Future<void> _handleStart() async {
+    final notifier = ref.read(activityProvider.notifier);
+    notifier.start();
+    try {
+      await locationAdapter.start((point) {
+        ref.read(activityProvider.notifier).addPoint(point);
+        debugPrint(
+          '[location] ${point.latitude.toStringAsFixed(6)},'
+          '${point.longitude.toStringAsFixed(6)} '
+          '±${point.accuracy?.toStringAsFixed(1) ?? "?"}m',
+        );
+      });
+    } catch (e, st) {
+      debugPrint('[App] locationAdapter.start failed: $e\n$st');
+      notifier.stop();
+    }
+  }
+
+  Future<void> _handleStop() async {
+    await locationAdapter.stop();
+    ref.read(activityProvider.notifier).stop();
+  }
+
+  Future<void> _handleReset() async {
+    await locationAdapter.stop();
+    ref.read(activityProvider.notifier).reset();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_mapError != null) {
@@ -138,21 +185,12 @@ class _MapScreenState extends State<_MapScreen> {
           body: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                const Text(
+              children: const [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
                   'Запрашиваем разрешение на геолокацию…',
                   style: TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Token: ${widget.tokenPreview}',
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 11,
-                    fontFamily: 'Courier',
-                  ),
                 ),
               ],
             ),
@@ -166,33 +204,185 @@ class _MapScreenState extends State<_MapScreen> {
               'Откройте настройки приложения и разрешите доступ к местоположению.',
         );
       case _PermissionState.granted:
-        return Scaffold(
-          body: MapWidget(
+        return _RecordingScaffold(
+          onStart: _handleStart,
+          onStop: _handleStop,
+          onReset: _handleReset,
+          mapBuilder: (context) => MapWidget(
             styleUri: _kMapboxStyle,
             onMapCreated: _onMapCreated,
           ),
         );
     }
   }
+}
 
-  Future<void> _onMapCreated(MapboxMap map) async {
-    try {
-      await map.location.updateSettings(
-        LocationComponentSettings(
-          enabled: true,
-          pulsingEnabled: true,
-          showAccuracyRing: true,
-        ),
-      );
-      await map.setCamera(CameraOptions(zoom: 16.0));
-    } catch (e, st) {
-      debugPrint('[App] map init error: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _mapError = e.toString();
-      });
-    }
+class _RecordingScaffold extends ConsumerWidget {
+  final VoidCallback onStart;
+  final VoidCallback onStop;
+  final VoidCallback onReset;
+  final Widget Function(BuildContext) mapBuilder;
+
+  const _RecordingScaffold({
+    required this.onStart,
+    required this.onStop,
+    required this.onReset,
+    required this.mapBuilder,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final activity = ref.watch(activityProvider);
+    final pointCount = activity.points.length;
+    final lastPoint = pointCount > 0 ? activity.points.last : null;
+    final elapsed = activity.startedAt == null
+        ? Duration.zero
+        : DateTime.now().difference(activity.startedAt!);
+
+    return Scaffold(
+      body: Stack(
+        children: [
+          Positioned.fill(child: mapBuilder(context)),
+          Positioned(
+            top: 56,
+            left: 16,
+            right: 16,
+            child: _StatsCard(
+              activityState: activity.state,
+              elapsed: elapsed,
+              pointCount: pointCount,
+              lastAccuracy: lastPoint?.accuracy,
+            ),
+          ),
+          Positioned(
+            bottom: 48,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _RecordingButton(
+                state: activity.state,
+                onStart: onStart,
+                onStop: onStop,
+                onReset: onReset,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
+}
+
+class _StatsCard extends StatefulWidget {
+  final ActivityState activityState;
+  final Duration elapsed;
+  final int pointCount;
+  final double? lastAccuracy;
+
+  const _StatsCard({
+    required this.activityState,
+    required this.elapsed,
+    required this.pointCount,
+    required this.lastAccuracy,
+  });
+
+  @override
+  State<_StatsCard> createState() => _StatsCardState();
+}
+
+class _StatsCardState extends State<_StatsCard> {
+  @override
+  Widget build(BuildContext context) {
+    final title = switch (widget.activityState) {
+      ActivityState.idle => 'Готов к записи',
+      ActivityState.recording =>
+        '🔴 Запись · ${_formatDuration(widget.elapsed)}',
+      ActivityState.stopped => '⏸ Остановлено',
+    };
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1419).withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Точек: ${widget.pointCount}'
+            '${widget.lastAccuracy != null ? "  ·  ±${widget.lastAccuracy!.toStringAsFixed(1)}m" : ""}',
+            style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecordingButton extends StatelessWidget {
+  final ActivityState state;
+  final VoidCallback onStart;
+  final VoidCallback onStop;
+  final VoidCallback onReset;
+
+  const _RecordingButton({
+    required this.state,
+    required this.onStart,
+    required this.onStop,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, callback) = switch (state) {
+      ActivityState.idle => ('START', const Color(0xFF10B981), onStart),
+      ActivityState.recording => ('STOP', const Color(0xFFEF4444), onStop),
+      ActivityState.stopped => ('RESET', const Color(0xFF3B82F6), onReset),
+    };
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(32),
+      elevation: 6,
+      child: InkWell(
+        onTap: callback,
+        borderRadius: BorderRadius.circular(32),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
+          constraints: const BoxConstraints(minWidth: 160),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _formatDuration(Duration d) {
+  final h = d.inHours;
+  final m = d.inMinutes.remainder(60);
+  final s = d.inSeconds.remainder(60);
+  if (h > 0) {
+    return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+  return '$m:${s.toString().padLeft(2, '0')}';
 }
 
 class _ErrorScreen extends StatelessWidget {
@@ -239,5 +429,3 @@ class _ErrorScreen extends StatelessWidget {
     );
   }
 }
-
-enum _PermissionState { pending, granted, denied }

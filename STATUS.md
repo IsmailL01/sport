@@ -18,8 +18,8 @@
 - [ ] `P0-A-04` Тестовые устройства — организационная задача (закупка/выдача)
 
 ### Прототип RN
-- [~] `P0-B-01` Bootstrap RN-проекта — code/config готов и зелёный (typecheck ✅); iOS run требует Mapbox download token в `~/.netrc` (см. SECRETS.md TODO)
-- [ ] `P0-B-02` Карта Mapbox с user location
+- [x] `P0-B-01` Bootstrap RN-проекта — Android build verified
+- [~] `P0-B-02` Карта Mapbox с user location — код готов и compile-зелёный (RN assembleDebug ✅); runtime acceptance ("карта показывает позицию, follows me") требует эмулятора/устройства
 - [ ] `P0-B-03` Запись точек GPS
 - [ ] `P0-B-04` Live полилиния на карте
 - [ ] `P0-B-05` Замыкание + площадь
@@ -27,8 +27,8 @@
 - [ ] `P0-B-07` SQLite persistence
 
 ### Прототип Flutter
-- [~] `P0-C-01` Bootstrap Flutter-проекта — code/config готов и зелёный (`flutter analyze` ✅, `flutter test` ✅); iOS run требует Mapbox download token в `~/.netrc`
-- [ ] `P0-C-02` Карта Mapbox с user location
+- [x] `P0-C-01` Bootstrap Flutter-проекта — Android build verified
+- [~] `P0-C-02` Карта Mapbox с user location — код готов и compile-зелёный (Flutter build apk ✅, analyze ✅); runtime acceptance требует эмулятора/устройства
 - [ ] `P0-C-03` Запись точек GPS
 - [ ] `P0-C-04` Live полилиния
 - [ ] `P0-C-05` Замыкание + площадь
