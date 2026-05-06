@@ -20,8 +20,8 @@
 ```
 .
 ├── apps/
-│   ├── mobile-rn/        # Expo React Native прототип (Phase 0) → может стать основным после выбора
-│   └── mobile-flutter/   # Flutter прототип (Phase 0) → может стать основным после выбора
+│   ├── mobile-rn/                # Основной мобильный проект (Expo RN, см. DECISION.md)
+│   └── mobile_flutter.archived/  # Архив Flutter-прототипа Phase 0 — _ARCHIVED.md внутри
 ├── services/
 │   └── backend/          # Бэкенд (заполняется Phase 2+)
 ├── docs/
@@ -36,7 +36,7 @@
 
 ## Быстрый старт
 
-> ⚠️ Phase 0: оба прототипа в активной разработке. Какой из них выживет — решит [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) §2.6 (Decision Matrix) и зафиксирует `DECISION.md` в корне.
+> ✅ **Phase 0 завершена 2026-05-06.** Выбран **Expo React Native** — см. [DECISION.md](DECISION.md) и [docs/DECISIONS/0001-framework-react-native.md](docs/DECISIONS/0001-framework-react-native.md). Активная разработка идёт в `apps/mobile-rn/`. Phase 1 (Territory Core) — в работе.
 
 ### Expo React Native (`apps/mobile-rn`)
 
@@ -48,10 +48,10 @@ npx expo run:ios       # или run:android
 
 Подробности bootstrap — задача `P0-B-01` в [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
-### Flutter (`apps/mobile_flutter`)
+### Flutter (`apps/mobile_flutter.archived`)
 
 ```bash
-cd apps/mobile_flutter
+cd apps/mobile_flutter.archived
 flutter pub get
 flutter run
 ```
