@@ -1,4 +1,11 @@
-import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
+import {
+  Component,
+  useEffect,
+  useMemo,
+  useState,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Mapbox, {
   MapView,
@@ -6,12 +13,18 @@ import Mapbox, {
   LocationPuck,
   ShapeSource,
   LineLayer,
+  FillLayer,
 } from '@rnmapbox/maps';
 import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
 import { locationAdapter } from './src/location/locationAdapter';
 import { useActivityStore } from './src/state/activity';
-import { pointsToLineString } from './src/util/geojson';
+import { pointsToLineString, pointsToPolygon } from './src/util/geojson';
+import {
+  computeArea,
+  isClosed as detectIsClosed,
+  totalDistance,
+} from './src/util/geo';
 
 const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
 const MAPBOX_STYLE = 'mapbox://styles/mapbox/outdoors-v12';
@@ -161,7 +174,20 @@ function MapScreen() {
 
   const elapsedSec = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
   const lastPoint = points[points.length - 1];
-  const trackShape = pointsToLineString(points);
+  const trackShape = useMemo(() => pointsToLineString(points), [points]);
+  const distance = useMemo(() => totalDistance(points), [points]);
+  const closed = useMemo(
+    () => detectIsClosed(points, distance),
+    [points, distance],
+  );
+  const area = useMemo(
+    () => (closed ? computeArea(points) : null),
+    [closed, points],
+  );
+  const polygonShape = useMemo(
+    () => (closed ? pointsToPolygon(points) : null),
+    [closed, points],
+  );
 
   return (
     <View style={styles.container}>
@@ -180,6 +206,22 @@ function MapScreen() {
             }}
           />
         </ShapeSource>
+        {polygonShape && (
+          <ShapeSource id="zone-source" shape={polygonShape}>
+            <FillLayer
+              id="zone-fill"
+              style={{ fillColor: '#10B981', fillOpacity: 0.3 }}
+            />
+            <LineLayer
+              id="zone-outline"
+              style={{
+                lineColor: '#10B981',
+                lineWidth: 3,
+                lineOpacity: 0.9,
+              }}
+            />
+          </ShapeSource>
+        )}
       </MapView>
 
       <View style={styles.topOverlay} pointerEvents="none">
@@ -189,13 +231,18 @@ function MapScreen() {
           {state === 'stopped' && '⏸ Остановлено'}
         </Text>
         <Text style={styles.statSubtitle}>
-          Точек: {points.length}
+          {formatDistance(distance)}  ·  {points.length} точек
           {lastPoint && (
             <Text>
               {'  ·  '}±{lastPoint.accuracy?.toFixed(1) ?? '?'}m
             </Text>
           )}
         </Text>
+        {closed && area != null && (
+          <Text style={styles.areaText}>
+            🏆 Зона: {formatArea(area)}
+          </Text>
+        )}
       </View>
 
       <View style={styles.bottomOverlay}>
@@ -231,6 +278,17 @@ function formatTime(totalSec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function formatDistance(m: number): string {
+  if (m < 1000) return `${m.toFixed(0)} м`;
+  return `${(m / 1000).toFixed(2)} км`;
+}
+
+function formatArea(m2: number): string {
+  if (m2 < 10_000) return `${m2.toFixed(0)} м²`;
+  if (m2 < 1_000_000) return `${(m2 / 10_000).toFixed(2)} га`;
+  return `${(m2 / 1_000_000).toFixed(3)} км²`;
+}
+
 function ErrorScreen({ title, message }: { title: string; message: string }) {
   return (
     <ScrollView contentContainerStyle={styles.errorContainer}>
@@ -264,6 +322,7 @@ const styles = StyleSheet.create({
   statTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
   statSubtitle: { color: '#94A3B8', fontSize: 13, marginTop: 4 },
   statText: { color: '#94A3B8', fontSize: 14 },
+  areaText: { color: '#10B981', fontSize: 14, fontWeight: '600', marginTop: 8 },
   bottomOverlay: {
     position: 'absolute',
     bottom: 48,

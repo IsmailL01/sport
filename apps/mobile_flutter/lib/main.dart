@@ -6,6 +6,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'src/domain/types.dart';
 import 'src/location/location_adapter.dart';
 import 'src/state/activity.dart';
+import 'src/state/metrics.dart';
 import 'src/util/geojson.dart';
 
 const String _kMapboxAccessToken = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
@@ -91,6 +92,8 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
   String? _mapError;
   MapboxMap? _map;
   bool _trackLayerAdded = false;
+  bool _zoneLayerAdded = false;
+  String? _lastPolygonJson;
 
   @override
   void initState() {
@@ -140,6 +143,7 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
       );
       await map.setCamera(CameraOptions(zoom: 16.0));
       await _ensureTrackLayer();
+      await _ensureZoneLayer();
     } catch (e, st) {
       debugPrint('[App] map init error: $e\n$st');
       if (!mounted) return;
@@ -171,6 +175,38 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
     }
   }
 
+  Future<void> _ensureZoneLayer() async {
+    final map = _map;
+    if (map == null || _zoneLayerAdded) return;
+    try {
+      await map.style.addSource(
+        GeoJsonSource(id: 'zone-source', data: pointsToPolygonJson([])),
+      );
+      // FillLayer внизу — выше track-line чтобы линия трека была видна поверх заливки.
+      await map.style.addLayerAt(
+        FillLayer(
+          id: 'zone-fill',
+          sourceId: 'zone-source',
+          fillColor: 0xFF10B981,
+          fillOpacity: 0.3,
+        ),
+        LayerPosition(below: 'track-line'),
+      );
+      await map.style.addLayer(
+        LineLayer(
+          id: 'zone-outline',
+          sourceId: 'zone-source',
+          lineColor: 0xFF10B981,
+          lineWidth: 3.0,
+          lineOpacity: 0.9,
+        ),
+      );
+      _zoneLayerAdded = true;
+    } catch (e, st) {
+      debugPrint('[App] add zone layer failed: $e\n$st');
+    }
+  }
+
   Future<void> _updateTrackOnMap(List<RawPoint> points) async {
     final map = _map;
     if (map == null || !_trackLayerAdded) return;
@@ -179,6 +215,24 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
       await map.style.setStyleSourceProperty('track-source', 'data', json);
     } catch (e) {
       debugPrint('[App] update track source failed: $e');
+    }
+  }
+
+  Future<void> _updateZoneOnMap(String? polygonJson) async {
+    final map = _map;
+    if (map == null) return;
+    // Идемпотентность: пропускаем повторное обновление с тем же JSON.
+    if (polygonJson == _lastPolygonJson) return;
+    _lastPolygonJson = polygonJson;
+    if (!_zoneLayerAdded) {
+      await _ensureZoneLayer();
+    }
+    final dataToSet =
+        polygonJson ?? pointsToPolygonJson(<RawPoint>[]); // empty collection
+    try {
+      await map.style.setStyleSourceProperty('zone-source', 'data', dataToSet);
+    } catch (e) {
+      debugPrint('[App] update zone source failed: $e');
     }
   }
 
@@ -216,6 +270,12 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
     ref.listen<ActivityRecording>(activityProvider, (prev, next) {
       if (prev?.points.length == next.points.length) return;
       _updateTrackOnMap(next.points);
+    });
+
+    // Реагируем на metrics — обновляем polygon zone на карте.
+    ref.listen<TrackMetrics>(trackMetricsProvider, (prev, next) {
+      if (prev?.polygonGeoJson == next.polygonGeoJson) return;
+      _updateZoneOnMap(next.polygonGeoJson);
     });
 
     if (_mapError != null) {
@@ -279,6 +339,7 @@ class _RecordingScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activity = ref.watch(activityProvider);
+    final metrics = ref.watch(trackMetricsProvider);
     final pointCount = activity.points.length;
     final lastPoint = pointCount > 0 ? activity.points.last : null;
     final elapsed = activity.startedAt == null
@@ -298,6 +359,9 @@ class _RecordingScaffold extends ConsumerWidget {
               elapsed: elapsed,
               pointCount: pointCount,
               lastAccuracy: lastPoint?.accuracy,
+              distance: metrics.distance,
+              area: metrics.area,
+              isClosed: metrics.isClosed,
             ),
           ),
           Positioned(
@@ -319,30 +383,30 @@ class _RecordingScaffold extends ConsumerWidget {
   }
 }
 
-class _StatsCard extends StatefulWidget {
+class _StatsCard extends StatelessWidget {
   final ActivityState activityState;
   final Duration elapsed;
   final int pointCount;
   final double? lastAccuracy;
+  final double distance;
+  final double? area;
+  final bool isClosed;
 
   const _StatsCard({
     required this.activityState,
     required this.elapsed,
     required this.pointCount,
     required this.lastAccuracy,
+    required this.distance,
+    required this.area,
+    required this.isClosed,
   });
 
   @override
-  State<_StatsCard> createState() => _StatsCardState();
-}
-
-class _StatsCardState extends State<_StatsCard> {
-  @override
   Widget build(BuildContext context) {
-    final title = switch (widget.activityState) {
+    final title = switch (activityState) {
       ActivityState.idle => 'Готов к записи',
-      ActivityState.recording =>
-        '🔴 Запись · ${_formatDuration(widget.elapsed)}',
+      ActivityState.recording => '🔴 Запись · ${_formatDuration(elapsed)}',
       ActivityState.stopped => '⏸ Остановлено',
     };
     return Container(
@@ -365,14 +429,36 @@ class _StatsCardState extends State<_StatsCard> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Точек: ${widget.pointCount}'
-            '${widget.lastAccuracy != null ? "  ·  ±${widget.lastAccuracy!.toStringAsFixed(1)}m" : ""}',
+            '${_formatDistance(distance)}  ·  $pointCount точек'
+            '${lastAccuracy != null ? "  ·  ±${lastAccuracy!.toStringAsFixed(1)}m" : ""}',
             style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
           ),
+          if (isClosed && area != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '🏆 Зона: ${_formatArea(area!)}',
+              style: const TextStyle(
+                color: Color(0xFF10B981),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+String _formatDistance(double m) {
+  if (m < 1000) return '${m.toStringAsFixed(0)} м';
+  return '${(m / 1000).toStringAsFixed(2)} км';
+}
+
+String _formatArea(double m2) {
+  if (m2 < 10000) return '${m2.toStringAsFixed(0)} м²';
+  if (m2 < 1000000) return '${(m2 / 10000).toStringAsFixed(2)} га';
+  return '${(m2 / 1000000).toStringAsFixed(3)} км²';
 }
 
 class _RecordingButton extends StatelessWidget {

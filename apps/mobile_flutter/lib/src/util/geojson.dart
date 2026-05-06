@@ -21,3 +21,26 @@ String pointsToLineStringJson(List<RawPoint> points) {
     },
   });
 }
+
+/// Преобразовать замкнутый трек в GeoJSON Polygon (как JSON-строку).
+/// Автоматически закрывает кольцо (первая = последняя), как требует GeoJSON.
+/// Возвращает пустую FeatureCollection если точек < 3.
+String pointsToPolygonJson(List<RawPoint> points) {
+  if (points.length < 3) {
+    return jsonEncode({'type': 'FeatureCollection', 'features': []});
+  }
+  final coords = points.map((p) => [p.longitude, p.latitude]).toList();
+  final first = coords.first;
+  final last = coords.last;
+  if (first[0] != last[0] || first[1] != last[1]) {
+    coords.add(first);
+  }
+  return jsonEncode({
+    'type': 'Feature',
+    'properties': <String, dynamic>{},
+    'geometry': {
+      'type': 'Polygon',
+      'coordinates': [coords],
+    },
+  });
+}
