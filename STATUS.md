@@ -4,9 +4,11 @@
 
 ## Текущая фаза
 
-**Phase 1 — Territory Core** (стартовала 2026-05-06)
+**Phase 1 — Territory Core** (стартовала 2026-05-06, code-level почти done)
 
 Phase 0 закрыта — выбран Expo React Native, см. [DECISION.md](DECISION.md). Flutter архивирован в `apps/mobile_flutter.archived/`.
+
+Phase 1: реализованы все P1-A..L подсекции на code-level (см. таблицу ниже). Acceptance остаются runtime-bound: P1-M field testing на 3 устройствах, NFR измерения батареи / FPS / background reliability. tsc clean, jest 73/73 passing, coverage 93% pipeline / 95%+ geo.
 
 ## Phase 1 progress
 
