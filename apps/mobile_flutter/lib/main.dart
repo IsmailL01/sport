@@ -99,6 +99,10 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
   void initState() {
     super.initState();
     _ensurePermission();
+    // Восстановить последнюю сессию из SQLite (после force-kill).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(activityProvider.notifier).recoverLast();
+    });
   }
 
   @override
@@ -256,12 +260,12 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
 
   Future<void> _handleStop() async {
     await locationAdapter.stop();
-    ref.read(activityProvider.notifier).stop();
+    await ref.read(activityProvider.notifier).stop();
   }
 
   Future<void> _handleReset() async {
     await locationAdapter.stop();
-    ref.read(activityProvider.notifier).reset();
+    await ref.read(activityProvider.notifier).reset();
   }
 
   @override

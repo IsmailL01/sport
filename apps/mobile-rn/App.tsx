@@ -99,6 +99,12 @@ function Inner() {
     };
   }, []);
 
+  // На старте приложения — попробовать восстановить последнюю сессию из SQLite
+  const recoverLast = useActivityStore((s) => s.recoverLast);
+  useEffect(() => {
+    recoverLast();
+  }, [recoverLast]);
+
   const tokenPreview = MAPBOX_ACCESS_TOKEN
     ? `${MAPBOX_ACCESS_TOKEN.slice(0, 12)}…${MAPBOX_ACCESS_TOKEN.slice(-6)} (length=${MAPBOX_ACCESS_TOKEN.length})`
     : '<empty>';
