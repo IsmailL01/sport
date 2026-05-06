@@ -26,8 +26,14 @@ export type MetricsBarProps = {
   pointCount: number;
   /** Точность последней принятой точки (м). */
   lastAccuracyM: number | null;
+  /** Точность последней raw-точки (даже если отброшена). Для диагностики GPS. */
+  lastRawAccuracyM: number | null;
+  /** Сколько raw-точек получено всего (до pipeline). */
+  rawCount: number;
   /** Сколько raw-точек отброшено фильтрами. */
   droppedCount: number;
+  /** Имя последнего фильтра, отбросившего точку. */
+  lastDropFilter: string | null;
   /** Площадь м², null если трек не замкнут. */
   areaM2: number | null;
   /** Опциональные warnings (например 'self-intersection'). */
@@ -68,12 +74,22 @@ export function MetricsBar(props: MetricsBarProps) {
       </View>
 
       <Text style={styles.subtitle}>
-        {props.pointCount} точек
-        {props.lastAccuracyM !== null && (
-          <Text>{`  ·  ±${props.lastAccuracyM.toFixed(1)}m`}</Text>
+        {`${props.pointCount}/${props.rawCount} точек`}
+        {props.lastRawAccuracyM !== null && (
+          <Text
+            style={
+              props.lastRawAccuracyM > 50
+                ? styles.warn
+                : props.lastRawAccuracyM > 20
+                  ? styles.warnSoft
+                  : undefined
+            }
+          >{`  ·  GPS ±${props.lastRawAccuracyM.toFixed(0)}m`}</Text>
         )}
         {props.droppedCount > 0 && (
-          <Text style={styles.warn}>{`  ·  отбр.: ${props.droppedCount}`}</Text>
+          <Text style={styles.warn}>
+            {`  ·  отбр.${props.lastDropFilter ? ` (${shortFilter(props.lastDropFilter)})` : ''}: ${props.droppedCount}`}
+          </Text>
         )}
       </Text>
 
@@ -88,6 +104,13 @@ export function MetricsBar(props: MetricsBarProps) {
       )}
     </View>
   );
+}
+
+function shortFilter(name: string): string {
+  return name
+    .replace('Filter', '')
+    .replace('Detector', '')
+    .toLowerCase();
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -113,6 +136,7 @@ const styles = StyleSheet.create({
   statValue: { color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginTop: 2 },
   subtitle: { color: '#94A3B8', fontSize: 12 },
   warn: { color: '#F59E0B' },
+  warnSoft: { color: '#FCD34D' },
   area: {
     color: '#10B981',
     fontSize: 14,

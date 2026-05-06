@@ -31,8 +31,14 @@ type ActivityStore = {
   sessionId: number | null;
   /** Сколько ещё точек в буфере не сохранено в БД (для отладки). */
   bufferedCount: number;
+  /** Всего raw-точек получено от LocationAdapter (до pipeline). */
+  rawCount: number;
   /** Сколько raw-точек прошло через pipeline и было отброшено фильтрами. */
   droppedCount: number;
+  /** Имя последнего фильтра, который отбросил точку (для диагностики). */
+  lastDropFilter: string | null;
+  /** Accuracy последнего raw-измерения (даже если точка отброшена). */
+  lastRawAccuracy: number | null;
   /** На паузе ли запись (auto-pause из PauseDetector). */
   isPaused: boolean;
   /** true когда трек впервые замкнулся (см. ClosureDetector). Сбрасывается при reset. */
@@ -48,10 +54,11 @@ type ActivityStore = {
   reset: () => void;
   recoverLast: () => void;
   /** Внутренние счётчики. */
-  incrementDropped: () => void;
+  incrementDropped: (filterName: string) => void;
   setPaused: (paused: boolean) => void;
   setClosureFired: () => void;
   setArea: (areaM2: number | null, warnings: AreaWarning[]) => void;
+  noteRaw: (accuracy: number | null) => void;
 };
 
 let buffer: Point[] = [];
@@ -76,7 +83,7 @@ const pipeline = createDefaultPipeline({
     if (__DEV__) {
       console.log(`[pipeline] dropped by ${event.filterName}`);
     }
-    useActivityStore.getState().incrementDropped();
+    useActivityStore.getState().incrementDropped(event.filterName);
   },
 });
 
@@ -117,6 +124,7 @@ function maybeRecomputeArea(): void {
 /**
  * Точка входа из LocationAdapter — вызывается на каждом raw-event.
  * Пропускает через pipeline, если принято — добавляет в state.
+ * Раw-метаданные (accuracy, raw count) сохраняем всегда — для UI-диагностики.
  */
 export function ingestRawPoint(raw: {
   timestamp: number;
@@ -127,6 +135,7 @@ export function ingestRawPoint(raw: {
   speed: number | null;
   heading: number | null;
 }): void {
+  useActivityStore.getState().noteRaw(raw.accuracy);
   const accepted = pipeline.process(raw);
   if (accepted === null) return;
   pauseDetector.observe(accepted);
@@ -140,7 +149,10 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   endedAt: null,
   sessionId: null,
   bufferedCount: 0,
+  rawCount: 0,
   droppedCount: 0,
+  lastDropFilter: null,
+  lastRawAccuracy: null,
   isPaused: false,
   closureFired: false,
   areaM2: null,
@@ -165,7 +177,10 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       endedAt: null,
       sessionId,
       bufferedCount: 0,
+      rawCount: 0,
       droppedCount: 0,
+      lastDropFilter: null,
+      lastRawAccuracy: null,
       isPaused: false,
       closureFired: false,
       areaM2: null,
@@ -253,7 +268,10 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       endedAt: null,
       sessionId: null,
       bufferedCount: 0,
+      rawCount: 0,
       droppedCount: 0,
+      lastDropFilter: null,
+      lastRawAccuracy: null,
       isPaused: false,
       closureFired: false,
       areaM2: null,
@@ -299,8 +317,11 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     });
   },
 
-  incrementDropped: () => set((s) => ({ droppedCount: s.droppedCount + 1 })),
+  incrementDropped: (filterName) =>
+    set((s) => ({ droppedCount: s.droppedCount + 1, lastDropFilter: filterName })),
   setPaused: (isPaused) => set({ isPaused }),
   setClosureFired: () => set({ closureFired: true }),
   setArea: (areaM2, areaWarnings) => set({ areaM2, areaWarnings }),
+  noteRaw: (accuracy) =>
+    set((s) => ({ rawCount: s.rawCount + 1, lastRawAccuracy: accuracy })),
 }));

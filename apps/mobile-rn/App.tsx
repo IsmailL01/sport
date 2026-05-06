@@ -226,6 +226,9 @@ function MapScreen() {
   const points = useActivityStore((s) => s.points);
   const startedAt = useActivityStore((s) => s.startedAt);
   const droppedCount = useActivityStore((s) => s.droppedCount);
+  const rawCount = useActivityStore((s) => s.rawCount);
+  const lastDropFilter = useActivityStore((s) => s.lastDropFilter);
+  const lastRawAccuracy = useActivityStore((s) => s.lastRawAccuracy);
   const isPaused = useActivityStore((s) => s.isPaused);
   const closureFired = useActivityStore((s) => s.closureFired);
   const areaM2 = useActivityStore((s) => s.areaM2);
@@ -366,7 +369,10 @@ function MapScreen() {
           currentSpeedMs={speedMs}
           pointCount={points.length}
           lastAccuracyM={lastPoint?.accuracy ?? null}
+          lastRawAccuracyM={lastRawAccuracy}
+          rawCount={rawCount}
           droppedCount={droppedCount}
+          lastDropFilter={lastDropFilter}
           areaM2={closureFired ? areaM2 : null}
           warnings={areaWarnings}
         />

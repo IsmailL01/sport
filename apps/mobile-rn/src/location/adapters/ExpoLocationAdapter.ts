@@ -52,7 +52,10 @@ export class ExpoLocationAdapter implements LocationAdapter {
     if (await this.isRunning()) return;
     await Location.startLocationUpdatesAsync(TASK_NAME, {
       accuracy: Location.Accuracy.BestForNavigation,
-      distanceInterval: 5,
+      // distanceInterval=0 → точки приходят по timeInterval (раз в секунду)
+      // независимо от смещения. Это критично на слабом GPS: при шуме <5м реальные
+      // движения могут "прятаться" под jitter, и точки бы не приходили вообще.
+      distanceInterval: 0,
       timeInterval: 1000,
       showsBackgroundLocationIndicator: true,
       foregroundService: {
