@@ -243,6 +243,11 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
   Future<void> _handleStart() async {
     final notifier = ref.read(activityProvider.notifier);
     notifier.start();
+    // Best effort — продолжаем даже если background permission не дали.
+    await locationAdapter.requestBackgroundPermission().catchError((e) {
+      debugPrint('[App] background permission request failed: $e');
+      return false;
+    });
     try {
       await locationAdapter.start((point) {
         ref.read(activityProvider.notifier).addPoint(point);
@@ -254,7 +259,7 @@ class _MapScreenState extends ConsumerState<_MapScreen> {
       });
     } catch (e, st) {
       debugPrint('[App] locationAdapter.start failed: $e\n$st');
-      notifier.stop();
+      await notifier.stop();
     }
   }
 

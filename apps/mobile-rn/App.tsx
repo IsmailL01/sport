@@ -149,32 +149,29 @@ function MapScreen() {
   const start = useActivityStore((s) => s.start);
   const stop = useActivityStore((s) => s.stop);
   const reset = useActivityStore((s) => s.reset);
-  const addPoint = useActivityStore((s) => s.addPoint);
 
   const handleStart = async () => {
     start();
+    // Best effort — продолжаем даже если background permission не дали (foreground only).
+    await locationAdapter.requestBackgroundPermission().catch((e) => {
+      console.warn('[App] background permission request failed', e);
+      return false;
+    });
     try {
-      await locationAdapter.start((point) => {
-        addPoint(point);
-        if (__DEV__) {
-          console.log(
-            `[location] ${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)} ±${point.accuracy?.toFixed(1) ?? '?'}m`,
-          );
-        }
-      });
+      await locationAdapter.start();
     } catch (e) {
       console.error('[App] locationAdapter.start failed', e);
       stop();
     }
   };
 
-  const handleStop = () => {
-    locationAdapter.stop();
+  const handleStop = async () => {
+    await locationAdapter.stop();
     stop();
   };
 
-  const handleReset = () => {
-    locationAdapter.stop();
+  const handleReset = async () => {
+    await locationAdapter.stop();
     reset();
   };
 
