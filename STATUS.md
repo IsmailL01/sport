@@ -19,21 +19,21 @@
 
 ### Прототип RN
 - [x] `P0-B-01` Bootstrap RN-проекта — Android build verified
-- [~] `P0-B-02` Карта Mapbox с user location — код готов и compile-зелёный (RN assembleDebug ✅); runtime acceptance ("карта показывает позицию, follows me") требует эмулятора/устройства
-- [ ] `P0-B-03` Запись точек GPS
-- [ ] `P0-B-04` Live полилиния на карте
-- [ ] `P0-B-05` Замыкание + площадь
-- [ ] `P0-B-06` Background location
-- [ ] `P0-B-07` SQLite persistence
+- [x] `P0-B-02` Карта Mapbox с user location — runtime подтверждён на планшете
+- [~] `P0-B-03` Запись точек GPS — код готов (compile ✅); runtime: пройти 100м → 15-25 точек
+- [~] `P0-B-04` Live полилиния — ShapeSource + LineLayer, обновление через update shape (compile ✅)
+- [~] `P0-B-05` Замыкание + площадь — shoelace + локальная проекция (ТЗ §6.6); FillLayer полигона (compile ✅)
+- [~] `P0-B-06` Background location — TaskManager + foregroundService notification (compile ✅); runtime тест T8
+- [~] `P0-B-07` SQLite persistence — таблица points, batch flush 10 точек, recoverLast при старте (compile ✅)
 
 ### Прототип Flutter
 - [x] `P0-C-01` Bootstrap Flutter-проекта — Android build verified
-- [~] `P0-C-02` Карта Mapbox с user location — код готов и compile-зелёный (Flutter build apk ✅, analyze ✅); runtime acceptance требует эмулятора/устройства
-- [ ] `P0-C-03` Запись точек GPS
-- [ ] `P0-C-04` Live полилиния
-- [ ] `P0-C-05` Замыкание + площадь
-- [ ] `P0-C-06` Background location
-- [ ] `P0-C-07` SQLite persistence
+- [x] `P0-C-02` Карта Mapbox с user location — runtime подтверждён на планшете
+- [~] `P0-C-03` Запись точек GPS — geolocator getPositionStream, riverpod NotifierProvider (compile ✅)
+- [~] `P0-C-04` Live полилиния — GeoJsonSource + LineLayer, обновление через setStyleSourceProperty (compile ✅)
+- [~] `P0-C-05` Замыкание + площадь — trackMetricsProvider + FillLayer (compile ✅)
+- [~] `P0-C-06` Background location — AndroidSettings/AppleSettings с background config (compile ✅)
+- [~] `P0-C-07` SQLite persistence — sqflite + path_provider, batch flush, recoverLast (compile ✅)
 
 ### Полевые тесты
 - [x] `P0-D-01` Тестовый протокол на бумаге — [tests/FIELD_PROTOCOL.md](tests/FIELD_PROTOCOL.md)
@@ -94,6 +94,37 @@
   - ✅ **Android build verified:** `flutter build apk --debug` → ✓ Built app-debug.apk 215MB, 251s. Mapbox Android SDK успешно скачан.
   - 🛠 По ходу build пришлось пофиксить manifest merger конфликт между нашим `<service>` и тем что добавляет плагин `flutter_background_service` — добавлен `xmlns:tools` + `tools:replace="android:foregroundServiceType"`
   - 🔄 TODO для запуска на iOS: установить **Xcode** или использовать Codemagic/Bitrise (cloud)
+
+### Sprints 1–5 — Phase 0 prototype features (P0-B/C-03..07)
+
+Чистая структура `src/` (домен, location, state, storage, util, ui) — идентична на обоих фреймворках, см. ТЗ §2.9.
+
+Реализованные фичи (compile-зелёные на обоих, runtime acceptance — требует полевой тест на устройстве):
+
+| Подсистема | RN | Flutter | Idiomatic API |
+|---|---|---|---|
+| Domain types | `src/domain/types.ts` | `lib/src/domain/types.dart` | `RawPoint`, `ActivityState`, `Session` |
+| Location | `expo-location` + `expo-task-manager` (background TaskManager) | `geolocator` + `AndroidSettings`/`AppleSettings` (foreground service notification) | `LocationAdapter.start/stop/requestBackgroundPermission` |
+| State | `zustand` store + buffer | `riverpod` `NotifierProvider` + buffer | start, stop, addPoint, reset, recoverLast |
+| Storage | `expo-sqlite` (sync API + WAL) | `sqflite` + `path_provider` | `appendPoints` (batch tx), `loadPointsForSession`, `getLastSessionId`, `deleteSession` |
+| Geo | `src/util/geo.ts` (Math.haversine, локальная проекция, shoelace) | `lib/src/util/geo.dart` (dart:math) | identical signatures |
+| GeoJSON | `pointsToLineString`, `pointsToPolygon` (auto-close ring) | `pointsToLineStringJson`, `pointsToPolygonJson` (через jsonEncode) | identical |
+| Map render | `<ShapeSource>` + `<LineLayer>` (track) + `<FillLayer>` (zone) | `GeoJsonSource` + `LineLayer` (track) + `FillLayer` (zone, под track-line через `LayerPosition.below`) | live update без пересоздания source (FR-024) |
+| UI | Stats card (state, время, дистанция, точки, accuracy, area), FAB Start/Stop/Reset | то же через `ConsumerWidget` + `StatelessWidget` | dark theme `#0F1419`, accent `#10B981` |
+
+Persistence flow:
+- На каждом Start: новая `session_id = Date.now()`, чистый buffer
+- На каждом 10-м point: batch INSERT в БД (transaction)
+- На Stop: force flush buffer
+- На Reset: DELETE WHERE session_id = ?
+- На app launch: SELECT MAX(session_id) → load points → state = `stopped` (показ предыдущей сессии)
+
+#### 🔄 Что осталось до закрытия Phase 0
+
+- **P0-D-02..04** (полевые тесты T1–T10 на iPhone / Pixel / китайском Android): требует физических устройств (`P0-A-04`).
+- **P0-D-05** (DECISION.md): после полевых тестов — заполнить decision matrix из ТЗ §2.6.
+- **iOS** прототипы: блокировано отсутствием Xcode.app.
+- **GitHub repo + push**: `gh` CLI не установлен.
 
 #### 🔄 Открытые TODO для пользователя (блокеры дальнейших задач)
 
