@@ -20,7 +20,7 @@ export function haversineDistance(a: RawPoint, b: RawPoint): number {
 }
 
 /** Накопительная дистанция по списку точек, в метрах. */
-export function totalDistance(points: RawPoint[]): number {
+export function totalDistance(points: readonly RawPoint[]): number {
   if (points.length < 2) return 0;
   let sum = 0;
   for (let i = 1; i < points.length; i += 1) {
@@ -30,7 +30,7 @@ export function totalDistance(points: RawPoint[]): number {
 }
 
 /** Замкнут ли трек: ТЗ §6.5 — длина >200м И dist(first,last) <20м. */
-export function isClosed(points: RawPoint[], totalDistanceM?: number): boolean {
+export function isClosed(points: readonly RawPoint[], totalDistanceM?: number): boolean {
   if (points.length < 3) return false;
   const dist = totalDistanceM ?? totalDistance(points);
   if (dist < 200) return false;
@@ -42,7 +42,7 @@ export function isClosed(points: RawPoint[], totalDistanceM?: number): boolean {
  * Возвращает {x, y} в метрах. Применима для треков диаметром до ~10 км
  * с погрешностью <1%.
  */
-export function localProjection(points: RawPoint[]): { x: number; y: number }[] {
+export function localProjection(points: readonly RawPoint[]): { x: number; y: number }[] {
   if (points.length === 0) return [];
   const lat0 =
     points.reduce((acc, p) => acc + p.latitude, 0) / points.length;
@@ -59,7 +59,7 @@ export function localProjection(points: RawPoint[]): { x: number; y: number }[] 
  * Shoelace area для последовательности точек в локальной плоскости (м).
  * Возвращает площадь со знаком (negative — clockwise). Для UI используйте abs.
  */
-export function shoelaceArea(xy: { x: number; y: number }[]): number {
+export function shoelaceArea(xy: readonly { x: number; y: number }[]): number {
   if (xy.length < 3) return 0;
   let s = 0;
   for (let i = 0; i < xy.length; i += 1) {
@@ -73,7 +73,7 @@ export function shoelaceArea(xy: { x: number; y: number }[]): number {
  * Площадь замкнутого трека в м². Возвращает null если points < 3.
  * Формула: проекция → shoelace → abs.
  */
-export function computeArea(points: RawPoint[]): number | null {
+export function computeArea(points: readonly RawPoint[]): number | null {
   if (points.length < 3) return null;
   const xy = localProjection(points);
   return Math.abs(shoelaceArea(xy));
