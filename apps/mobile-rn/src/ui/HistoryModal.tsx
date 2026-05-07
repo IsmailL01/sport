@@ -15,6 +15,7 @@ import {
 import type { Session } from '../domain/types';
 import { useHistoryStore } from '../state/history';
 import { formatArea, formatDistance } from './format';
+import { ManualEntryModal } from './ManualEntryModal';
 import { SessionDetailModal } from './SessionDetailModal';
 
 export type HistoryModalProps = {
@@ -28,6 +29,7 @@ export function HistoryModal({ visible, onClose }: HistoryModalProps) {
   const refresh = useHistoryStore((s) => s.refresh);
   const delete_ = useHistoryStore((s) => s.delete);
   const [detailSession, setDetailSession] = useState<Session | null>(null);
+  const [manualVisible, setManualVisible] = useState(false);
 
   useEffect(() => {
     if (visible) refresh();
@@ -58,6 +60,9 @@ export function HistoryModal({ visible, onClose }: HistoryModalProps) {
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>История</Text>
+          <Pressable onPress={() => setManualVisible(true)} style={styles.addBtn}>
+            <Text style={styles.addBtnText}>+ вручную</Text>
+          </Pressable>
           <Pressable onPress={onClose} style={styles.closeBtn}>
             <Text style={styles.closeText}>✕</Text>
           </Pressable>
@@ -84,6 +89,10 @@ export function HistoryModal({ visible, onClose }: HistoryModalProps) {
       <SessionDetailModal
         session={detailSession}
         onClose={() => setDetailSession(null)}
+      />
+      <ManualEntryModal
+        visible={manualVisible}
+        onClose={() => setManualVisible(false)}
       />
     </Modal>
   );
@@ -162,6 +171,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   closeText: { color: '#94A3B8', fontSize: 18 },
+  addBtn: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  addBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   empty: { color: '#64748B', fontSize: 14, textAlign: 'center', padding: 32 },
   list: { padding: 16, gap: 12 },
   row: {

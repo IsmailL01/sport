@@ -127,3 +127,33 @@ export function deleteSession(id: number): void {
     db.runSync(`DELETE FROM sessions WHERE id = ?;`, [id]);
   });
 }
+
+/**
+ * Создать manual session — пользователь записывает вручную (без GPS).
+ * Phase 6.5 / extra. Без точек, без замыкания, без area.
+ */
+export function createManualSession(input: {
+  startedAt: number;
+  endedAt: number;
+  distanceM: number;
+  avgHrBpm: number | null;
+  note: string | null;
+}): number {
+  const db = getDatabase();
+  const id = input.startedAt;
+  db.runSync(
+    `INSERT OR REPLACE INTO sessions
+     (id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note, avg_hr_bpm, max_hr_bpm)
+     VALUES (?, ?, ?, 0, ?, NULL, NULL, ?, ?, ?);`,
+    [
+      id,
+      input.startedAt,
+      input.endedAt,
+      input.distanceM,
+      input.note,
+      input.avgHrBpm,
+      input.avgHrBpm,
+    ],
+  );
+  return id;
+}
