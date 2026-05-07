@@ -43,6 +43,11 @@ import { ProfileModal } from './src/ui/ProfileModal';
 import { SensorsModal } from './src/ui/SensorsModal';
 import { StatsModal } from './src/ui/StatsModal';
 import { TrainingModal } from './src/ui/TrainingModal';
+import { WorkoutPlayer } from './src/ui/WorkoutPlayer';
+import {
+  attachWorkoutPlayerToActivity,
+  useWorkoutPlayerStore,
+} from './src/state/workoutPlayer';
 import { useSensorsStore } from './src/state/sensors';
 import { totalDistance } from './src/util/geo';
 
@@ -277,6 +282,14 @@ function MapScreen() {
   const [profileVisible, setProfileVisible] = useState(false);
   const [sensorsVisible, setSensorsVisible] = useState(false);
   const [trainingVisible, setTrainingVisible] = useState(false);
+  const [workoutPlayerVisible, setWorkoutPlayerVisible] = useState(false);
+  const activeWorkout = useWorkoutPlayerStore((s) => s.workout);
+  // Подцепить worker, который слушает activityStore и тикает workout session.
+  useEffect(() => {
+    if (activeWorkout === null) return;
+    const unsub = attachWorkoutPlayerToActivity();
+    return () => unsub();
+  }, [activeWorkout]);
   const liveHrBpm = useSensorsStore((s) => s.liveHrBpm);
   const sensorStatus = useSensorsStore((s) => s.status);
   const hydrateSensors = useSensorsStore((s) => s.hydrate);
@@ -426,6 +439,14 @@ function MapScreen() {
         <Pressable style={styles.historyBtn} onPress={() => setTrainingVisible(true)}>
           <Text style={styles.historyBtnText}>🏋 Тренировки</Text>
         </Pressable>
+        {activeWorkout !== null && (
+          <Pressable
+            style={[styles.historyBtn, styles.historyBtnAccent]}
+            onPress={() => setWorkoutPlayerVisible(true)}
+          >
+            <Text style={styles.historyBtnText}>▶ {activeWorkout.name}</Text>
+          </Pressable>
+        )}
         <Pressable style={styles.historyBtn} onPress={() => setHistoryVisible(true)}>
           <Text style={styles.historyBtnText}>История</Text>
         </Pressable>
@@ -453,7 +474,15 @@ function MapScreen() {
       <StatsModal visible={statsVisible} onClose={() => setStatsVisible(false)} />
       <ProfileModal visible={profileVisible} onClose={() => setProfileVisible(false)} />
       <SensorsModal visible={sensorsVisible} onClose={() => setSensorsVisible(false)} />
-      <TrainingModal visible={trainingVisible} onClose={() => setTrainingVisible(false)} />
+      <TrainingModal
+        visible={trainingVisible}
+        onClose={() => setTrainingVisible(false)}
+        onStartWorkout={() => setWorkoutPlayerVisible(true)}
+      />
+      <WorkoutPlayer
+        visible={workoutPlayerVisible}
+        onClose={() => setWorkoutPlayerVisible(false)}
+      />
 
       <View style={styles.topOverlay} pointerEvents="none">
         <MetricsBar
@@ -572,6 +601,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
+  },
+  historyBtnAccent: {
+    backgroundColor: 'rgba(16, 185, 129, 0.92)',
   },
   historyBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
   errorContainer: {

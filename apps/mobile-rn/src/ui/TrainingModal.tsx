@@ -23,12 +23,15 @@ import {
 import { WORKOUT_LIBRARY, workoutTotalDurationS } from '../domain/training/workout';
 import { useHistoryStore } from '../state/history';
 import { useTrainingStore } from '../state/training';
+import { useWorkoutPlayerStore } from '../state/workoutPlayer';
 import { BarChart } from './charts/BarChart';
 import { formatDistance, formatDuration, formatPace } from './format';
 
 export type TrainingModalProps = {
   visible: boolean;
   onClose: () => void;
+  /** Открыть workout player после выбора workout-а. */
+  onStartWorkout?: () => void;
 };
 
 type Tab = 'pmc' | 'race' | 'workouts';
@@ -39,10 +42,11 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'workouts', label: 'Тренировки' },
 ];
 
-export function TrainingModal({ visible, onClose }: TrainingModalProps) {
+export function TrainingModal({ visible, onClose, onStartWorkout }: TrainingModalProps) {
   const [tab, setTab] = useState<Tab>('pmc');
   const refreshHistory = useHistoryStore((s) => s.refresh);
   const recompute = useTrainingStore((s) => s.recompute);
+  const startPlayer = useWorkoutPlayerStore((s) => s.start);
 
   useEffect(() => {
     if (visible) {
@@ -50,6 +54,14 @@ export function TrainingModal({ visible, onClose }: TrainingModalProps) {
       recompute();
     }
   }, [visible, refreshHistory, recompute]);
+
+  const handleStartWorkout = (workoutId: string) => {
+    const w = WORKOUT_LIBRARY.find((x) => x.id === workoutId);
+    if (!w) return;
+    startPlayer(w);
+    onClose();
+    onStartWorkout?.();
+  };
 
   return (
     <Modal
@@ -82,7 +94,7 @@ export function TrainingModal({ visible, onClose }: TrainingModalProps) {
 
         {tab === 'pmc' && <PmcTab />}
         {tab === 'race' && <RaceTab />}
-        {tab === 'workouts' && <WorkoutsTab />}
+        {tab === 'workouts' && <WorkoutsTab onStart={handleStartWorkout} />}
       </View>
     </Modal>
   );
@@ -247,7 +259,7 @@ function RaceTab() {
   );
 }
 
-function WorkoutsTab() {
+function WorkoutsTab({ onStart }: { onStart: (id: string) => void }) {
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       {WORKOUT_LIBRARY.map((w) => (
@@ -266,10 +278,15 @@ function WorkoutsTab() {
             {' · '}
             {w.steps.length} шаг{w.steps.length === 1 ? '' : 'а'}
           </Text>
+          <Pressable style={styles.workoutStartBtn} onPress={() => onStart(w.id)}>
+            <Text style={styles.workoutStartText}>▶ Запустить</Text>
+          </Pressable>
         </View>
       ))}
       <Text style={styles.cardSubtitle}>
-        Workout-плеер с голосовыми командами — Phase 6.5.
+        Запуск открывает плеер с прогрессом по шагам и голосовыми подсказками.
+        Начни запись пробежки (START на главном экране) до старта тренировки —
+        тогда плеер будет привязан к реальной дистанции.
       </Text>
     </ScrollView>
   );
@@ -384,4 +401,12 @@ const styles = StyleSheet.create({
   },
   workoutDesc: { color: '#94A3B8', fontSize: 12 },
   workoutMeta: { color: '#64748B', fontSize: 11, marginTop: 2 },
+  workoutStartBtn: {
+    backgroundColor: '#10B981',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  workoutStartText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
 });

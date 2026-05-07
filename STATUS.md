@@ -8,7 +8,7 @@
 
 Phase 0 закрыта — выбран Expo React Native, см. [DECISION.md](DECISION.md). Flutter архивирован в `apps/mobile_flutter.archived/`.
 
-Phase 1–5 закрыты на code-level. Phase 6 / P6-A: TSS (HR + rTSS), Banister PMC (CTL/ATL/TSB), Race predictor (Riegel + Cameron), VO2max (Cooper + Daniels), LTHR estimator, Workout data model + library из 4 классических тренировок, TrainingModal UI с 3 табами (PMC + Прогноз + Тренировки). tsc clean, jest 146/146 passing.
+Phase 1–5 закрыты на code-level. Phase 6 / P6-A code-level done: TSS (HR + rTSS), Banister PMC (CTL/ATL/TSB), Race predictor (Riegel + Cameron), VO2max (Cooper + Daniels), LTHR estimator, Workout data model + library из 4 классических тренировок, TrainingModal UI с 3 табами + Workout Player (live step tracking + GPS/time/distance auto-advance + voice cues через speech adapter interface). tsc clean, jest 162/162 passing.
 
 ## Phase 1 progress
 
@@ -199,14 +199,25 @@ Persistence flow:
 
 **Тесты:** 146/146 passing (10 suites). tsc clean. ESLint config поломан после миграции на v9 (отдельная задача — `.eslintrc.json` нужно мигрировать на flat config), но функционально не критично.
 
-**App.tsx интеграция:** добавлена кнопка `🏋 Тренировки` в правую колонку (между Статистикой и Историей), монтаж `<TrainingModal>` рядом с другими модалами.
+**App.tsx интеграция:** добавлена кнопка `🏋 Тренировки` в правую колонку (между Статистикой и Историей), монтаж `<TrainingModal>` + `<WorkoutPlayer>` рядом с другими модалами. Когда workout активен — в правой колонке появляется зелёная кнопка с именем активной тренировки для возврата в плеер.
 
-**Что НЕ входит в P6-A** (отложено на Phase 6.5):
-- Workout player (live tracking шагов с GPS-привязкой и голосовыми командами)
+**P6-A-09 Workout Player** добавлен в этот же day:
+
+| Файл | Что внутри |
+|---|---|
+| `src/domain/training/workoutSession.ts` | Pure state machine: `tickWorkout(state, workout, deltaS, deltaM)` авто-продвигает по шагам и repeats[], emit events (step-start/half/end/workout-complete); `skipStep` для ручного skip; `stepProgress` 0..1; `eventToVoiceText` локализованные строки для TTS |
+| `src/state/workoutPlayer.ts` | zustand store + `attachWorkoutPlayerToActivity()` подписка на activityStore: на каждое изменение points вычисляется delta(time, distance) → `tickWorkout` → events → `speak()` |
+| `src/util/speech.ts` | `SpeechAdapter` interface + noop default; expo-speech impl можно добавить через `setSpeechAdapter` без изменений в core |
+| `src/ui/WorkoutPlayer.tsx` | Fullscreen modal: текущий шаг с прогрессбаром, target HR/pace/RPE с цветовой индикацией in-zone/out, секундомер шага, превью следующего, список всех шагов с галочками, SKIP/STOP кнопки, экран completion |
+| `src/__tests__/workoutSession.test.ts` | 16 тестов state machine: time/distance progression, repeats, overshoot transfer, half-event, open-ended, skipStep, eventToVoiceText |
+
+**Что НЕ входит в P6-A** (отложено):
+- Real expo-speech voice TTS (сейчас noop по умолчанию — добавить нативный adapter и dep `expo-speech` тривиально, но нужен runtime test на устройстве)
 - Real LTHR test wizard (30-минутный all-out)
-- Реальный avgHr на сессию из sensor_readings (сейчас TODO в `state/training.ts` — данных пока нет)
+- Реальный avgHr на сессию из sensor_readings (сейчас TODO в `state/training.ts` — Phase 5 хранит live HR, но не аггрегацию)
 - ZRH (zone-based race predictor)
 - Адаптивный план тренировок (нужна модель fitness-prediction)
+- Backend Training Engine service (`P6-A-01`) — отложено до появления реального data inflow
 
 ## Заметки
 
