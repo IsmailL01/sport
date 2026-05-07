@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: re_postgres
+    environment:
+      POSTGRES_USER: re
+      POSTGRES_PASSWORD: re_dev
+      POSTGRES_DB: running_ecosystem
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "re"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
