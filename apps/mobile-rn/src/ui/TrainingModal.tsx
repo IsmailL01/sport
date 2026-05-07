@@ -21,7 +21,14 @@ import {
   type StandardDistanceId,
 } from '../domain/training/racePredictor';
 import { WORKOUT_LIBRARY, workoutTotalDurationS } from '../domain/training/workout';
+import {
+  generateWeeklyPlan,
+  recommendToday,
+  startOfWeekLocal,
+  type WorkoutType,
+} from '../domain/training/planGenerator';
 import { useHistoryStore } from '../state/history';
+import { useSettingsStore } from '../state/settings';
 import { useTrainingStore } from '../state/training';
 import { useWorkoutPlayerStore } from '../state/workoutPlayer';
 import { BarChart } from './charts/BarChart';
@@ -34,16 +41,17 @@ export type TrainingModalProps = {
   onStartWorkout?: () => void;
 };
 
-type Tab = 'pmc' | 'race' | 'workouts';
+type Tab = 'plan' | 'pmc' | 'race' | 'workouts';
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'plan', label: 'План' },
   { id: 'pmc', label: 'PMC' },
   { id: 'race', label: 'Прогноз' },
   { id: 'workouts', label: 'Тренировки' },
 ];
 
 export function TrainingModal({ visible, onClose, onStartWorkout }: TrainingModalProps) {
-  const [tab, setTab] = useState<Tab>('pmc');
+  const [tab, setTab] = useState<Tab>('plan');
   const refreshHistory = useHistoryStore((s) => s.refresh);
   const recompute = useTrainingStore((s) => s.recompute);
   const startPlayer = useWorkoutPlayerStore((s) => s.start);
@@ -92,12 +100,122 @@ export function TrainingModal({ visible, onClose, onStartWorkout }: TrainingModa
           ))}
         </View>
 
+        {tab === 'plan' && <PlanTab onStart={handleStartWorkout} />}
         {tab === 'pmc' && <PmcTab />}
         {tab === 'race' && <RaceTab />}
         {tab === 'workouts' && <WorkoutsTab onStart={handleStartWorkout} />}
       </View>
     </Modal>
   );
+}
+
+function PlanTab({ onStart }: { onStart: (id: string) => void }) {
+  const pmc = useTrainingStore((s) => s.pmc);
+  const goals = useSettingsStore((s) => s.goals);
+
+  const today = new Date();
+  const dayOfWeek = (today.getDay() + 6) % 7; // JS: Sun=0, Mon=1; нам надо Mon=0
+  const weekStart = startOfWeekLocal(today);
+
+  // Сколько TSS набрали за эту неделю до сегодня.
+  const sessionsWithTSS = useTrainingStore((s) => s.sessionsWithTSS);
+  const weeklyTssSoFar = sessionsWithTSS
+    .filter((s) => s.startedAt >= weekStart && s.startedAt < weekStart + dayOfWeek * 86_400_000)
+    .reduce((sum, s) => sum + (s.tss ?? 0), 0);
+
+  const todayRec = recommendToday({
+    pmc,
+    weeklyDistanceKmGoal: goals.weeklyDistanceKm,
+    dayOfWeek,
+    weeklyTssSoFar,
+  });
+
+  const plan = generateWeeklyPlan({
+    pmc,
+    weeklyDistanceKmGoal: goals.weeklyDistanceKm,
+    weekStart,
+  });
+
+  return (
+    <ScrollView contentContainerStyle={styles.scroll}>
+      <View style={styles.planTodayCard}>
+        <Text style={styles.planTodayLabel}>СЕГОДНЯ</Text>
+        <Text style={styles.planTodayType}>{labelWorkoutType(todayRec.workoutType)}</Text>
+        {todayRec.targetTss > 0 && (
+          <Text style={styles.planTodayTss}>Цель ~{todayRec.targetTss} TSS</Text>
+        )}
+        <Text style={styles.planTodayRationale}>{todayRec.rationale}</Text>
+        {todayRec.suggestedWorkout !== null && (
+          <Pressable
+            style={styles.planStartBtn}
+            onPress={() => onStart(todayRec.suggestedWorkout!.id)}
+          >
+            <Text style={styles.planStartBtnText}>
+              ▶ {todayRec.suggestedWorkout.name}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={styles.planWeekCard}>
+        <View style={styles.planWeekHeader}>
+          <Text style={styles.cardTitle}>Эта неделя</Text>
+          <Text style={styles.planWeekTotal}>≈ {plan.totalTargetTss} TSS</Text>
+        </View>
+
+        {plan.days.map((day) => {
+          const isToday = day.dayOfWeek === dayOfWeek;
+          return (
+            <View
+              key={day.dayOfWeek}
+              style={[styles.planDayRow, isToday && styles.planDayRowToday]}
+            >
+              <Text style={styles.planDayName}>{labelDayOfWeek(day.dayOfWeek)}</Text>
+              <View style={styles.planDayBody}>
+                <Text style={styles.planDayType}>
+                  {labelWorkoutType(day.recommendation.workoutType)}
+                </Text>
+                {day.recommendation.targetTss > 0 && (
+                  <Text style={styles.planDayTss}>{day.recommendation.targetTss} TSS</Text>
+                )}
+              </View>
+              {day.recommendation.suggestedWorkout !== null ? (
+                <Pressable
+                  hitSlop={6}
+                  onPress={() => onStart(day.recommendation.suggestedWorkout!.id)}
+                  style={styles.planDayPlay}
+                >
+                  <Text style={styles.planDayPlayText}>▶</Text>
+                </Pressable>
+              ) : (
+                <View style={styles.planDayPlay} />
+              )}
+            </View>
+          );
+        })}
+      </View>
+
+      <Text style={styles.cardSubtitle}>
+        План пересчитывается ежедневно. Если форма меняется (TSB) — recommendations
+        корректируются автоматически. Прогресс по неделе — на главном экране.
+      </Text>
+    </ScrollView>
+  );
+}
+
+function labelWorkoutType(t: WorkoutType): string {
+  switch (t) {
+    case 'rest': return 'Отдых';
+    case 'easy': return 'Лёгкий бег';
+    case 'long': return 'Длительный';
+    case 'tempo': return 'Темповой';
+    case 'interval': return 'Интервалы';
+    case 'race_pace': return 'Соревн. темп';
+  }
+}
+
+function labelDayOfWeek(d: number): string {
+  return ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'][d] ?? '';
 }
 
 function PmcTab() {
@@ -409,4 +527,70 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   workoutStartText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
+
+  // Plan tab — neutral styling. Дизайн будет переделан позже.
+  planTodayCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  planTodayLabel: { color: '#94A3B8', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  planTodayType: { color: '#FFFFFF', fontSize: 22, fontWeight: '700', marginTop: 4 },
+  planTodayTss: { color: '#94A3B8', fontSize: 13, marginTop: 2 },
+  planTodayRationale: { color: '#CBD5E1', fontSize: 13, marginTop: 8, lineHeight: 18 },
+  planStartBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+  },
+  planStartBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
+
+  planWeekCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  planWeekHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingBottom: 8,
+    marginBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#334155',
+  },
+  planWeekTotal: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
+  planDayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 12,
+  },
+  planDayRowToday: {
+    backgroundColor: '#0F1419',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+  },
+  planDayName: { color: '#94A3B8', fontSize: 12, fontWeight: '700', width: 28 },
+  planDayBody: { flex: 1 },
+  planDayType: { color: '#FFFFFF', fontSize: 14, fontWeight: '500' },
+  planDayTss: { color: '#64748B', fontSize: 11, marginTop: 1 },
+  planDayPlay: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  planDayPlayText: { color: '#94A3B8', fontSize: 14, marginTop: -2 },
 });
