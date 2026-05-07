@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 3;
+const TARGET_VERSION = 4;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -12,6 +12,7 @@ let _db: SQLite.SQLiteDatabase | null = null;
  * - v1: только таблица `points` (Phase 0 / P0-B-07).
  * - v2: + таблица `sessions` с метаданными (Phase 1 / P1-A-07, ТЗ §4.5).
  * - v3: + колонка `source` в points (raw/kalman/interpolated) для трассировки pipeline.
+ * - v4: + колонки `synced_at` и `server_id` в sessions для outbox-sync (Phase 2 / P2-B-04).
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
@@ -75,6 +76,25 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       db.execSync(`ALTER TABLE points ADD COLUMN source TEXT;`);
     }
     current = 3;
+  }
+
+  if (current < 4) {
+    const sessCols = db.getAllSync<{ name: string }>(
+      `PRAGMA table_info(sessions);`,
+    );
+    if (!sessCols.some((c) => c.name === 'synced_at')) {
+      db.execSync(`ALTER TABLE sessions ADD COLUMN synced_at INTEGER;`);
+    }
+    if (!sessCols.some((c) => c.name === 'server_id')) {
+      db.execSync(`ALTER TABLE sessions ADD COLUMN server_id TEXT;`);
+    }
+    if (!sessCols.some((c) => c.name === 'updated_at')) {
+      db.execSync(`ALTER TABLE sessions ADD COLUMN updated_at INTEGER;`);
+    }
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_sessions_pending_sync ON sessions (synced_at);`,
+    );
+    current = 4;
   }
 
   if (current !== TARGET_VERSION) {

@@ -30,10 +30,13 @@ import {
 } from './src/map';
 import { locationAdapter } from './src/location';
 import { useActivityStore } from './src/state/activity';
+import { useAuthStore } from './src/state/auth';
 import { useHistoryStore } from './src/state/history';
 import { useSettingsStore } from './src/state/settings';
+import { useSyncStore } from './src/state/sync';
 import { currentSpeed } from './src/domain/metrics';
 import { HistoryTerritoryLayer } from './src/map';
+import { AuthScreen } from './src/ui/AuthScreen';
 import { HistoryModal } from './src/ui/HistoryModal';
 import { MetricsBar } from './src/ui/MetricsBar';
 import { totalDistance } from './src/util/geo';
@@ -82,11 +85,20 @@ export default function App() {
 }
 
 function Inner() {
+  const authState = useAuthStore((s) => s.state);
+  const hydrate = useAuthStore((s) => s.hydrate);
+
+  // На старте — попытаться авто-логин по сохранённым токенам.
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
   const [permissionStatus, setPermissionStatus] =
     useState<PermissionStatus>('pending');
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authState !== 'authenticated') return;
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
@@ -96,7 +108,7 @@ function Inner() {
         setPermissionStatus('denied');
       }
     })();
-  }, []);
+  }, [authState]);
 
   // Cleanup на unmount: гарантируем что подписка location снимается
   useEffect(() => {
@@ -145,6 +157,18 @@ function Inner() {
         message={`EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN не задан в bundle. token=${tokenPreview}`}
       />
     );
+  }
+  // Auth gate — пока auth state не resolved, показываем сплеш / AuthScreen.
+  if (authState === 'idle' || authState === 'hydrating') {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.statText}>Загружаем сессию…</Text>
+        <StatusBar style="light" />
+      </View>
+    );
+  }
+  if (authState === 'unauthenticated' || authState === 'authenticating') {
+    return <AuthScreen />;
   }
   if (permissionStatus === 'pending') {
     return (
@@ -239,6 +263,10 @@ function MapScreen() {
   const closedSessionsPoints = useHistoryStore((s) => s.closedSessionsPoints);
   const refreshHistory = useHistoryStore((s) => s.refresh);
   const loadAllPoints = useHistoryStore((s) => s.loadAllPoints);
+  const syncStatus = useSyncStore((s) => s.status);
+  const lastSyncAt = useSyncStore((s) => s.lastSyncAt);
+  const triggerSync = useSyncStore((s) => s.trigger);
+  const logout = useAuthStore((s) => s.logout);
   const [historyVisible, setHistoryVisible] = useState(false);
 
   // На старте экрана — загрузить список + точки всех закрытых сессий
@@ -299,11 +327,36 @@ function MapScreen() {
           onPress: async () => {
             await locationAdapter.stop();
             stop();
+            // Авто-sync новой сессии после Save (fire-and-forget).
+            triggerSync().catch((e) => console.warn('[App] sync after stop failed', e));
           },
         },
       ],
     );
   };
+
+  const handleLogout = () => {
+    Alert.alert('Выйти из аккаунта?', '', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Выйти',
+        style: 'destructive',
+        onPress: () => {
+          logout().catch((e) => console.warn('[App] logout failed', e));
+        },
+      },
+    ]);
+  };
+
+  const syncBadge = (() => {
+    if (syncStatus === 'syncing') return '⏳ синхронизация…';
+    if (syncStatus === 'error') return '⚠ sync error';
+    if (lastSyncAt === null) return '⤴ ещё не синхронизировано';
+    const dt = Date.now() - lastSyncAt;
+    if (dt < 60_000) return '✓ только что';
+    if (dt < 3_600_000) return `✓ ${Math.floor(dt / 60_000)} мин назад`;
+    return `✓ ${Math.floor(dt / 3_600_000)} ч назад`;
+  })();
 
   const handleReset = async () => {
     await locationAdapter.stop();
@@ -351,12 +404,21 @@ function MapScreen() {
         {closureFired && <ZoneLayer points={points} />}
       </MapboxView>
 
-      <Pressable
-        style={styles.historyBtn}
-        onPress={() => setHistoryVisible(true)}
-      >
-        <Text style={styles.historyBtnText}>История</Text>
-      </Pressable>
+      <View style={styles.topRightCol}>
+        <Pressable style={styles.historyBtn} onPress={() => setHistoryVisible(true)}>
+          <Text style={styles.historyBtnText}>История</Text>
+        </Pressable>
+        <Pressable
+          style={styles.historyBtn}
+          onPress={() => triggerSync().catch(() => {})}
+          disabled={syncStatus === 'syncing'}
+        >
+          <Text style={styles.historyBtnText}>{syncBadge}</Text>
+        </Pressable>
+        <Pressable style={styles.historyBtn} onPress={handleLogout}>
+          <Text style={styles.historyBtnText}>Выйти</Text>
+        </Pressable>
+      </View>
 
       <HistoryModal visible={historyVisible} onClose={() => setHistoryVisible(false)} />
 
@@ -464,16 +526,20 @@ const styles = StyleSheet.create({
   fabSmall: { paddingHorizontal: 20, paddingVertical: 14, minWidth: 120 },
   fabText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
   bottomRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16 },
-  historyBtn: {
+  topRightCol: {
     position: 'absolute',
     top: 56,
     right: 16,
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  historyBtn: {
     backgroundColor: 'rgba(15, 20, 25, 0.85)',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
   },
-  historyBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
+  historyBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
   errorContainer: {
     flexGrow: 1,
     backgroundColor: '#0F1419',

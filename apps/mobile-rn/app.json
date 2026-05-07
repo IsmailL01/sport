@@ -8,7 +8,10 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -20,7 +23,11 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Нужно для трекинга пробежки и отображения вашей позиции на карте.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Нужно для трекинга пробежки в фоне, когда телефон в кармане или экран выключен.",
-        "UIBackgroundModes": ["location", "fetch", "processing"]
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "processing"
+        ]
       }
     },
     "android": {
@@ -58,7 +65,8 @@
         {
           "RNMapboxMapsImpl": "mapbox"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {
