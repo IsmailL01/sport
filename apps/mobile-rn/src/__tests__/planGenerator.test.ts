@@ -1,7 +1,9 @@
 import {
   generateWeeklyPlan,
+  isDayCompleted,
   recommendToday,
   startOfWeekLocal,
+  tssByDayOfWeek,
 } from '../domain/training/planGenerator';
 import type { PMCPoint } from '../domain/training/banister';
 
@@ -164,6 +166,66 @@ describe('generateWeeklyPlan', () => {
     });
     expect(plan.totalTargetTss).toBe(0);
     expect(plan.days).toHaveLength(7);
+  });
+});
+
+describe('tssByDayOfWeek', () => {
+  it('пустые сессии → [0,0,0,0,0,0,0]', () => {
+    expect(tssByDayOfWeek([], 1_700_000_000_000)).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('бакетит сессии по дню недели', () => {
+    const weekStart = 1_700_000_000_000;
+    const day = 86_400_000;
+    const sessions = [
+      { startedAt: weekStart + 0.5 * day, tss: 50 },        // Mon
+      { startedAt: weekStart + 1.2 * day, tss: 40 },        // Tue
+      { startedAt: weekStart + 1.8 * day, tss: 20 },        // Tue (вторая)
+      { startedAt: weekStart + 5.5 * day, tss: 100 },       // Sat
+    ];
+    const result = tssByDayOfWeek(sessions, weekStart);
+    expect(result[0]).toBe(50);
+    expect(result[1]).toBe(60);
+    expect(result[5]).toBe(100);
+  });
+
+  it('игнорирует сессии вне недели', () => {
+    const weekStart = 1_700_000_000_000;
+    const sessions = [
+      { startedAt: weekStart - 1, tss: 50 },                          // прошлая
+      { startedAt: weekStart + 7 * 86_400_000, tss: 50 },             // следующая
+      { startedAt: weekStart + 3 * 86_400_000, tss: 30 },             // в этой
+    ];
+    const result = tssByDayOfWeek(sessions, weekStart);
+    expect(result.reduce((a, b) => a + b, 0)).toBe(30);
+  });
+
+  it('null TSS считается как 0', () => {
+    const weekStart = 1_700_000_000_000;
+    const sessions = [{ startedAt: weekStart + 1000, tss: null }];
+    expect(tssByDayOfWeek(sessions, weekStart)).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+});
+
+describe('isDayCompleted', () => {
+  it('rest-день без бега → выполнен', () => {
+    expect(isDayCompleted(0, 0)).toBe(true);
+    expect(isDayCompleted(0, 25)).toBe(true);
+  });
+
+  it('rest-день с большим TSS → не выполнен (нарушил план)', () => {
+    expect(isDayCompleted(0, 50)).toBe(false);
+  });
+
+  it('actual ≥ 70% target → выполнен', () => {
+    expect(isDayCompleted(100, 70)).toBe(true);
+    expect(isDayCompleted(100, 100)).toBe(true);
+    expect(isDayCompleted(100, 150)).toBe(true);
+  });
+
+  it('actual < 70% target → не выполнен', () => {
+    expect(isDayCompleted(100, 69)).toBe(false);
+    expect(isDayCompleted(100, 0)).toBe(false);
   });
 });
 

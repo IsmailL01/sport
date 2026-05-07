@@ -23,8 +23,10 @@ import {
 import { WORKOUT_LIBRARY, workoutTotalDurationS } from '../domain/training/workout';
 import {
   generateWeeklyPlan,
+  isDayCompleted,
   recommendToday,
   startOfWeekLocal,
+  tssByDayOfWeek,
   type WorkoutType,
 } from '../domain/training/planGenerator';
 import { useHistoryStore } from '../state/history';
@@ -117,11 +119,11 @@ function PlanTab({ onStart }: { onStart: (id: string) => void }) {
   const dayOfWeek = (today.getDay() + 6) % 7; // JS: Sun=0, Mon=1; нам надо Mon=0
   const weekStart = startOfWeekLocal(today);
 
-  // Сколько TSS набрали за эту неделю до сегодня.
+  // Сколько TSS набрали за эту неделю по дням (включая сегодня).
   const sessionsWithTSS = useTrainingStore((s) => s.sessionsWithTSS);
-  const weeklyTssSoFar = sessionsWithTSS
-    .filter((s) => s.startedAt >= weekStart && s.startedAt < weekStart + dayOfWeek * 86_400_000)
-    .reduce((sum, s) => sum + (s.tss ?? 0), 0);
+  const tssPerDay = tssByDayOfWeek(sessionsWithTSS, weekStart);
+  const weeklyTssSoFar = tssPerDay.slice(0, dayOfWeek).reduce((a, b) => a + b, 0);
+  const weeklyActualTotal = tssPerDay.reduce((a, b) => a + b, 0);
 
   const todayRec = recommendToday({
     pmc,
@@ -160,26 +162,56 @@ function PlanTab({ onStart }: { onStart: (id: string) => void }) {
       <View style={styles.planWeekCard}>
         <View style={styles.planWeekHeader}>
           <Text style={styles.cardTitle}>Эта неделя</Text>
-          <Text style={styles.planWeekTotal}>≈ {plan.totalTargetTss} TSS</Text>
+          <Text style={styles.planWeekTotal}>
+            {weeklyActualTotal} / {plan.totalTargetTss} TSS
+          </Text>
         </View>
+
+        {/* Прогресс-бар: actual vs target. */}
+        {plan.totalTargetTss > 0 && (
+          <View style={styles.planProgressTrack}>
+            <View
+              style={[
+                styles.planProgressFill,
+                { width: `${Math.min(100, Math.round((weeklyActualTotal / plan.totalTargetTss) * 100))}%` },
+              ]}
+            />
+          </View>
+        )}
 
         {plan.days.map((day) => {
           const isToday = day.dayOfWeek === dayOfWeek;
+          const isPast = day.dayOfWeek < dayOfWeek;
+          const actualTss = tssPerDay[day.dayOfWeek];
+          const completed = isPast && isDayCompleted(day.recommendation.targetTss, actualTss);
+          const missed = isPast && !completed && day.recommendation.targetTss > 0;
           return (
             <View
               key={day.dayOfWeek}
               style={[styles.planDayRow, isToday && styles.planDayRowToday]}
             >
-              <Text style={styles.planDayName}>{labelDayOfWeek(day.dayOfWeek)}</Text>
+              <Text
+                style={[
+                  styles.planDayName,
+                  completed && styles.planDayNameDone,
+                  missed && styles.planDayNameMissed,
+                ]}
+              >
+                {completed ? '✓' : missed ? '·' : ''} {labelDayOfWeek(day.dayOfWeek)}
+              </Text>
               <View style={styles.planDayBody}>
                 <Text style={styles.planDayType}>
                   {labelWorkoutType(day.recommendation.workoutType)}
                 </Text>
-                {day.recommendation.targetTss > 0 && (
-                  <Text style={styles.planDayTss}>{day.recommendation.targetTss} TSS</Text>
-                )}
+                <Text style={styles.planDayTss}>
+                  {day.recommendation.targetTss > 0
+                    ? `${actualTss} / ${day.recommendation.targetTss} TSS`
+                    : actualTss > 0
+                      ? `${actualTss} TSS (бег в день отдыха)`
+                      : ''}
+                </Text>
               </View>
-              {day.recommendation.suggestedWorkout !== null ? (
+              {day.recommendation.suggestedWorkout !== null && !isPast ? (
                 <Pressable
                   hitSlop={6}
                   onPress={() => onStart(day.recommendation.suggestedWorkout!.id)}
@@ -579,7 +611,17 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 8,
   },
-  planDayName: { color: '#94A3B8', fontSize: 12, fontWeight: '700', width: 28 },
+  planDayName: { color: '#94A3B8', fontSize: 12, fontWeight: '700', width: 40 },
+  planDayNameDone: { color: '#10B981' },
+  planDayNameMissed: { color: '#64748B' },
+  planProgressTrack: {
+    height: 4,
+    backgroundColor: '#0F1419',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  planProgressFill: { height: '100%', backgroundColor: '#94A3B8' },
   planDayBody: { flex: 1 },
   planDayType: { color: '#FFFFFF', fontSize: 14, fontWeight: '500' },
   planDayTss: { color: '#64748B', fontSize: 11, marginTop: 1 },

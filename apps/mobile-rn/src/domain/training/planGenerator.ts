@@ -167,6 +167,35 @@ export function generateWeeklyPlan(input: {
 }
 
 /**
+ * Распределить TSS сессий по дням недели (0..6, Mon=0).
+ * `weekStart` — начало понедельника локальной TZ.
+ * Возвращает массив длиной 7.
+ */
+export function tssByDayOfWeek(
+  sessions: readonly { startedAt: number; tss: number | null }[],
+  weekStart: number,
+): number[] {
+  const out = [0, 0, 0, 0, 0, 0, 0];
+  const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+  for (const s of sessions) {
+    if (s.startedAt < weekStart || s.startedAt >= weekEnd) continue;
+    const dayIdx = Math.floor((s.startedAt - weekStart) / (24 * 60 * 60 * 1000));
+    if (dayIdx < 0 || dayIdx > 6) continue;
+    out[dayIdx] += s.tss ?? 0;
+  }
+  return out;
+}
+
+/**
+ * Считается ли день выполненным: actual TSS ≥ 70% от target ИЛИ rest-день
+ * без бега (actual < 30 TSS).
+ */
+export function isDayCompleted(targetTss: number, actualTss: number): boolean {
+  if (targetTss === 0) return actualTss < 30; // rest-день: считается выполненным если не бегал
+  return actualTss >= targetTss * 0.7;
+}
+
+/**
  * Найти ближайший понедельник 00:00 локально для заданной даты.
  */
 export function startOfWeekLocal(date: Date): number {

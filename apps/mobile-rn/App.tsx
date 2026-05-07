@@ -42,6 +42,8 @@ import { MetricsBar } from './src/ui/MetricsBar';
 import { ProfileModal } from './src/ui/ProfileModal';
 import { SensorsModal } from './src/ui/SensorsModal';
 import { StatsModal } from './src/ui/StatsModal';
+import { WORKOUT_LIBRARY } from './src/domain/training/workout';
+import { TodayCard } from './src/ui/TodayCard';
 import { TrainingModal } from './src/ui/TrainingModal';
 import { WorkoutPlayer } from './src/ui/WorkoutPlayer';
 import {
@@ -454,6 +456,14 @@ function MapScreen() {
       </MapboxView>
 
       <View style={styles.topRightCol}>
+        <TodayCard
+          onStartWorkout={(workoutId) => {
+            const w = WORKOUT_LIBRARY.find((x) => x.id === workoutId);
+            if (!w) return;
+            useWorkoutPlayerStore.getState().start(w);
+            setWorkoutPlayerVisible(true);
+          }}
+        />
         <Pressable style={styles.historyBtn} onPress={() => setStatsVisible(true)}>
           <Text style={styles.historyBtnText}>📊 Статистика</Text>
         </Pressable>
