@@ -20,8 +20,12 @@ type Session struct {
 	CalcMethod      *string
 	Note            *string
 	Source          string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// AvgHrBpm/MaxHrBpm — агрегированные на клиенте при finalize.
+	// Phase 6.5+. Опциональные: nil если HR не записывался.
+	AvgHrBpm  *float64
+	MaxHrBpm  *float64
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Point — одна GPS-точка. Идентификатор — (SessionID, Timestamp).

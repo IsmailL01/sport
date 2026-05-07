@@ -1,0 +1,2 @@
+ALTER TABLE sessions DROP COLUMN IF EXISTS avg_hr_bpm;
+ALTER TABLE sessions DROP COLUMN IF EXISTS max_hr_bpm;

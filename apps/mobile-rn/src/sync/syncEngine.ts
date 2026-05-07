@@ -99,6 +99,8 @@ async function uploadSession(s: Session): Promise<string> {
     areaM2: s.areaM2,
     calcMethod: s.calcMethod,
     note: s.note,
+    avgHrBpm: s.avgHrBpm,
+    maxHrBpm: s.maxHrBpm,
     source: 'phone',
   };
   const resp = await apiClient.sync('/sessions', {
