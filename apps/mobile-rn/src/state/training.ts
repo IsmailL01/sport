@@ -65,6 +65,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     const lthrPaceEstimate = estimateLthrPaceFromHistory(sessionPaces);
 
     // Шаг 3: посчитать TSS для каждой завершённой сессии.
+    // avgHr берём из session row (агрегируется на finalize, см. activity.stop).
     const sessionsWithTSS: SessionWithTSS[] = sessions
       .filter((s) => s.endedAt !== null && s.distanceM !== null)
       .map((s) => {
@@ -72,7 +73,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         const distanceM = s.distanceM ?? 0;
         const avgPace = averagePaceFromTotals(distanceM, durationS);
         const t = bestTSS({
-          avgHrBpm: null, // TODO: достать из sensor_readings когда будет (Phase 5+)
+          avgHrBpm: s.avgHrBpm ?? null,
           lthrBpm,
           avgPaceMinKm: avgPace,
           lthrPaceMinKm: lthrPaceEstimate.paceMinKm,
@@ -100,8 +101,16 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     const pmcStart = startOfDay - 89 * DAY_MS;
     const pmc = computePMC(dailyTss, pmcStart, startOfDay + DAY_MS);
 
-    // Шаг 5: LTHR estimate (placeholder для теперь; в Phase 5+ будет из avgHr).
-    const lthrEstimate = estimateLthrFromHistory([]);
+    // Шаг 5: LTHR estimate из реальных avgHr ≥30мин сессий.
+    const longSessionAvgHrs = sessions
+      .filter((s) =>
+        s.endedAt !== null
+        && (s.endedAt - s.startedAt) >= 30 * 60 * 1000
+        && s.avgHrBpm !== null
+        && s.avgHrBpm > 0,
+      )
+      .map((s) => s.avgHrBpm!);
+    const lthrEstimate = estimateLthrFromHistory(longSessionAvgHrs);
 
     set({
       sessionsWithTSS,

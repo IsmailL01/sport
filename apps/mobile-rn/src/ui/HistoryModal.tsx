@@ -1,7 +1,7 @@
 // Простой модальный экран с историей пробежек. Без navigation library —
 // один Modal с FlatList. P1-L-01 / P1-L-04.
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -15,6 +15,7 @@ import {
 import type { Session } from '../domain/types';
 import { useHistoryStore } from '../state/history';
 import { formatArea, formatDistance } from './format';
+import { SessionDetailModal } from './SessionDetailModal';
 
 export type HistoryModalProps = {
   visible: boolean;
@@ -26,6 +27,7 @@ export function HistoryModal({ visible, onClose }: HistoryModalProps) {
   const loading = useHistoryStore((s) => s.loading);
   const refresh = useHistoryStore((s) => s.refresh);
   const delete_ = useHistoryStore((s) => s.delete);
+  const [detailSession, setDetailSession] = useState<Session | null>(null);
 
   useEffect(() => {
     if (visible) refresh();
@@ -70,11 +72,19 @@ export function HistoryModal({ visible, onClose }: HistoryModalProps) {
             keyExtractor={(s) => String(s.id)}
             contentContainerStyle={styles.list}
             renderItem={({ item }) => (
-              <SessionRow session={item} onDelete={() => handleDelete(item)} />
+              <SessionRow
+                session={item}
+                onDelete={() => handleDelete(item)}
+                onPress={() => setDetailSession(item)}
+              />
             )}
           />
         )}
       </View>
+      <SessionDetailModal
+        session={detailSession}
+        onClose={() => setDetailSession(null)}
+      />
     </Modal>
   );
 }
@@ -82,9 +92,11 @@ export function HistoryModal({ visible, onClose }: HistoryModalProps) {
 function SessionRow({
   session,
   onDelete,
+  onPress,
 }: {
   session: Session;
   onDelete: () => void;
+  onPress: () => void;
 }) {
   const dateStr = formatStartDate(session.startedAt);
   const dist = session.distanceM !== null ? formatDistance(session.distanceM) : '—';
@@ -100,18 +112,21 @@ function SessionRow({
         : '↪ открытый трек';
 
   return (
-    <View style={styles.row}>
+    <Pressable onPress={onPress} style={styles.row}>
       <View style={{ flex: 1 }}>
         <Text style={styles.rowDate}>{dateStr}</Text>
         <Text style={styles.rowMeta}>
           {dist}  ·  {status}
         </Text>
         {area && <Text style={styles.rowArea}>{area}</Text>}
+        {session.avgHrBpm !== null && (
+          <Text style={styles.rowHr}>♥ ср. {session.avgHrBpm} bpm</Text>
+        )}
       </View>
-      <Pressable onPress={onDelete} style={styles.deleteBtn}>
-        <Text style={styles.deleteText}>Удалить</Text>
+      <Pressable onPress={onDelete} style={styles.deleteBtn} hitSlop={6}>
+        <Text style={styles.deleteText}>×</Text>
       </Pressable>
-    </View>
+    </Pressable>
   );
 }
 
@@ -159,11 +174,14 @@ const styles = StyleSheet.create({
   rowDate: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
   rowMeta: { color: '#94A3B8', fontSize: 13, marginTop: 4 },
   rowArea: { color: '#10B981', fontSize: 13, marginTop: 4, fontWeight: '600' },
+  rowHr: { color: '#EF4444', fontSize: 12, marginTop: 4, fontWeight: '600' },
   deleteBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#EF4444',
-    borderRadius: 8,
+    width: 28,
+    height: 28,
+    backgroundColor: '#334155',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  deleteText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
+  deleteText: { color: '#94A3B8', fontSize: 18, fontWeight: '700', marginTop: -3 },
 });

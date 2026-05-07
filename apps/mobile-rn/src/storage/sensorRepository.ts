@@ -60,3 +60,26 @@ export function deleteSensorReadingsForSession(sessionId: number): void {
   const db = getDatabase();
   db.runSync(`DELETE FROM sensor_readings WHERE session_id = ?;`, [sessionId]);
 }
+
+/**
+ * Аггрегировать HR-readings сессии: avg / max.
+ * Возвращает null-ы если HR-данных нет.
+ */
+export function aggregateHrForSession(sessionId: number): {
+  avgHrBpm: number | null;
+  maxHrBpm: number | null;
+  count: number;
+} {
+  const db = getDatabase();
+  const row = db.getFirstSync<{ avg_hr: number | null; max_hr: number | null; cnt: number }>(
+    `SELECT AVG(value) AS avg_hr, MAX(value) AS max_hr, COUNT(*) AS cnt
+     FROM sensor_readings WHERE session_id = ? AND type = 'hr';`,
+    [sessionId],
+  );
+  if (!row || row.cnt === 0) return { avgHrBpm: null, maxHrBpm: null, count: 0 };
+  return {
+    avgHrBpm: row.avg_hr === null ? null : Math.round(row.avg_hr),
+    maxHrBpm: row.max_hr === null ? null : Math.round(row.max_hr),
+    count: row.cnt,
+  };
+}

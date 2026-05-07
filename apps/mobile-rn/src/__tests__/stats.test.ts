@@ -16,6 +16,8 @@ function sess(overrides: Partial<Session> & { startedAt: number }): Session {
     areaM2: null,
     calcMethod: null,
     note: null,
+    avgHrBpm: null,
+    maxHrBpm: null,
     ...overrides,
   };
 }

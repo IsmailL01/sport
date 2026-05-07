@@ -10,7 +10,12 @@ type SessionRow = {
   area_m2: number | null;
   calc_method: string | null;
   note: string | null;
+  avg_hr_bpm: number | null;
+  max_hr_bpm: number | null;
 };
+
+const SELECT_COLS =
+  'id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note, avg_hr_bpm, max_hr_bpm';
 
 function rowToSession(row: SessionRow): Session {
   return {
@@ -22,6 +27,8 @@ function rowToSession(row: SessionRow): Session {
     areaM2: row.area_m2,
     calcMethod: (row.calc_method ?? null) as Session['calcMethod'],
     note: row.note,
+    avgHrBpm: row.avg_hr_bpm,
+    maxHrBpm: row.max_hr_bpm,
   };
 }
 
@@ -35,8 +42,8 @@ export function createSession(session: {
 }): void {
   const db = getDatabase();
   db.runSync(
-    `INSERT OR REPLACE INTO sessions (id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note)
-     VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, NULL);`,
+    `INSERT OR REPLACE INTO sessions (id, started_at)
+     VALUES (?, ?);`,
     [session.id, session.startedAt],
   );
 }
@@ -52,12 +59,15 @@ export function finalizeSession(
     distanceM: number | null;
     areaM2: number | null;
     calcMethod: Session['calcMethod'];
+    avgHrBpm?: number | null;
+    maxHrBpm?: number | null;
   },
 ): void {
   const db = getDatabase();
   db.runSync(
     `UPDATE sessions
-     SET ended_at = ?, is_closed = ?, distance_m = ?, area_m2 = ?, calc_method = ?
+     SET ended_at = ?, is_closed = ?, distance_m = ?, area_m2 = ?, calc_method = ?,
+         avg_hr_bpm = ?, max_hr_bpm = ?
      WHERE id = ?;`,
     [
       finals.endedAt,
@@ -65,6 +75,8 @@ export function finalizeSession(
       finals.distanceM,
       finals.areaM2,
       finals.calcMethod,
+      finals.avgHrBpm ?? null,
+      finals.maxHrBpm ?? null,
       id,
     ],
   );
@@ -78,7 +90,7 @@ export function setSessionNote(id: number, note: string | null): void {
 export function getSession(id: number): Session | null {
   const db = getDatabase();
   const row = db.getFirstSync<SessionRow>(
-    `SELECT id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note
+    `SELECT ${SELECT_COLS}
      FROM sessions WHERE id = ?;`,
     [id],
   );
@@ -88,7 +100,7 @@ export function getSession(id: number): Session | null {
 export function listSessions(limit = 100): Session[] {
   const db = getDatabase();
   const rows = db.getAllSync<SessionRow>(
-    `SELECT id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note
+    `SELECT ${SELECT_COLS}
      FROM sessions ORDER BY started_at DESC LIMIT ?;`,
     [limit],
   );
@@ -101,7 +113,7 @@ export function listSessions(limit = 100): Session[] {
 export function findActiveSession(): Session | null {
   const db = getDatabase();
   const row = db.getFirstSync<SessionRow>(
-    `SELECT id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note
+    `SELECT ${SELECT_COLS}
      FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1;`,
   );
   return row ? rowToSession(row) : null;

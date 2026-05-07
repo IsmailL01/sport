@@ -4,11 +4,11 @@
 
 ## Текущая фаза
 
-**Phase 6 — Training Engine** (стартовала 2026-05-07, P6-A code-level done)
+**Phase 6.5 — Polish** (Phase 6 done + quality-of-life)
 
 Phase 0 закрыта — выбран Expo React Native, см. [DECISION.md](DECISION.md). Flutter архивирован в `apps/mobile_flutter.archived/`.
 
-Phase 1–5 закрыты на code-level. Phase 6 / P6-A code-level done: TSS (HR + rTSS), Banister PMC (CTL/ATL/TSB), Race predictor (Riegel + Cameron), VO2max (Cooper + Daniels), LTHR estimator, Workout data model + library из 4 классических тренировок, TrainingModal UI с 3 табами + Workout Player (live step tracking + GPS/time/distance auto-advance + voice cues через speech adapter interface). tsc clean, jest 162/162 passing.
+Phase 1–5 закрыты на code-level. Phase 6 / P6-A code-level done: TSS (HR + rTSS), Banister PMC (CTL/ATL/TSB), Race predictor (Riegel + Cameron), VO2max (Cooper + Daniels), LTHR estimator, Workout library + Workout Player. Phase 7 P7-A-01..03 scaffold (Mock health adapter). Phase 6.5 polish: per-km splits, avgHr/maxHr per session, session detail modal (map+stats+splits+HR chart+share GPX), real expo-speech TTS adapter. tsc clean, jest 183/183 passing.
 
 ## Phase 1 progress
 
@@ -241,6 +241,36 @@ impl за config plugin (отложено).
 - Strava OAuth bidirectional sync (P7-A-04) — нужен client_id/secret
 - Garmin Connect (P7-A-05) — gated API
 - FIT-парсер на бэкенде (P7-A-06)
+
+### 2026-05-07 — Phase 6.5: per-km splits, HR aggregation, session detail, real TTS
+
+Quality-of-life chunk поверх Phase 6: то что есть в любом современном беговом приложении.
+
+| Файл | Что внутри |
+|---|---|
+| `src/domain/splits.ts` | `computeSplits(points)` per-km сплиты с линейной интерполяцией пересечения 1км границы, накопление avgHr (если HR enriched) и elevationGainM; `fastestAndSlowestKm` для подсветки лучшего/худшего |
+| `src/__tests__/splits.test.ts` | 11 тестов: пустые входы, ровно 1км, 5км, partial split, HR averaging, elevation, переменный темп |
+| `src/storage/database.ts` | Migration v6: `avg_hr_bpm`, `max_hr_bpm` колонки в sessions |
+| `src/storage/sensorRepository.ts` | `aggregateHrForSession(sessionId)` — `AVG`/`MAX` query по sensor_readings type='hr' |
+| `src/storage/sessionRepository.ts` | `finalizeSession` теперь принимает avgHrBpm/maxHrBpm и пишет их |
+| `src/state/activity.ts` | `stop()` вызывает `aggregateHrForSession` и передаёт результат в `finalizeSession` |
+| `src/state/training.ts` | TSS теперь считается с реальным `avgHrBpm` из session row (closes TODO Phase 5+); LTHR estimate берёт avgHr из ≥30мин сессий |
+| `src/sync/syncEngine.ts` | LocalSessionRow + SELECT обновлены под новые колонки |
+| `src/ui/SessionDetailModal.tsx` | Fullscreen view: header (дата) → map с TrackLayer/ZoneLayer → 6 metric tiles (distance/time/pace/avgHr/maxHr/area) → HR chart 60 buckets (если HR есть) → splits table с подсветкой fastest/slowest → Поделиться GPX |
+| `src/ui/HistoryModal.tsx` | Tap на сессию открывает SessionDetailModal; `×`-кнопка вместо "Удалить" текста; HR badge в строке если avgHr есть |
+| `src/util/speech.ts` (existing) | + `setSpeechAdapter` теперь принимает real impl |
+| `src/util/expoSpeechAdapter.ts` | Реальный TTS через `expo-speech` (русский язык, rate 1.0); зарегистрирован в App.tsx side effect-ом |
+| `package.json` | + `expo-speech ~14.0.8` |
+
+**Тесты:** 172 → **183/183 passing** (+11 splits). TS clean.
+
+**Что НЕ входит** (отложено):
+- Strava OAuth bidirectional sync (P7-A-04)
+- Garmin Connect (P7-A-05)
+- Backend FIT parser (P7-A-06)
+- Phase 8 social (feed, лайки, клубы, segments, leaderboards, zone wars)
+- Splits over-time chart (line chart) — пока bar chart с downsampled 60 buckets
+- HR-zone time breakdown в session detail
 
 ## Заметки
 

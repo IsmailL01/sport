@@ -60,6 +60,10 @@ export type Session = {
   calcMethod: 'shoelace_simple' | 'shoelace_with_warning' | 'corridor' | null;
   /** Произвольная заметка пользователя, опционально (P1-J-04). */
   note: string | null;
+  /** Средний HR за сессию (BPM), null если HR не записывался. Phase 6.5. */
+  avgHrBpm: number | null;
+  /** Максимальный HR за сессию (BPM). Phase 6.5. */
+  maxHrBpm: number | null;
 };
 
 /**

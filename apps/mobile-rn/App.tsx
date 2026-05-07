@@ -50,6 +50,11 @@ import {
 } from './src/state/workoutPlayer';
 import { useSensorsStore } from './src/state/sensors';
 import { writeSessionToHealth } from './src/health/sync';
+import { setSpeechAdapter } from './src/util/speech';
+import { expoSpeechAdapter } from './src/util/expoSpeechAdapter';
+
+// Регистрируем real TTS адаптер на старте — single-shot side effect.
+setSpeechAdapter(expoSpeechAdapter);
 import { totalDistance } from './src/util/geo';
 
 const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
@@ -363,11 +368,14 @@ function MapScreen() {
             // Авто-write в Apple Health / Health Connect (через MockHealthAdapter
             // если real platform-adapter не подключён; всё равно безопасно).
             if (s.sessionId !== null && s.startedAt !== null && s.endedAt !== null) {
+              // Pull persisted avgHr (агрегированный на finalize в activity.stop).
+              const sess = useHistoryStore.getState().sessions.find((x) => x.id === s.sessionId);
               writeSessionToHealth({
                 id: s.sessionId,
                 startedAt: s.startedAt,
                 endedAt: s.endedAt,
                 distanceM: totalDistance(s.points),
+                avgHrBpm: sess?.avgHrBpm ?? null,
               }).catch((e) => console.warn('[App] writeSessionToHealth failed', e));
             }
           },

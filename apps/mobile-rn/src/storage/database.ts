@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 5;
+const TARGET_VERSION = 6;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -14,6 +14,7 @@ let _db: SQLite.SQLiteDatabase | null = null;
  * - v3: + колонка `source` в points (raw/kalman/interpolated) для трассировки pipeline.
  * - v4: + колонки `synced_at` и `server_id` в sessions для outbox-sync (Phase 2 / P2-B-04).
  * - v5: + таблица `sensor_readings` для HR/cadence/power (Phase 5 / P5-A-04).
+ * - v6: + колонки `avg_hr_bpm` и `max_hr_bpm` в sessions (агрегация HR на finalize).
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
@@ -113,6 +114,19 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       `CREATE INDEX IF NOT EXISTS idx_sensor_readings_session_ts ON sensor_readings (session_id, ts);`,
     );
     current = 5;
+  }
+
+  if (current < 6) {
+    const sessCols = db.getAllSync<{ name: string }>(
+      `PRAGMA table_info(sessions);`,
+    );
+    if (!sessCols.some((c) => c.name === 'avg_hr_bpm')) {
+      db.execSync(`ALTER TABLE sessions ADD COLUMN avg_hr_bpm REAL;`);
+    }
+    if (!sessCols.some((c) => c.name === 'max_hr_bpm')) {
+      db.execSync(`ALTER TABLE sessions ADD COLUMN max_hr_bpm REAL;`);
+    }
+    current = 6;
   }
 
   if (current !== TARGET_VERSION) {

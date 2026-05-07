@@ -18,6 +18,7 @@ import {
   finalizeSession,
   findActiveSession,
 } from '../storage/sessionRepository';
+import { aggregateHrForSession } from '../storage/sensorRepository';
 import { isClosed, totalDistance } from '../util/geo';
 
 const FLUSH_THRESHOLD = 10;
@@ -200,6 +201,16 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       const areaResult = closed
         ? calculateArea(points)
         : { areaM2: null, method: null, warnings: [] as AreaWarning[] };
+      // Аггрегируем HR-данные сессии (если sensor был подключён в Phase 5+).
+      let avgHrBpm: number | null = null;
+      let maxHrBpm: number | null = null;
+      try {
+        const hr = aggregateHrForSession(sessionId);
+        avgHrBpm = hr.avgHrBpm;
+        maxHrBpm = hr.maxHrBpm;
+      } catch (e) {
+        console.warn('[activity] aggregateHrForSession failed', e);
+      }
       try {
         finalizeSession(sessionId, {
           endedAt,
@@ -207,6 +218,8 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
           distanceM: distance,
           areaM2: areaResult.areaM2,
           calcMethod: areaResult.method,
+          avgHrBpm,
+          maxHrBpm,
         });
       } catch (e) {
         console.error('[activity] finalizeSession failed', e);

@@ -157,6 +157,8 @@ type LocalSessionRow = {
   syncedAt: number | null;
   serverId: string | null;
   updatedAt: number | null;
+  avgHrBpm: number | null;
+  maxHrBpm: number | null;
 };
 
 function listPendingSessions(): Session[] {
@@ -165,7 +167,8 @@ function listPendingSessions(): Session[] {
     `SELECT id, started_at AS startedAt, ended_at AS endedAt, is_closed AS isClosed,
             distance_m AS distanceM, area_m2 AS areaM2, calc_method AS calcMethod,
             note, synced_at AS syncedAt, server_id AS serverId,
-            COALESCE(updated_at, started_at) AS updatedAt
+            COALESCE(updated_at, started_at) AS updatedAt,
+            avg_hr_bpm AS avgHrBpm, max_hr_bpm AS maxHrBpm
      FROM sessions
      WHERE synced_at IS NULL OR (updated_at IS NOT NULL AND updated_at > synced_at)
      ORDER BY started_at ASC`,
@@ -192,5 +195,7 @@ function rowToSession(row: LocalSessionRow): Session {
     areaM2: row.areaM2,
     calcMethod: (row.calcMethod ?? null) as Session['calcMethod'],
     note: row.note,
+    avgHrBpm: row.avgHrBpm,
+    maxHrBpm: row.maxHrBpm,
   };
 }
