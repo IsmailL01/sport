@@ -1,18 +1,22 @@
-.PHONY: help up down migrate run-identity test test-coverage tidy
+.PHONY: help up up-stack down migrate migrate-down run-identity run-activity-sync test test-coverage tidy docker-build observability-up observability-down
 
 DB_URL ?= postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable
 
 help:
 	@echo "Targets:"
-	@echo "  up                Запустить Postgres + TimescaleDB через docker compose"
-	@echo "  down              Остановить и удалить контейнеры"
-	@echo "  migrate           Применить миграции (требует up)"
-	@echo "  migrate-down      Откатить последнюю миграцию"
-	@echo "  run-identity      Запустить identity service на :8081"
-	@echo "  run-activity-sync Запустить activity-sync service на :8082"
-	@echo "  test              Прогнать все Go-тесты"
-	@echo "  test-coverage     Прогнать тесты с coverage report"
-	@echo "  tidy              go mod tidy во всех модулях"
+	@echo "  up                  Запустить Postgres + TimescaleDB"
+	@echo "  up-stack            Поднять полный stack (postgres + identity + sync + gateway)"
+	@echo "  observability-up    Поднять Prometheus + Loki + Grafana"
+	@echo "  down                Остановить контейнеры stack"
+	@echo "  observability-down  Остановить observability stack"
+	@echo "  migrate             Применить миграции (требует up)"
+	@echo "  migrate-down        Откатить последнюю миграцию"
+	@echo "  run-identity        Запустить identity service локально на :8081"
+	@echo "  run-activity-sync   Запустить activity-sync service локально на :8082"
+	@echo "  test                Прогнать все Go-тесты"
+	@echo "  test-coverage       Тесты с coverage report"
+	@echo "  tidy                go mod tidy во всех модулях"
+	@echo "  docker-build        Собрать Docker images stack-сервисов"
 
 up:
 	docker compose up -d postgres
@@ -20,8 +24,23 @@ up:
 	@until docker compose exec -T postgres pg_isready -U re >/dev/null 2>&1; do sleep 1; done
 	@echo "Postgres ready."
 
+up-stack:
+	@test -n "$$JWT_SECRET" || (echo "Set JWT_SECRET (>=32 chars) before up-stack"; exit 1)
+	docker compose --profile stack up -d --build
+	@echo "Stack up. Gateway: http://localhost:8080  •  identity: :8081  •  activity-sync: :8082"
+
 down:
-	docker compose down
+	docker compose --profile stack down
+
+docker-build:
+	docker compose --profile stack build
+
+observability-up:
+	docker compose -f docker-compose.observability.yml up -d
+	@echo "Grafana: http://localhost:3000 (admin/admin)  •  Prometheus: :9090  •  Loki: :3100"
+
+observability-down:
+	docker compose -f docker-compose.observability.yml down
 
 migrate:
 	@command -v migrate >/dev/null 2>&1 || { \

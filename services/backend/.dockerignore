@@ -1,0 +1,17 @@
+# Не отправляем в Docker context лишнего.
+**/coverage*.out
+**/*_test.go
+**/.git/
+**/node_modules/
+**/build/
+**/.idea/
+**/.vscode/
+**/.dart_tool/
+**/coverage-*.out
+
+# Только нужные модули остаются — go.work + identity/ + activity-sync/ + pkg/
+docker-compose.yml
+README.md
+api/
+migrations/
+Makefile

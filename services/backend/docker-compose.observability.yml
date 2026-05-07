@@ -1,0 +1,46 @@
+# Observability stack для local dev. Phase 3 / P3-B.
+# В production — те же компоненты разворачиваются через Helm в K8s.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: re_prometheus
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: re_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: re_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - prometheus
+      - loki
+
+volumes:
+  prom_data:
+  loki_data:
+  grafana_data:

@@ -1,0 +1,18 @@
+# Patterns исключаемые из helm package.
+.DS_Store
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+*.swp
+*.tmp
+*.bak
+*.orig
+*~
+.project
+.idea/
+*.tmproj
+.vscode/

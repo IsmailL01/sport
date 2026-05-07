@@ -16,5 +16,50 @@ services:
       timeout: 5s
       retries: 5
 
+  # Сервисы поднимаются по profile=stack (отдельно от только-postgres).
+  identity:
+    profiles: [stack]
+    build:
+      context: .
+      dockerfile: identity/Dockerfile
+    container_name: re_identity
+    environment:
+      IDENTITY_HTTP_ADDR: ":8081"
+      IDENTITY_DB_URL: "postgres://re:re_dev@postgres:5432/running_ecosystem?sslmode=disable"
+      IDENTITY_JWT_SECRET: "${JWT_SECRET:?need 32+ char secret}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+
+  activity-sync:
+    profiles: [stack]
+    build:
+      context: .
+      dockerfile: activity-sync/Dockerfile
+    container_name: re_activity_sync
+    environment:
+      ACTIVITY_SYNC_HTTP_ADDR: ":8082"
+      ACTIVITY_SYNC_DB_URL: "postgres://re:re_dev@postgres:5432/running_ecosystem?sslmode=disable"
+      IDENTITY_JWT_SECRET: "${JWT_SECRET:?need 32+ char secret}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+
+  gateway:
+    profiles: [stack]
+    image: caddy:2.8-alpine
+    container_name: re_gateway
+    volumes:
+      - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      - identity
+      - activity-sync
+
 volumes:
   postgres_data:

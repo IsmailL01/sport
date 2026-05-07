@@ -1,0 +1,47 @@
+# API Gateway для Phase 2/3 локального dev. Phase 3 / P2-A-08.
+# Маршрутизирует запросы по path:
+#   /auth/*, /me   → identity:8081
+#   /sessions*     → activity-sync:8082
+#   /healthz       → 200 OK (для health-check самого gateway)
+#
+# JWT-валидация делается самими сервисами (см. requireAuth middleware).
+# Если в будущем понадобится централизованный JWT-validate на gateway —
+# добавим caddy-jwt модуль (Phase 3 / P3-C-01).
+
+:8080 {
+	# CORS для веб-клиента (Phase 2 — нет, но пригодится если будет).
+	@cors_preflight method OPTIONS
+	header @cors_preflight Access-Control-Allow-Origin "*"
+	header @cors_preflight Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+	header @cors_preflight Access-Control-Allow-Headers "Authorization, Content-Type"
+	respond @cors_preflight 204
+
+	header Access-Control-Allow-Origin "*"
+
+	# Health check самого gateway (Kubernetes liveness/readiness).
+	handle /healthz {
+		respond `{"status":"ok"}` 200
+	}
+
+	# Identity service.
+	handle /auth/* {
+		reverse_proxy identity:8081
+	}
+	handle /me {
+		reverse_proxy identity:8081
+	}
+
+	# Activity sync.
+	handle /sessions {
+		reverse_proxy activity-sync:8082
+	}
+	handle /sessions/* {
+		reverse_proxy activity-sync:8082
+	}
+
+	# Логи в JSON для агрегации в Loki/Grafana (Phase 3 / P3-B-02).
+	log {
+		output stdout
+		format json
+	}
+}

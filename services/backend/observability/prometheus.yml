@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: identity
+    static_configs:
+      - targets: ["host.docker.internal:8081"]
+        labels:
+          service: identity
+    metrics_path: /metrics
+    # /metrics endpoint в самих сервисах добавится в P3-B-01 через
+    # prometheus client_golang. Сейчас prometheus просто будет ругаться
+    # на 404 — это ОК для skeleton.
+
+  - job_name: activity-sync
+    static_configs:
+      - targets: ["host.docker.internal:8082"]
+        labels:
+          service: activity-sync
+    metrics_path: /metrics
+
+  - job_name: gateway
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          service: gateway
+    metrics_path: /metrics

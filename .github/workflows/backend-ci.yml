@@ -1,0 +1,88 @@
+name: backend-ci
+
+# Запускается на изменения в services/backend/ или сам workflow.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  test:
+    name: Test (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: |
+            services/backend/identity/go.sum
+            services/backend/activity-sync/go.sum
+            services/backend/pkg/go.sum
+
+      - name: Verify modules
+        run: |
+          cd pkg && go mod download
+          cd ../identity && go mod download
+          cd ../activity-sync && go mod download
+
+      - name: Vet
+        run: |
+          cd pkg && go vet ./...
+          cd ../identity && go vet ./...
+          cd ../activity-sync && go vet ./...
+
+      - name: Test
+        run: |
+          cd pkg && go test -race -coverprofile=../coverage-pkg.out ./...
+          cd ../identity && go test -race -coverprofile=../coverage-identity.out ./...
+          cd ../activity-sync && go test -race -coverprofile=../coverage-activity-sync.out ./...
+
+      - name: Coverage summary
+        run: |
+          for f in coverage-*.out; do
+            echo "=== $f ==="
+            go tool cover -func="$f" | tail -1
+          done
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [identity, activity-sync]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Логин в реестр — добавляется позже когда выберем (GHCR / Docker Hub).
+      # - uses: docker/login-action@v3
+      #   with:
+      #     registry: ghcr.io
+      #     username: ${{ github.actor }}
+      #     password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: services/backend
+          file: services/backend/${{ matrix.service }}/Dockerfile
+          push: false
+          tags: ghcr.io/runningecosystem/${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
