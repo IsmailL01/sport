@@ -219,6 +219,29 @@ Persistence flow:
 - Адаптивный план тренировок (нужна модель fitness-prediction)
 - Backend Training Engine service (`P6-A-01`) — отложено до появления реального data inflow
 
+### 2026-05-07 — Phase 7 / P7-A-01..03 scaffold: HealthAdapter abstraction
+
+Sport-agnostic health platform abstraction (по тому же паттерну что
+LocationAdapter и SensorAdapter): один контракт + Mock-first, real platform
+impl за config plugin (отложено).
+
+| Файл | Что внутри |
+|---|---|
+| `src/health/HealthAdapter.ts` | `HealthAdapter` interface (platform / isAvailable / requestPermissions / grantedScopes / writeWorkout / readWorkouts), типы `HealthWorkout` / `ImportedWorkout` / `HealthPermissionScope` |
+| `src/health/MockHealthAdapter.ts` | In-memory impl: idempotent writeWorkout (по externalId), seedImports() для тестов сценария "пользователь связал часы" |
+| `src/health/index.ts` | Singleton `getHealthAdapter()` + `setHealthAdapter()` для подмены в тестах |
+| `src/health/sync.ts` | `writeSessionToHealth(sessionForHealth)` — no-throw helper, проверяет scope grant, выкатывает session как HealthWorkout с externalId=`local-<id>` |
+| `src/__tests__/health.test.ts` | 10 тестов: scopes gating, идемпотентность, sinceMs filter, no-throw helper |
+
+**App.tsx интеграция:** `handleStop > onPress(Сохранить)` вызывает `writeSessionToHealth` рядом с `triggerSync` — fire-and-forget, ошибки логируются. Сейчас Mock adapter — на устройстве запись пока ничего не делает (только в memory test buffer); в Phase 7.1 будет HealthKit/Health Connect adapter.
+
+**Что НЕ входит в P7 scaffold** (Phase 7.1):
+- HealthKitAdapter (через `react-native-health` или `expo-health-kit`) — нужен dev/preview build с config plugin
+- HealthConnectAdapter (через `react-native-health-connect`) — Android 14+
+- Strava OAuth bidirectional sync (P7-A-04) — нужен client_id/secret
+- Garmin Connect (P7-A-05) — gated API
+- FIT-парсер на бэкенде (P7-A-06)
+
 ## Заметки
 
 _Свободные заметки от разработчиков и от Claude — что неожиданно, что отложено, что требует внимания._

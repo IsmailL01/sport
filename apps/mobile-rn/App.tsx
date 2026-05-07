@@ -49,6 +49,7 @@ import {
   useWorkoutPlayerStore,
 } from './src/state/workoutPlayer';
 import { useSensorsStore } from './src/state/sensors';
+import { writeSessionToHealth } from './src/health/sync';
 import { totalDistance } from './src/util/geo';
 
 const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
@@ -355,8 +356,20 @@ function MapScreen() {
           onPress: async () => {
             await locationAdapter.stop();
             stop();
+            // После stop состояние finalize'ится — берём id и метрики из store.
+            const s = useActivityStore.getState();
             // Авто-sync новой сессии после Save (fire-and-forget).
             triggerSync().catch((e) => console.warn('[App] sync after stop failed', e));
+            // Авто-write в Apple Health / Health Connect (через MockHealthAdapter
+            // если real platform-adapter не подключён; всё равно безопасно).
+            if (s.sessionId !== null && s.startedAt !== null && s.endedAt !== null) {
+              writeSessionToHealth({
+                id: s.sessionId,
+                startedAt: s.startedAt,
+                endedAt: s.endedAt,
+                distanceM: totalDistance(s.points),
+              }).catch((e) => console.warn('[App] writeSessionToHealth failed', e));
+            }
           },
         },
       ],
