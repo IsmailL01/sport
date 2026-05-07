@@ -14,7 +14,10 @@ import {
 
 import type { Session } from '../domain/types';
 import { computeSplits, fastestAndSlowestKm, type SplitInput } from '../domain/splits';
+import { computeHrZoneBreakdown } from '../domain/training/hrZoneBreakdown';
+import { resolveMaxHR } from '../domain/athlete';
 import { useHistoryStore } from '../state/history';
+import { useSettingsStore } from '../state/settings';
 import { loadSensorReadingsForSession } from '../storage/sensorRepository';
 import { serializeToGpx } from '../domain/gpx';
 import { MapboxView, TrackLayer, ZoneLayer } from '../map';
@@ -28,6 +31,7 @@ export type SessionDetailProps = {
 
 export function SessionDetailModal({ session, onClose }: SessionDetailProps) {
   const allPoints = useHistoryStore((s) => s.closedSessionsPoints);
+  const athlete = useSettingsStore((s) => s.athlete);
   const points = useMemo(() => {
     if (session === null) return [];
     return allPoints.get(session.id) ?? [];
@@ -44,6 +48,12 @@ export function SessionDetailModal({ session, onClose }: SessionDetailProps) {
       setHrSamples([]);
     }
   }, [session]);
+
+  const zoneBreakdown = useMemo(() => {
+    const maxHR = resolveMaxHR(athlete);
+    if (maxHR === null || hrSamples.length < 2) return [];
+    return computeHrZoneBreakdown(hrSamples, maxHR);
+  }, [hrSamples, athlete]);
 
   // Splits: точки + HR (берём ближайшее по времени readiing для каждой точки).
   const splits = useMemo(() => {
@@ -139,6 +149,39 @@ export function SessionDetailModal({ session, onClose }: SessionDetailProps) {
                 maxHeight={80}
                 color="#EF4444"
               />
+            </View>
+          )}
+
+          {zoneBreakdown.length > 0 && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Время в зонах</Text>
+              <View style={styles.zoneBarRow}>
+                {zoneBreakdown.map((entry) => (
+                  <View
+                    key={entry.zone.index}
+                    style={{
+                      flex: entry.fraction,
+                      backgroundColor: entry.zone.color,
+                      height: 14,
+                    }}
+                  />
+                ))}
+              </View>
+              {zoneBreakdown.map((entry) => (
+                <View key={entry.zone.index} style={styles.zoneRow}>
+                  <View style={[styles.zoneDot, { backgroundColor: entry.zone.color }]} />
+                  <Text style={styles.zoneName}>
+                    Z{entry.zone.index} {entry.zone.name}
+                  </Text>
+                  <Text style={styles.zoneRange}>
+                    {entry.zone.lowerBpm}–{entry.zone.upperBpm}
+                  </Text>
+                  <Text style={styles.zoneTime}>{formatDuration(entry.durationS)}</Text>
+                  <Text style={styles.zonePct}>
+                    {Math.round(entry.fraction * 100)}%
+                  </Text>
+                </View>
+              ))}
             </View>
           )}
 
@@ -298,6 +341,25 @@ const styles = StyleSheet.create({
   splitColPace: { flex: 1, textAlign: 'left' },
   splitColTime: { flex: 1, textAlign: 'left' },
   splitColHr: { width: 50, textAlign: 'right' },
+
+  zoneBarRow: {
+    flexDirection: 'row',
+    height: 14,
+    borderRadius: 7,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  zoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    gap: 8,
+  },
+  zoneDot: { width: 10, height: 10, borderRadius: 5 },
+  zoneName: { flex: 1, color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
+  zoneRange: { color: '#94A3B8', fontSize: 11, width: 64, textAlign: 'right' },
+  zoneTime: { color: '#FFFFFF', fontSize: 12, width: 56, textAlign: 'right' },
+  zonePct: { color: '#94A3B8', fontSize: 12, width: 36, textAlign: 'right' },
 
   shareBtn: {
     backgroundColor: '#3B82F6',
