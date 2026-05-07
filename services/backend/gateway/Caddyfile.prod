@@ -1,0 +1,48 @@
+# Production Caddy config — HTTPS через Let's Encrypt на sslip.io домене.
+# Phase 3 / production deploy.
+#
+# sslip.io автоматически разрезолвит 148-253-214-156.sslip.io в 148.253.214.156,
+# Let's Encrypt выдаст cert через HTTP-01 challenge.
+#
+# Email для Let's Encrypt берём из переменной окружения CADDY_ACME_EMAIL.
+
+{
+	email {env.CADDY_ACME_EMAIL}
+}
+
+148-253-214-156.sslip.io {
+	# CORS для будущего веб-клиента.
+	@cors_preflight method OPTIONS
+	header @cors_preflight Access-Control-Allow-Origin "*"
+	header @cors_preflight Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+	header @cors_preflight Access-Control-Allow-Headers "Authorization, Content-Type"
+	respond @cors_preflight 204
+
+	header Access-Control-Allow-Origin "*"
+
+	# Health check самого gateway.
+	handle /healthz {
+		respond `{"status":"ok"}` 200
+	}
+
+	# Identity service.
+	handle /auth/* {
+		reverse_proxy identity:8081
+	}
+	handle /me {
+		reverse_proxy identity:8081
+	}
+
+	# Activity sync.
+	handle /sessions {
+		reverse_proxy activity-sync:8082
+	}
+	handle /sessions/* {
+		reverse_proxy activity-sync:8082
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

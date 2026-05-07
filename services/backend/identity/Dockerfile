@@ -8,12 +8,13 @@ FROM golang:1.25-alpine AS build
 
 WORKDIR /src
 
-# Сначала копируем go.mod / go.sum / go.work (для лучшего layer caching).
+# go.work лежит в корне backend/, листит все 3 модуля. Копируем go.mod-ы
+# всех 3-х (для workspace resolve), но исходники — только pkg + identity.
 COPY go.work ./
 COPY pkg/go.mod pkg/go.sum ./pkg/
 COPY identity/go.mod identity/go.sum ./identity/
+COPY activity-sync/go.mod activity-sync/go.sum ./activity-sync/
 
-# Активируем workspace mode для go mod download.
 RUN cd identity && go mod download
 RUN cd pkg && go mod download
 

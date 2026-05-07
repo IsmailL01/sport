@@ -1,0 +1,96 @@
+# Production stack — самодостаточный compose, не наследует от docker-compose.yml.
+# Использование:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Отличия от dev (docker-compose.yml):
+#   - postgres не торчит наружу
+#   - identity/activity-sync порты не торчат наружу
+#   - gateway слушает 80/443 (HTTPS через Let's Encrypt + sslip.io)
+#   - migrations run-once init job, сервисы ждут её
+#   - все сервисы restart: unless-stopped
+#   - пароли и JWT_SECRET из env
+
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: re_postgres
+    environment:
+      POSTGRES_USER: re
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?need POSTGRES_PASSWORD}
+      POSTGRES_DB: running_ecosystem
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "re"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrations:
+    image: migrate/migrate:v4.18.1
+    container_name: re_migrations
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  identity:
+    build:
+      context: .
+      dockerfile: identity/Dockerfile
+    container_name: re_identity
+    environment:
+      IDENTITY_HTTP_ADDR: ":8081"
+      IDENTITY_DB_URL: "postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable"
+      IDENTITY_JWT_SECRET: "${JWT_SECRET:?need JWT_SECRET >=32 chars}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  activity-sync:
+    build:
+      context: .
+      dockerfile: activity-sync/Dockerfile
+    container_name: re_activity_sync
+    environment:
+      ACTIVITY_SYNC_HTTP_ADDR: ":8082"
+      ACTIVITY_SYNC_DB_URL: "postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable"
+      IDENTITY_JWT_SECRET: "${JWT_SECRET:?need JWT_SECRET >=32 chars}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  gateway:
+    image: caddy:2.8-alpine
+    container_name: re_gateway
+    volumes:
+      - ./gateway/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?need CADDY_ACME_EMAIL for Lets Encrypt}
+    depends_on:
+      - identity
+      - activity-sync
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

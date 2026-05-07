@@ -6,8 +6,11 @@ FROM golang:1.25-alpine AS build
 
 WORKDIR /src
 
+# go.work workspace mode: копируем go.mod всех 3 модулей, но исходники
+# только pkg + activity-sync.
 COPY go.work ./
 COPY pkg/go.mod pkg/go.sum ./pkg/
+COPY identity/go.mod identity/go.sum ./identity/
 COPY activity-sync/go.mod activity-sync/go.sum ./activity-sync/
 
 RUN cd activity-sync && go mod download
