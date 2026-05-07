@@ -169,6 +169,7 @@ type RemoteSessionDTO = {
   note?: string | null;
   avgHrBpm?: number | null;
   maxHrBpm?: number | null;
+  caloriesKcal?: number | null;
   source?: string;
 };
 
@@ -196,8 +197,8 @@ function insertSessionFromRemote(s: RemoteSessionDTO): void {
   db.runSync(
     `INSERT OR IGNORE INTO sessions
      (id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method,
-      note, avg_hr_bpm, max_hr_bpm, server_id, synced_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      note, avg_hr_bpm, max_hr_bpm, calories_kcal, server_id, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       s.clientSessionId,
       startedAtMs,
@@ -209,6 +210,7 @@ function insertSessionFromRemote(s: RemoteSessionDTO): void {
       s.note ?? null,
       s.avgHrBpm ?? null,
       s.maxHrBpm ?? null,
+      s.caloriesKcal ?? null,
       s.id,
       Date.now(),
     ],
@@ -262,6 +264,7 @@ async function uploadSession(s: Session): Promise<string> {
     note: s.note,
     avgHrBpm: s.avgHrBpm,
     maxHrBpm: s.maxHrBpm,
+    caloriesKcal: s.caloriesKcal,
     source: 'phone',
   };
   const resp = await apiClient.sync('/sessions', {
@@ -322,6 +325,7 @@ type LocalSessionRow = {
   updatedAt: number | null;
   avgHrBpm: number | null;
   maxHrBpm: number | null;
+  caloriesKcal: number | null;
 };
 
 function listPendingSessions(): Session[] {
@@ -331,7 +335,8 @@ function listPendingSessions(): Session[] {
             distance_m AS distanceM, area_m2 AS areaM2, calc_method AS calcMethod,
             note, synced_at AS syncedAt, server_id AS serverId,
             COALESCE(updated_at, started_at) AS updatedAt,
-            avg_hr_bpm AS avgHrBpm, max_hr_bpm AS maxHrBpm
+            avg_hr_bpm AS avgHrBpm, max_hr_bpm AS maxHrBpm,
+            calories_kcal AS caloriesKcal
      FROM sessions
      WHERE synced_at IS NULL OR (updated_at IS NOT NULL AND updated_at > synced_at)
      ORDER BY started_at ASC`,
@@ -360,5 +365,6 @@ function rowToSession(row: LocalSessionRow): Session {
     note: row.note,
     avgHrBpm: row.avgHrBpm,
     maxHrBpm: row.maxHrBpm,
+    caloriesKcal: row.caloriesKcal,
   };
 }

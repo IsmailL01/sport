@@ -12,10 +12,11 @@ type SessionRow = {
   note: string | null;
   avg_hr_bpm: number | null;
   max_hr_bpm: number | null;
+  calories_kcal: number | null;
 };
 
 const SELECT_COLS =
-  'id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note, avg_hr_bpm, max_hr_bpm';
+  'id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note, avg_hr_bpm, max_hr_bpm, calories_kcal';
 
 function rowToSession(row: SessionRow): Session {
   return {
@@ -29,6 +30,7 @@ function rowToSession(row: SessionRow): Session {
     note: row.note,
     avgHrBpm: row.avg_hr_bpm,
     maxHrBpm: row.max_hr_bpm,
+    caloriesKcal: row.calories_kcal,
   };
 }
 
@@ -61,13 +63,14 @@ export function finalizeSession(
     calcMethod: Session['calcMethod'];
     avgHrBpm?: number | null;
     maxHrBpm?: number | null;
+    caloriesKcal?: number | null;
   },
 ): void {
   const db = getDatabase();
   db.runSync(
     `UPDATE sessions
      SET ended_at = ?, is_closed = ?, distance_m = ?, area_m2 = ?, calc_method = ?,
-         avg_hr_bpm = ?, max_hr_bpm = ?
+         avg_hr_bpm = ?, max_hr_bpm = ?, calories_kcal = ?
      WHERE id = ?;`,
     [
       finals.endedAt,
@@ -77,6 +80,7 @@ export function finalizeSession(
       finals.calcMethod,
       finals.avgHrBpm ?? null,
       finals.maxHrBpm ?? null,
+      finals.caloriesKcal ?? null,
       id,
     ],
   );
@@ -143,8 +147,9 @@ export function createManualSession(input: {
   const id = input.startedAt;
   db.runSync(
     `INSERT OR REPLACE INTO sessions
-     (id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note, avg_hr_bpm, max_hr_bpm)
-     VALUES (?, ?, ?, 0, ?, NULL, NULL, ?, ?, ?);`,
+     (id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note,
+      avg_hr_bpm, max_hr_bpm, calories_kcal)
+     VALUES (?, ?, ?, 0, ?, NULL, NULL, ?, ?, ?, NULL);`,
     [
       id,
       input.startedAt,

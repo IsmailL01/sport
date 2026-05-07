@@ -55,6 +55,7 @@ type sessionDTO struct {
 	Note            *string    `json:"note,omitempty"`
 	AvgHrBpm        *float64   `json:"avgHrBpm,omitempty"`
 	MaxHrBpm        *float64   `json:"maxHrBpm,omitempty"`
+	CaloriesKcal    *float64   `json:"caloriesKcal,omitempty"`
 	Source          string     `json:"source,omitempty"`
 }
 
@@ -88,6 +89,7 @@ func toDomainSession(in *sessionDTO) *domain.Session {
 		Note:            in.Note,
 		AvgHrBpm:        in.AvgHrBpm,
 		MaxHrBpm:        in.MaxHrBpm,
+		CaloriesKcal:    in.CaloriesKcal,
 		Source:          in.Source,
 	}
 }
@@ -105,6 +107,7 @@ func sessionToDTO(s *domain.Session) sessionDTO {
 		Note:            s.Note,
 		AvgHrBpm:        s.AvgHrBpm,
 		MaxHrBpm:        s.MaxHrBpm,
+		CaloriesKcal:    s.CaloriesKcal,
 		Source:          s.Source,
 	}
 }

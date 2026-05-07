@@ -20,6 +20,8 @@ import {
 } from '../storage/sessionRepository';
 import { aggregateHrForSession } from '../storage/sensorRepository';
 import { isClosed, totalDistance } from '../util/geo';
+import { estimateCaloriesRun } from '../domain/calories';
+import { useSettingsStore } from './settings';
 
 const FLUSH_THRESHOLD = 10;
 
@@ -211,6 +213,15 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       } catch (e) {
         console.warn('[activity] aggregateHrForSession failed', e);
       }
+      // Оценка калорий через MET (если задан вес атлета).
+      const startedAt = get().startedAt;
+      const durationS = startedAt !== null ? (endedAt - startedAt) / 1000 : 0;
+      const athlete = useSettingsStore.getState().athlete;
+      const caloriesKcal = estimateCaloriesRun(
+        athlete.weightKg ?? null,
+        durationS,
+        distance,
+      );
       try {
         finalizeSession(sessionId, {
           endedAt,
@@ -220,6 +231,7 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
           calcMethod: areaResult.method,
           avgHrBpm,
           maxHrBpm,
+          caloriesKcal,
         });
       } catch (e) {
         console.error('[activity] finalizeSession failed', e);

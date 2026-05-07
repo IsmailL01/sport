@@ -384,6 +384,7 @@ function MapScreen() {
                 endedAt: s.endedAt,
                 distanceM: totalDistance(s.points),
                 avgHrBpm: sess?.avgHrBpm ?? null,
+                calories: sess?.caloriesKcal ?? null,
               }).catch((e) => console.warn('[App] writeSessionToHealth failed', e));
             }
           },

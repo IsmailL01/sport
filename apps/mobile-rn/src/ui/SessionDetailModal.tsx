@@ -131,6 +131,14 @@ export function SessionDetailModal({ session, onClose }: SessionDetailProps) {
               hint="bpm"
             />
             <Metric
+              label="Калории"
+              value={session.caloriesKcal !== null ? `${session.caloriesKcal}` : '—'}
+              hint="kcal"
+            />
+          </View>
+
+          <View style={styles.metricsRow}>
+            <Metric
               label="Площадь"
               value={
                 session.isClosed === true && session.areaM2 !== null

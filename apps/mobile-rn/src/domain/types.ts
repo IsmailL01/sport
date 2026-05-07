@@ -64,6 +64,8 @@ export type Session = {
   avgHrBpm: number | null;
   /** Максимальный HR за сессию (BPM). Phase 6.5. */
   maxHrBpm: number | null;
+  /** Сожжённые калории (MET estimate), null если вес атлета не задан. */
+  caloriesKcal: number | null;
 };
 
 /**

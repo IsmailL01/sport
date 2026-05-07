@@ -22,10 +22,12 @@ type Session struct {
 	Source          string
 	// AvgHrBpm/MaxHrBpm — агрегированные на клиенте при finalize.
 	// Phase 6.5+. Опциональные: nil если HR не записывался.
-	AvgHrBpm  *float64
-	MaxHrBpm  *float64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	AvgHrBpm *float64
+	MaxHrBpm *float64
+	// CaloriesKcal — MET-estimate, считается на клиенте при finalize.
+	CaloriesKcal *float64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // Point — одна GPS-точка. Идентификатор — (SessionID, Timestamp).

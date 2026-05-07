@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 6;
+const TARGET_VERSION = 7;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -15,6 +15,7 @@ let _db: SQLite.SQLiteDatabase | null = null;
  * - v4: + колонки `synced_at` и `server_id` в sessions для outbox-sync (Phase 2 / P2-B-04).
  * - v5: + таблица `sensor_readings` для HR/cadence/power (Phase 5 / P5-A-04).
  * - v6: + колонки `avg_hr_bpm` и `max_hr_bpm` в sessions (агрегация HR на finalize).
+ * - v7: + колонка `calories_kcal` в sessions (MET-based estimate на finalize).
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
@@ -127,6 +128,16 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       db.execSync(`ALTER TABLE sessions ADD COLUMN max_hr_bpm REAL;`);
     }
     current = 6;
+  }
+
+  if (current < 7) {
+    const sessCols = db.getAllSync<{ name: string }>(
+      `PRAGMA table_info(sessions);`,
+    );
+    if (!sessCols.some((c) => c.name === 'calories_kcal')) {
+      db.execSync(`ALTER TABLE sessions ADD COLUMN calories_kcal REAL;`);
+    }
+    current = 7;
   }
 
   if (current !== TARGET_VERSION) {

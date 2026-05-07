@@ -18,6 +18,7 @@ function sess(overrides: Partial<Session> & { startedAt: number }): Session {
     note: null,
     avgHrBpm: null,
     maxHrBpm: null,
+    caloriesKcal: null,
     ...overrides,
   };
 }

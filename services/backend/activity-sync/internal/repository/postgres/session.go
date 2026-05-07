@@ -25,25 +25,26 @@ func (r *SessionRepo) UpsertByClientID(ctx context.Context, s *domain.Session) e
 		INSERT INTO sessions (
 			user_id, client_session_id, started_at, ended_at,
 			is_closed, distance_m, area_m2, calc_method, note, source,
-			avg_hr_bpm, max_hr_bpm
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			avg_hr_bpm, max_hr_bpm, calories_kcal
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (user_id, client_session_id) DO UPDATE SET
-			started_at  = EXCLUDED.started_at,
-			ended_at    = EXCLUDED.ended_at,
-			is_closed   = EXCLUDED.is_closed,
-			distance_m  = EXCLUDED.distance_m,
-			area_m2     = EXCLUDED.area_m2,
-			calc_method = EXCLUDED.calc_method,
-			note        = EXCLUDED.note,
-			source      = EXCLUDED.source,
-			avg_hr_bpm  = EXCLUDED.avg_hr_bpm,
-			max_hr_bpm  = EXCLUDED.max_hr_bpm,
-			updated_at  = now()
+			started_at    = EXCLUDED.started_at,
+			ended_at      = EXCLUDED.ended_at,
+			is_closed     = EXCLUDED.is_closed,
+			distance_m    = EXCLUDED.distance_m,
+			area_m2       = EXCLUDED.area_m2,
+			calc_method   = EXCLUDED.calc_method,
+			note          = EXCLUDED.note,
+			source        = EXCLUDED.source,
+			avg_hr_bpm    = EXCLUDED.avg_hr_bpm,
+			max_hr_bpm    = EXCLUDED.max_hr_bpm,
+			calories_kcal = EXCLUDED.calories_kcal,
+			updated_at    = now()
 		RETURNING id, created_at, updated_at`
 	row := r.pool.QueryRow(ctx, sql,
 		s.UserID, s.ClientSessionID, s.StartedAt, s.EndedAt,
 		s.IsClosed, s.DistanceM, s.AreaM2, s.CalcMethod, s.Note, s.Source,
-		s.AvgHrBpm, s.MaxHrBpm,
+		s.AvgHrBpm, s.MaxHrBpm, s.CaloriesKcal,
 	)
 	if err := row.Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		return err
@@ -55,7 +56,7 @@ func (r *SessionRepo) GetByID(ctx context.Context, id string) (*domain.Session, 
 	const sql = `
 		SELECT id, user_id, client_session_id, started_at, ended_at,
 			is_closed, distance_m, area_m2, calc_method, note, source,
-			avg_hr_bpm, max_hr_bpm,
+			avg_hr_bpm, max_hr_bpm, calories_kcal,
 			created_at, updated_at
 		FROM sessions WHERE id = $1`
 	row := r.pool.QueryRow(ctx, sql, id)
@@ -66,7 +67,7 @@ func (r *SessionRepo) ListByUser(ctx context.Context, userID string, limit int) 
 	const sql = `
 		SELECT id, user_id, client_session_id, started_at, ended_at,
 			is_closed, distance_m, area_m2, calc_method, note, source,
-			avg_hr_bpm, max_hr_bpm,
+			avg_hr_bpm, max_hr_bpm, calories_kcal,
 			created_at, updated_at
 		FROM sessions WHERE user_id = $1
 		ORDER BY started_at DESC
@@ -109,11 +110,11 @@ func scanSession(row scannable) (*domain.Session, error) {
 	var isClosed *bool
 	var distanceM, areaM2 *float64
 	var calcMethod, note *string
-	var avgHrBpm, maxHrBpm *float64
+	var avgHrBpm, maxHrBpm, caloriesKcal *float64
 	if err := row.Scan(
 		&s.ID, &s.UserID, &s.ClientSessionID, &s.StartedAt, &endedAt,
 		&isClosed, &distanceM, &areaM2, &calcMethod, &note, &s.Source,
-		&avgHrBpm, &maxHrBpm,
+		&avgHrBpm, &maxHrBpm, &caloriesKcal,
 		&s.CreatedAt, &s.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -129,5 +130,6 @@ func scanSession(row scannable) (*domain.Session, error) {
 	s.Note = note
 	s.AvgHrBpm = avgHrBpm
 	s.MaxHrBpm = maxHrBpm
+	s.CaloriesKcal = caloriesKcal
 	return &s, nil
 }
