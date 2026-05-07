@@ -42,6 +42,7 @@ import { MetricsBar } from './src/ui/MetricsBar';
 import { ProfileModal } from './src/ui/ProfileModal';
 import { SensorsModal } from './src/ui/SensorsModal';
 import { StatsModal } from './src/ui/StatsModal';
+import { TrainingModal } from './src/ui/TrainingModal';
 import { useSensorsStore } from './src/state/sensors';
 import { totalDistance } from './src/util/geo';
 
@@ -275,6 +276,7 @@ function MapScreen() {
   const [statsVisible, setStatsVisible] = useState(false);
   const [profileVisible, setProfileVisible] = useState(false);
   const [sensorsVisible, setSensorsVisible] = useState(false);
+  const [trainingVisible, setTrainingVisible] = useState(false);
   const liveHrBpm = useSensorsStore((s) => s.liveHrBpm);
   const sensorStatus = useSensorsStore((s) => s.status);
   const hydrateSensors = useSensorsStore((s) => s.hydrate);
@@ -421,6 +423,9 @@ function MapScreen() {
         <Pressable style={styles.historyBtn} onPress={() => setStatsVisible(true)}>
           <Text style={styles.historyBtnText}>📊 Статистика</Text>
         </Pressable>
+        <Pressable style={styles.historyBtn} onPress={() => setTrainingVisible(true)}>
+          <Text style={styles.historyBtnText}>🏋 Тренировки</Text>
+        </Pressable>
         <Pressable style={styles.historyBtn} onPress={() => setHistoryVisible(true)}>
           <Text style={styles.historyBtnText}>История</Text>
         </Pressable>
@@ -448,6 +453,7 @@ function MapScreen() {
       <StatsModal visible={statsVisible} onClose={() => setStatsVisible(false)} />
       <ProfileModal visible={profileVisible} onClose={() => setProfileVisible(false)} />
       <SensorsModal visible={sensorsVisible} onClose={() => setSensorsVisible(false)} />
+      <TrainingModal visible={trainingVisible} onClose={() => setTrainingVisible(false)} />
 
       <View style={styles.topOverlay} pointerEvents="none">
         <MetricsBar

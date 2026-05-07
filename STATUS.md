@@ -4,11 +4,11 @@
 
 ## Текущая фаза
 
-**Phase 1 — Territory Core** (стартовала 2026-05-06, code-level почти done)
+**Phase 6 — Training Engine** (стартовала 2026-05-07, P6-A code-level done)
 
 Phase 0 закрыта — выбран Expo React Native, см. [DECISION.md](DECISION.md). Flutter архивирован в `apps/mobile_flutter.archived/`.
 
-Phase 1: реализованы все P1-A..L подсекции на code-level (см. таблицу ниже). Acceptance остаются runtime-bound: P1-M field testing на 3 устройствах, NFR измерения батареи / FPS / background reliability. tsc clean, jest 73/73 passing, coverage 93% pipeline / 95%+ geo.
+Phase 1–5 закрыты на code-level. Phase 6 / P6-A: TSS (HR + rTSS), Banister PMC (CTL/ATL/TSB), Race predictor (Riegel + Cameron), VO2max (Cooper + Daniels), LTHR estimator, Workout data model + library из 4 классических тренировок, TrainingModal UI с 3 табами (PMC + Прогноз + Тренировки). tsc clean, jest 146/146 passing.
 
 ## Phase 1 progress
 
@@ -180,6 +180,33 @@ Persistence flow:
    Добавить значение в Mapbox dashboard на токенах `dev-public` и `prod-public`.
 
 5. **CODEOWNERS** — заполнить GitHub usernames обоих разработчиков в [CODEOWNERS](CODEOWNERS).
+
+### 2026-05-07 — Phase 6 / P6-A: Training Engine (math + UI)
+
+Реализована подсистема тренировочной нагрузки и прогнозирования:
+
+| Файл | Что внутри |
+|---|---|
+| `src/domain/training/tss.ts` | `computeHrTSS` (HR-based), `computeRTSS` (pace-based, Daniels formula с IF в кубе), `bestTSS` (выбирает HR если есть данные, иначе rTSS), `averageHr`, `averagePaceFromTotals` |
+| `src/domain/training/banister.ts` | `computePMC` — Banister рекуррентная модель CTL (τ=42d) и ATL (τ=7d), `tsbZone` 5-уровневая (fresh/optimal/neutral/fatigued/overreached), `buildDailyTSS` агрегация |
+| `src/domain/training/lthr.ts` | `estimateLthrFromHistory` (95-й перцентиль avgHr из ≥30мин сессий), `estimateLthrPaceFromHistory` (5-й перцентиль среднего темпа = быстрейшие 5%) |
+| `src/domain/training/racePredictor.ts` | `riegelPredict` (показатель 1.06), `cameronPredict` (адаптивный показатель 1.06/1.08/1.10 в зависимости от целевой дистанции), `bestPredict` choosing |
+| `src/domain/training/vo2max.ts` | `vo2maxFromCooper12Min` (формула Купера), `vo2maxFrom5KTime` (Daniels VDOT-приближение), `vo2maxCategory` 5-уровневая по возрасту/полу |
+| `src/domain/training/workout.ts` | `Workout`/`WorkoutStep` data model, `WORKOUT_LIBRARY` (4 предустановленных: easy-30min, intervals-5x400, tempo-40min, long-90min), `workoutTotalDurationS`, `resolveHrTargetBpm` |
+| `src/state/training.ts` | `useTrainingStore` zustand: `recompute()` оценивает LTHR через эвристику (0.85 × maxHR), вычисляет TSS для всех завершённых сессий, строит PMC за 90 дней |
+| `src/ui/TrainingModal.tsx` | 3 таба: **PMC** (CTL/ATL/TSB карточки + tsbZone hint + 30-дневный TSS bar chart + 90-дневный CTL/ATL trend chart + LTHR estimate), **Прогноз** (выбор distance + ввод времени → таблица предсказаний для всех остальных дистанций по Cameron), **Тренировки** (список WORKOUT_LIBRARY с цветовой меткой level и развёрнутым описанием шагов) |
+| `src/__tests__/training.test.ts` | 36 unit-тестов всей training math |
+
+**Тесты:** 146/146 passing (10 suites). tsc clean. ESLint config поломан после миграции на v9 (отдельная задача — `.eslintrc.json` нужно мигрировать на flat config), но функционально не критично.
+
+**App.tsx интеграция:** добавлена кнопка `🏋 Тренировки` в правую колонку (между Статистикой и Историей), монтаж `<TrainingModal>` рядом с другими модалами.
+
+**Что НЕ входит в P6-A** (отложено на Phase 6.5):
+- Workout player (live tracking шагов с GPS-привязкой и голосовыми командами)
+- Real LTHR test wizard (30-минутный all-out)
+- Реальный avgHr на сессию из sensor_readings (сейчас TODO в `state/training.ts` — данных пока нет)
+- ZRH (zone-based race predictor)
+- Адаптивный план тренировок (нужна модель fitness-prediction)
 
 ## Заметки
 
