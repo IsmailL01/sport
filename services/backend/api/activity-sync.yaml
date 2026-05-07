@@ -1,0 +1,181 @@
+openapi: 3.1.0
+info:
+  title: Running Ecosystem — Activity Sync Service
+  description: |
+    CRUD сессий пробежек и time-series точек. Phase 2 / P2-A-04.
+    Все endpoint'ы (кроме `/healthz`) требуют Bearer JWT, выпущенный
+    identity-сервисом. См. [docs/RUNNING_ECOSYSTEM_TZ.md](../../docs/RUNNING_ECOSYSTEM_TZ.md) §5.
+
+    **Идемпотентность.**
+    - `POST /sessions` — upsert по (user_id, clientSessionId). Outbox клиента
+      может повторно отправлять одну и ту же session — новая запись не появится.
+    - `POST /sessions/{id}/points` — конфликты по (session_id, ts) silently игнорируются.
+      Поле `inserted` в ответе показывает реально добавленные.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8082
+  - url: https://api-staging.runningecosystem.app
+
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      tags: [system]
+      security: []
+      responses:
+        '200': { description: OK }
+
+  /sessions:
+    post:
+      summary: Создать или обновить сессию (idempotent по clientSessionId)
+      tags: [sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Session' }
+      responses:
+        '200':
+          description: OK (upsert)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+    get:
+      summary: Список сессий текущего пользователя
+      tags: [sessions]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100, minimum: 1, maximum: 500 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Session' }
+
+  /sessions/{id}:
+    get:
+      summary: Метаданные сессии
+      tags: [sessions]
+      parameters:
+        - $ref: '#/components/parameters/sessionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '403': { description: Доступ запрещён (чужой UUID) }
+        '404': { description: Не найдена }
+    delete:
+      summary: Удалить сессию (вместе с точками — каскадно)
+      tags: [sessions]
+      parameters:
+        - $ref: '#/components/parameters/sessionId'
+      responses:
+        '204': { description: Deleted }
+        '403': { description: Forbidden }
+        '404': { description: Not Found }
+
+  /sessions/{id}/points:
+    post:
+      summary: Append batch точек (max 5000 за раз)
+      tags: [points]
+      parameters:
+        - $ref: '#/components/parameters/sessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points:
+                  type: array
+                  maxItems: 5000
+                  items: { $ref: '#/components/schemas/Point' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  inserted: { type: integer, description: "Реально вставленные (без дублей)" }
+        '400': { description: Batch > 5000 или невалидный JSON }
+        '403': { description: Forbidden }
+        '404': { description: Session not found }
+    get:
+      summary: Все точки сессии в порядке времени
+      tags: [points]
+      parameters:
+        - $ref: '#/components/parameters/sessionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Point' }
+
+components:
+  parameters:
+    sessionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Session:
+      type: object
+      required: [clientSessionId, startedAt]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        clientSessionId:
+          type: integer
+          format: int64
+          description: |
+            ID на стороне клиента (Date.now() на момент Start). Используется
+            для idempotent upsert через UNIQUE (user_id, client_session_id).
+        startedAt: { type: string, format: date-time }
+        endedAt:   { type: string, format: date-time, nullable: true }
+        isClosed:  { type: boolean, nullable: true }
+        distanceM: { type: number, nullable: true }
+        areaM2:    { type: number, nullable: true }
+        calcMethod:
+          type: string
+          nullable: true
+          enum: [shoelace_simple, shoelace_with_warning, corridor]
+        note:   { type: string, nullable: true }
+        source: { type: string, default: phone, description: "phone / garmin / strava / ..." }
+
+    Point:
+      type: object
+      required: [timestamp, latitude, longitude]
+      properties:
+        timestamp: { type: string, format: date-time }
+        latitude:  { type: number, format: double }
+        longitude: { type: number, format: double }
+        altitude:  { type: number, nullable: true }
+        accuracy:  { type: number, nullable: true }
+        speed:     { type: number, nullable: true }
+        source:
+          type: string
+          default: raw
+          enum: [raw, kalman, interpolated]
