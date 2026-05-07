@@ -126,6 +126,12 @@ function Inner() {
         setPermissionStatus('denied');
       }
     })();
+    // После успешной аутентификации — pull сессий с сервера. Если новое
+    // устройство, увидим всю историю; на старом — операция почти бесплатная
+    // (нечего скачивать).
+    useSyncStore.getState().pullDown().catch((e) => {
+      console.warn('[App] pullDown after auth failed', e);
+    });
   }, [authState]);
 
   // Cleanup на unmount: гарантируем что подписка location снимается

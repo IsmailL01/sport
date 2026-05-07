@@ -89,6 +89,167 @@ export async function runOutboxSync(opts?: {
   return { ok: true, sessionsUploaded, pointsUploaded };
 }
 
+export type PullDownResult = {
+  ok: boolean;
+  sessionsDownloaded: number;
+  pointsDownloaded: number;
+  error?: string;
+};
+
+/**
+ * Pull-down: загрузить с сервера сессии которых нет локально.
+ * Сценарий: новое устройство после login → видим всю историю.
+ *
+ * Принцип: server-as-source для отсутствующих локально сессий
+ * (по client_session_id). Локально существующие — НЕ трогаем
+ * (защита от затирания несинхронизированных правок).
+ */
+export async function runPullDown(opts?: {
+  /** Лимит сессий за один pull (для пагинации в будущем). Default: 200. */
+  limit?: number;
+  onProgress?: (downloaded: number, total: number) => void;
+}): Promise<PullDownResult> {
+  if (!apiClient.isAuthenticated()) {
+    return { ok: false, sessionsDownloaded: 0, pointsDownloaded: 0, error: 'unauthenticated' };
+  }
+  const limit = opts?.limit ?? 200;
+  let sessionsDownloaded = 0;
+  let pointsDownloaded = 0;
+
+  try {
+    const resp = await apiClient.sync(`/sessions?limit=${limit}`);
+    if (!resp.ok) {
+      return {
+        ok: false,
+        sessionsDownloaded: 0,
+        pointsDownloaded: 0,
+        error: `list sessions: HTTP ${resp.status}`,
+      };
+    }
+    const remoteSessions = (await resp.json()) as RemoteSessionDTO[];
+    const localClientIds = listLocalClientSessionIds();
+    const missing = remoteSessions.filter((s) => !localClientIds.has(s.clientSessionId));
+
+    for (let i = 0; i < missing.length; i++) {
+      const s = missing[i];
+      opts?.onProgress?.(i, missing.length);
+      try {
+        insertSessionFromRemote(s);
+        const points = await fetchPointsForSession(s.id);
+        if (points.length > 0) {
+          insertPointsForSession(s.clientSessionId, points);
+          pointsDownloaded += points.length;
+        }
+        sessionsDownloaded += 1;
+      } catch (e) {
+        console.warn('[sync] pull session failed', s.clientSessionId, e);
+      }
+    }
+    opts?.onProgress?.(missing.length, missing.length);
+    return { ok: true, sessionsDownloaded, pointsDownloaded };
+  } catch (e) {
+    return {
+      ok: false,
+      sessionsDownloaded,
+      pointsDownloaded,
+      error: (e as Error)?.message ?? String(e),
+    };
+  }
+}
+
+type RemoteSessionDTO = {
+  id: string;
+  clientSessionId: number;
+  startedAt: string;
+  endedAt?: string | null;
+  isClosed?: boolean | null;
+  distanceM?: number | null;
+  areaM2?: number | null;
+  calcMethod?: string | null;
+  note?: string | null;
+  avgHrBpm?: number | null;
+  maxHrBpm?: number | null;
+  source?: string;
+};
+
+type RemotePointDTO = {
+  timestamp: string;
+  latitude: number;
+  longitude: number;
+  altitude?: number | null;
+  accuracy?: number | null;
+  speed?: number | null;
+  source?: string;
+};
+
+function listLocalClientSessionIds(): Set<number> {
+  const db = getDatabase();
+  const rows = db.getAllSync<{ id: number }>(`SELECT id FROM sessions`);
+  return new Set(rows.map((r) => r.id));
+}
+
+function insertSessionFromRemote(s: RemoteSessionDTO): void {
+  const db = getDatabase();
+  const startedAtMs = new Date(s.startedAt).getTime();
+  const endedAtMs = s.endedAt ? new Date(s.endedAt).getTime() : null;
+  // synced_at = now() — данные пришли с сервера, считаем sync актуальным.
+  db.runSync(
+    `INSERT OR IGNORE INTO sessions
+     (id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method,
+      note, avg_hr_bpm, max_hr_bpm, server_id, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      s.clientSessionId,
+      startedAtMs,
+      endedAtMs,
+      s.isClosed === null || s.isClosed === undefined ? null : s.isClosed ? 1 : 0,
+      s.distanceM ?? null,
+      s.areaM2 ?? null,
+      s.calcMethod ?? null,
+      s.note ?? null,
+      s.avgHrBpm ?? null,
+      s.maxHrBpm ?? null,
+      s.id,
+      Date.now(),
+    ],
+  );
+}
+
+async function fetchPointsForSession(serverSessionID: string): Promise<RemotePointDTO[]> {
+  const resp = await apiClient.sync(`/sessions/${serverSessionID}/points`);
+  if (!resp.ok) {
+    throw new Error(`fetch points: HTTP ${resp.status}`);
+  }
+  const data = (await resp.json()) as RemotePointDTO[];
+  return data;
+}
+
+function insertPointsForSession(localSessionId: number, points: RemotePointDTO[]): void {
+  const db = getDatabase();
+  db.withTransactionSync(() => {
+    const stmt = db.prepareSync(
+      `INSERT OR IGNORE INTO points (session_id, ts, lat, lon, alt, accuracy, speed, source)
+       VALUES ($sid, $ts, $lat, $lon, $alt, $accuracy, $speed, $source);`,
+    );
+    try {
+      for (const p of points) {
+        stmt.executeSync({
+          $sid: localSessionId,
+          $ts: new Date(p.timestamp).getTime(),
+          $lat: p.latitude,
+          $lon: p.longitude,
+          $alt: p.altitude ?? null,
+          $accuracy: p.accuracy ?? null,
+          $speed: p.speed ?? null,
+          $source: p.source ?? 'raw',
+        });
+      }
+    } finally {
+      stmt.finalizeSync();
+    }
+  });
+}
+
 async function uploadSession(s: Session): Promise<string> {
   const body = {
     clientSessionId: s.id,
