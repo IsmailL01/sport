@@ -40,7 +40,9 @@ import { AuthScreen } from './src/ui/AuthScreen';
 import { HistoryModal } from './src/ui/HistoryModal';
 import { MetricsBar } from './src/ui/MetricsBar';
 import { ProfileModal } from './src/ui/ProfileModal';
+import { SensorsModal } from './src/ui/SensorsModal';
 import { StatsModal } from './src/ui/StatsModal';
+import { useSensorsStore } from './src/state/sensors';
 import { totalDistance } from './src/util/geo';
 
 const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
@@ -272,6 +274,13 @@ function MapScreen() {
   const [historyVisible, setHistoryVisible] = useState(false);
   const [statsVisible, setStatsVisible] = useState(false);
   const [profileVisible, setProfileVisible] = useState(false);
+  const [sensorsVisible, setSensorsVisible] = useState(false);
+  const liveHrBpm = useSensorsStore((s) => s.liveHrBpm);
+  const sensorStatus = useSensorsStore((s) => s.status);
+  const hydrateSensors = useSensorsStore((s) => s.hydrate);
+  useEffect(() => {
+    hydrateSensors();
+  }, [hydrateSensors]);
 
   // На старте экрана — загрузить список + точки всех закрытых сессий
   // (для отрисовки all-time territory layer на карте).
@@ -418,6 +427,11 @@ function MapScreen() {
         <Pressable style={styles.historyBtn} onPress={() => setProfileVisible(true)}>
           <Text style={styles.historyBtnText}>Профиль</Text>
         </Pressable>
+        <Pressable style={styles.historyBtn} onPress={() => setSensorsVisible(true)}>
+          <Text style={styles.historyBtnText}>
+            {sensorStatus === 'connected' ? `♥ ${liveHrBpm ?? '…'}` : '♥ HR'}
+          </Text>
+        </Pressable>
         <Pressable
           style={styles.historyBtn}
           onPress={() => triggerSync().catch(() => {})}
@@ -433,6 +447,7 @@ function MapScreen() {
       <HistoryModal visible={historyVisible} onClose={() => setHistoryVisible(false)} />
       <StatsModal visible={statsVisible} onClose={() => setStatsVisible(false)} />
       <ProfileModal visible={profileVisible} onClose={() => setProfileVisible(false)} />
+      <SensorsModal visible={sensorsVisible} onClose={() => setSensorsVisible(false)} />
 
       <View style={styles.topOverlay} pointerEvents="none">
         <MetricsBar
@@ -449,6 +464,7 @@ function MapScreen() {
           lastDropFilter={lastDropFilter}
           areaM2={closureFired ? areaM2 : null}
           warnings={areaWarnings}
+          liveHrBpm={liveHrBpm}
         />
       </View>
 

@@ -38,6 +38,8 @@ export type MetricsBarProps = {
   areaM2: number | null;
   /** Опциональные warnings (например 'self-intersection'). */
   warnings?: readonly string[];
+  /** Live HR в уд/мин. null если HR-сенсор не подключён. */
+  liveHrBpm?: number | null;
 };
 
 export function MetricsBar(props: MetricsBarProps) {
@@ -71,6 +73,9 @@ export function MetricsBar(props: MetricsBarProps) {
       <View style={styles.row}>
         <Stat label="Дистанция" value={formatDistance(props.distanceM)} />
         <Stat label="Темп" value={formatPace(paceMinKm)} />
+        {props.liveHrBpm !== null && props.liveHrBpm !== undefined && (
+          <Stat label="Пульс" value={`♥ ${props.liveHrBpm}`} />
+        )}
       </View>
 
       <Text style={styles.subtitle}>

@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 4;
+const TARGET_VERSION = 5;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -13,6 +13,7 @@ let _db: SQLite.SQLiteDatabase | null = null;
  * - v2: + таблица `sessions` с метаданными (Phase 1 / P1-A-07, ТЗ §4.5).
  * - v3: + колонка `source` в points (raw/kalman/interpolated) для трассировки pipeline.
  * - v4: + колонки `synced_at` и `server_id` в sessions для outbox-sync (Phase 2 / P2-B-04).
+ * - v5: + таблица `sensor_readings` для HR/cadence/power (Phase 5 / P5-A-04).
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
@@ -95,6 +96,23 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       `CREATE INDEX IF NOT EXISTS idx_sessions_pending_sync ON sessions (synced_at);`,
     );
     current = 4;
+  }
+
+  if (current < 5) {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS sensor_readings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        ts INTEGER NOT NULL,
+        type TEXT NOT NULL,           -- hr | cadence | power | temperature
+        value REAL NOT NULL,
+        source_id TEXT
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_sensor_readings_session_ts ON sensor_readings (session_id, ts);`,
+    );
+    current = 5;
   }
 
   if (current !== TARGET_VERSION) {

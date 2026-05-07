@@ -95,3 +95,14 @@ export type Pause = {
   endedAt: number | null;
   auto: boolean;
 };
+
+/**
+ * Точка после association с HR / cadence / power.
+ * См. ТЗ §4.2 SensorReading. Phase 5+: точки получают метаданные сенсоров
+ * через ближайший по времени sample.
+ */
+export type EnrichedPoint = Point & {
+  hrBpm: number | null;
+  cadenceRpm: number | null;
+  powerW: number | null;
+};
