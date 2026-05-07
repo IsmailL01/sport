@@ -39,6 +39,8 @@ import { HistoryTerritoryLayer } from './src/map';
 import { AuthScreen } from './src/ui/AuthScreen';
 import { HistoryModal } from './src/ui/HistoryModal';
 import { MetricsBar } from './src/ui/MetricsBar';
+import { ProfileModal } from './src/ui/ProfileModal';
+import { StatsModal } from './src/ui/StatsModal';
 import { totalDistance } from './src/util/geo';
 
 const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
@@ -268,6 +270,8 @@ function MapScreen() {
   const triggerSync = useSyncStore((s) => s.trigger);
   const logout = useAuthStore((s) => s.logout);
   const [historyVisible, setHistoryVisible] = useState(false);
+  const [statsVisible, setStatsVisible] = useState(false);
+  const [profileVisible, setProfileVisible] = useState(false);
 
   // На старте экрана — загрузить список + точки всех закрытых сессий
   // (для отрисовки all-time territory layer на карте).
@@ -405,8 +409,14 @@ function MapScreen() {
       </MapboxView>
 
       <View style={styles.topRightCol}>
+        <Pressable style={styles.historyBtn} onPress={() => setStatsVisible(true)}>
+          <Text style={styles.historyBtnText}>📊 Статистика</Text>
+        </Pressable>
         <Pressable style={styles.historyBtn} onPress={() => setHistoryVisible(true)}>
           <Text style={styles.historyBtnText}>История</Text>
+        </Pressable>
+        <Pressable style={styles.historyBtn} onPress={() => setProfileVisible(true)}>
+          <Text style={styles.historyBtnText}>Профиль</Text>
         </Pressable>
         <Pressable
           style={styles.historyBtn}
@@ -421,6 +431,8 @@ function MapScreen() {
       </View>
 
       <HistoryModal visible={historyVisible} onClose={() => setHistoryVisible(false)} />
+      <StatsModal visible={statsVisible} onClose={() => setStatsVisible(false)} />
+      <ProfileModal visible={profileVisible} onClose={() => setProfileVisible(false)} />
 
       <View style={styles.topOverlay} pointerEvents="none">
         <MetricsBar
