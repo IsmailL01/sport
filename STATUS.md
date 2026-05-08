@@ -4,15 +4,22 @@
 
 ## Текущая фаза
 
-**Phase 8 / A — Internal messenger MVP** (DM + real-time WS + push)
+**Phase 8 / C — Stories** ✅ code-complete (backend + mobile + smoke)
 
 Phase 0 закрыта — выбран Expo React Native, см. [DECISION.md](DECISION.md). Flutter архивирован в `apps/mobile_flutter.archived/`.
 
 Phase 1–5 закрыты на code-level. Phase 6 / P6-A code-level done. Phase 6.5 polish done. Phase 7 scaffold (Mock health adapter). Phase 9 P9-A-01 plan generator. **Phase 3.1 production deploy на Hetzner-like VPS** (https://148-253-214-156.sslip.io) — Caddy HTTPS Let's Encrypt + Postgres+TimescaleDB.
 
-**Phase 8 / A — Messenger:** план в `~/.claude/plans/eventual-sniffing-cerf.md`. **Backend Phase A полностью развёрнут**: 4 Go-сервиса (social-graph, messaging, realtime-gw, notifications) + NATS JetStream + Redis. **Mobile Phase A5** клиент: SQLite v8-v9, Realtime/Notifications adapters, 5 zustand stores, ChatsModal с 3 screens (list, chat, search), outbox messageSync, JWT-authenticated WebSocket. End-to-end smoke pass: real-time message delivery <1s.
+**Phase 8 / A — Messenger MVP** ✅: 4 Go-сервиса (social-graph, messaging, realtime-gw, notifications) + NATS JetStream + Redis. Mobile A5 клиент: SQLite v8-v9, Realtime/Notifications adapters, 5 zustand stores, ChatsModal с 3 screens.
 
-tsc clean, jest 239/239 passing.
+**Phase 8 / B — Groups + media** ✅: messaging extension (group conversations, member roles, reactions, replies, edits) + media сервис + MinIO с presigned PUT/GET через Caddy s3.148-253-214-156.sslip.io. Mobile: SQLite v10 (media columns), MediaAdapter, mediaUpload, NewGroupScreen, ChatSettingsScreen.
+
+**Phase 8 / C — Stories** ✅ code-complete:
+- **Backend:** новый `feed` сервис (Go, port 8085), migration `0016_stories` (`stories` + `story_views`), endpoints `POST /stories`, `GET /stories/{feed,me,{id}/views}`, `POST /stories/{id}/views`, `DELETE /stories/{id}` + cleanup-cron sidecar (1h), NATS events `feed.story.{published,expired}.v1`. Caddy routes wired, deployed на VPS.
+- **Mobile:** новый паттерн **`src/modules/<name>/`** (отделённый от существующего layered кода). `modules/stories/` содержит {`domain/`, `storage/`, `state/`, `sync/`, `ui/`, `index.ts`} — single public surface через index.ts. Components: `StoriesRail` (horizontal scroll кружков над списком чатов), `StoriesViewer` (full-screen modal с прогрессбарами), `StoryComposerScreen` (gallery/camera + caption + post). SQLite v11 (`stories` + `story_views`). Offline-first: drafts с retry, optimistic markViewed, автохайдрейт из кэша.
+- **E2E smoke** (`services/backend/scripts/smoke_stories.py`): register-2-users → follow → upload → publish → feed → markViewed → viewers → delete. Pass.
+
+tsc clean, jest **246/246 passing** (+7 stories). 12 контейнеров на VPS включая `re_feed`.
 
 ## Phase 1 progress
 

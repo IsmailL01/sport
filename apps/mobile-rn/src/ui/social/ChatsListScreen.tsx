@@ -1,7 +1,7 @@
-// Список чатов.
-// Phase 8 / A5.
+// Список чатов + рейл историй сверху.
+// Phase 8 / A5 + Phase 8 / C (StoriesRail).
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View,
 } from 'react-native';
@@ -10,20 +10,37 @@ import type { Chat } from '../../domain/social';
 import { lastMessagePreview } from '../../domain/social';
 import { useChatsStore } from '../../state/social/useChatsStore';
 import { useUsersStore } from '../../state/social/useUsersStore';
+import {
+  StoriesRail, StoriesViewer, StoryComposerScreen,
+} from '../../modules/stories';
+import type { StoryGroup } from '../../modules/stories';
 
 type Props = {
+  myUserId: string;
   onOpenChat: (chat: Chat) => void;
   onNewChat: () => void;
 };
 
-export function ChatsListScreen({ onOpenChat, onNewChat }: Props) {
+type ViewerState =
+  | { kind: 'closed' }
+  | { kind: 'open'; group: StoryGroup; idx: number; groupOrder: number };
+
+export function ChatsListScreen({ myUserId, onOpenChat, onNewChat }: Props) {
   const chats = useChatsStore((s) => s.chats);
   const loading = useChatsStore((s) => s.loading);
   const refresh = useChatsStore((s) => s.refresh);
 
+  const [viewer, setViewer] = useState<ViewerState>({ kind: 'closed' });
+  const [composerOpen, setComposerOpen] = useState(false);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const handleOpenGroup = (group: StoryGroup, startIdx: number) => {
+    // Найти position group в actual store list (для swipe-to-next-author).
+    setViewer({ kind: 'open', group, idx: startIdx, groupOrder: 0 });
+  };
 
   return (
     <View style={styles.container}>
@@ -33,6 +50,12 @@ export function ChatsListScreen({ onOpenChat, onNewChat }: Props) {
           <Text style={styles.newBtnText}>+ Новый</Text>
         </Pressable>
       </View>
+
+      <StoriesRail
+        myUserId={myUserId}
+        onCompose={() => setComposerOpen(true)}
+        onOpenGroup={handleOpenGroup}
+      />
 
       {loading && chats.length === 0 ? (
         <ActivityIndicator style={{ marginTop: 32 }} />
@@ -50,6 +73,23 @@ export function ChatsListScreen({ onOpenChat, onNewChat }: Props) {
           refreshing={loading}
         />
       )}
+
+      {viewer.kind === 'open' ? (
+        <StoriesViewer
+          visible
+          group={viewer.group}
+          startIndex={viewer.idx}
+          myUserId={myUserId}
+          onClose={() => setViewer({ kind: 'closed' })}
+        />
+      ) : null}
+
+      <StoryComposerScreen
+        visible={composerOpen}
+        myUserId={myUserId}
+        onClose={() => setComposerOpen(false)}
+        onPosted={() => setComposerOpen(false)}
+      />
     </View>
   );
 }

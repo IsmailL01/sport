@@ -126,6 +126,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   logout: async () => {
     await apiClient.clearTokens();
+    // Wipe modular stores on logout (Phase 8 / C — модульный паттерн).
+    try {
+      const { useStoriesStore } = await import('../modules/stories');
+      useStoriesStore.getState().clearAll();
+    } catch (e) {
+      console.warn('[auth] stories clearAll failed', e);
+    }
     set({ state: 'unauthenticated', user: null, error: null });
   },
 

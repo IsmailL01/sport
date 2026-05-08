@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 10;
+const TARGET_VERSION = 11;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -19,6 +19,7 @@ let _db: SQLite.SQLiteDatabase | null = null;
  * - v8: + таблицы `social_users` (cache profiles) и `chats` (Phase 8 / A5).
  * - v9: + таблица `messages` с outbox-полями (Phase 8 / A5).
  * - v10: + media_id + media_mime в messages (Phase 8 / B3 image attachments).
+ * - v11: + таблицы `stories` + `story_views` (Phase 8 / C — модуль `modules/stories`).
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
@@ -237,6 +238,46 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       db.execSync(`ALTER TABLE messages ADD COLUMN media_mime TEXT;`);
     }
     current = 10;
+  }
+
+  if (current < 11) {
+    // Phase 8 / C: stories. Кэш активных stories + локальные drafts (offline-first).
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS stories (
+        id TEXT PRIMARY KEY,
+        author_id TEXT NOT NULL,
+        media_id TEXT NOT NULL,
+        overlay_text TEXT,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        view_count INTEGER NOT NULL DEFAULT 0,
+        i_viewed INTEGER NOT NULL DEFAULT 0,
+        is_draft INTEGER NOT NULL DEFAULT 0,
+        client_id TEXT,
+        local_uri TEXT,
+        mime TEXT,
+        width INTEGER,
+        height INTEGER,
+        status TEXT,
+        attempts INTEGER DEFAULT 0,
+        last_error TEXT
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_stories_author_expires ON stories (author_id, expires_at);`,
+    );
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_stories_drafts ON stories (status, created_at) WHERE is_draft = 1;`,
+    );
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS story_views (
+        story_id TEXT NOT NULL,
+        viewer_id TEXT NOT NULL,
+        viewed_at INTEGER NOT NULL,
+        PRIMARY KEY (story_id, viewer_id)
+      );
+    `);
+    current = 11;
   }
 
   if (current !== TARGET_VERSION) {

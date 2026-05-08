@@ -105,6 +105,7 @@ export function ChatsModal({ visible, myUserId, onClose }: Props) {
     >
       {screen.kind === 'list' && (
         <ChatsListScreen
+          myUserId={myUserId}
           onOpenChat={(c) => setScreen({ kind: 'chat', chat: c })}
           onNewChat={() => setScreen({ kind: 'newChatChoice' })}
         />

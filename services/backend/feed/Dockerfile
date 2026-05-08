@@ -14,22 +14,22 @@ COPY notifications/go.mod ./notifications/
 COPY media/go.mod ./media/
 COPY feed/go.mod ./feed/
 
-RUN cd media && go mod download
+RUN cd feed && go mod download
 RUN cd pkg && go mod download
 
 COPY pkg ./pkg
-COPY media ./media
+COPY feed ./feed
 
-RUN cd media && \
+RUN cd feed && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/media ./cmd/server
+    go build -trimpath -ldflags="-s -w" -o /out/feed ./cmd/server
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /app
-COPY --from=build /out/media /app/media
+COPY --from=build /out/feed /app/feed
 
 USER nonroot:nonroot
-EXPOSE 8086
+EXPOSE 8085
 
-ENTRYPOINT ["/app/media"]
+ENTRYPOINT ["/app/feed"]
