@@ -88,6 +88,9 @@ func (h *Handler) createPost(w http.ResponseWriter, r *http.Request) {
 	actorID := userIDFromContext(r.Context())
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
+	if !h.rateLimit(w, ctx, "post", actorID, postsPerMinute, rateWindowMinute) {
+		return
+	}
 	post, err := h.svc.CreatePost(ctx, actorID, service.CreatePostInput{
 		Kind:       domain.PostKind(req.Kind),
 		Body:       req.Body,
@@ -186,6 +189,9 @@ func (h *Handler) commentOnPost(w http.ResponseWriter, r *http.Request) {
 	postID := r.PathValue("id")
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
+	if !h.rateLimit(w, ctx, "cmt", actorID, commentsPerMinute, rateWindowMinute) {
+		return
+	}
 	c, err := h.svc.CommentOnPost(ctx, actorID, postID, req.Body)
 	if err != nil {
 		writeServiceError(w, err)

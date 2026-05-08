@@ -14,18 +14,48 @@ import (
 	"github.com/runningecosystem/backend/feed/internal/domain"
 	"github.com/runningecosystem/backend/feed/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
+	"github.com/runningecosystem/backend/pkg/ratelimit"
 )
 
 const requestTimeout = 30 * time.Second
 
+// Phase I: rate-limit budgets per-user.
+const (
+	postsPerMinute    = 5
+	commentsPerMinute = 30
+	storiesPerHour    = 30
+	rateWindowMinute  = time.Minute
+	rateWindowHour    = time.Hour
+)
+
 type Handler struct {
-	svc    *service.Service
-	signer *auth.Signer
-	log    *slog.Logger
+	svc     *service.Service
+	signer  *auth.Signer
+	limiter *ratelimit.Limiter
+	log     *slog.Logger
 }
 
-func New(svc *service.Service, signer *auth.Signer, log *slog.Logger) *Handler {
-	return &Handler{svc: svc, signer: signer, log: log}
+func New(svc *service.Service, signer *auth.Signer, limiter *ratelimit.Limiter, log *slog.Logger) *Handler {
+	return &Handler{svc: svc, signer: signer, limiter: limiter, log: log}
+}
+
+// rateLimit — generic helper. scope = "post"|"comment"|"story". Returns false и
+// уже writeError если breach.
+func (h *Handler) rateLimit(
+	w http.ResponseWriter, ctx context.Context,
+	scope, actorID string, limit int, window time.Duration,
+) bool {
+	if h.limiter == nil {
+		return true
+	}
+	d := h.limiter.Check(ctx, scope+":"+actorID, limit, window)
+	if !d.Allow {
+		w.Header().Set("Retry-After", strconv.Itoa(d.RetryAfter))
+		writeError(w, http.StatusTooManyRequests, "rate_limited",
+			"too many requests, retry after Retry-After seconds")
+		return false
+	}
+	return true
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -101,6 +131,9 @@ func (h *Handler) publishStory(w http.ResponseWriter, r *http.Request) {
 	actorID := userIDFromContext(r.Context())
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
+	if !h.rateLimit(w, ctx, "story", actorID, storiesPerHour, rateWindowHour) {
+		return
+	}
 	story, err := h.svc.PublishStory(ctx, actorID, req.MediaID, req.OverlayText)
 	if err != nil {
 		writeServiceError(w, err)

@@ -54,6 +54,19 @@ tsc clean, jest **268/268 passing** (+3 isAdminRole).
 - **Mobile:** RealtimeAdapter получил тип `feed.story.published`. useRealtimeStore-диспетчер → useStoriesStore.refresh() (lazy-import, simple full-pull даёт <100ms latency и актуальные view-counts).
 - **E2E smoke** (`scripts/smoke_realtime_stories.py`, 6 шагов): alice publishes → bob (follower) gets notification, alice (self) skipped, charlie (non-follower) gets nothing. Pass.
 
+**Phase 8 / I — Rate limiting (Redis sliding window)** ✅:
+- **`pkg/ratelimit`** — новая shared library: Redis ZSET-based sliding window. На каждый запрос: ZREMRANGEBYSCORE (cleanup) → ZADD member → ZCARD count → if breach: deny + ZRange найти oldest для Retry-After. Один pipelined RTT. Graceful degrade на Redis-down (Allow=true, log warn).
+- **Wired** в hot endpoints с разумными лимитами:
+  - `messaging POST /conversations/{id}/messages` — 30/min
+  - `feed POST /posts` — 5/min
+  - `feed POST /posts/{id}/comments` — 30/min
+  - `feed POST /stories` — 30/hour
+  - `social-graph POST /follows/{id}` — 5/min
+  - `social-graph POST /reports` — 5/hour
+- На breach: HTTP 429 Too Many Requests + `Retry-After: <sec>` header. Redis container уже был в проде (Phase A) — никаких новых контейнеров.
+- **Mobile:** `apiClient.parseRateLimit()` helper + новый `RateLimitedError` тип в `feed/sync` и `moderation/sync`. UI surface'ит понятным сообщением «Слишком много постов / жалоб. Попробуйте через X сек/мин».
+- **E2E smoke** (`scripts/smoke_ratelimit.py`, 16 запросов): 5 успехов + 6-й 429 для posts / follows / reports. Retry-After header verified. Pass.
+
 ## Phase 1 progress
 
 | Подсекция | Статус | Что готово |

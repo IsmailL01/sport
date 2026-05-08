@@ -14,18 +14,26 @@ import (
 	"github.com/runningecosystem/backend/messaging/internal/domain"
 	"github.com/runningecosystem/backend/messaging/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
+	"github.com/runningecosystem/backend/pkg/ratelimit"
 )
 
 const requestTimeout = 30 * time.Second
 
+// Rate-limit budget: per-user per-window.
+const (
+	msgsPerMinute = 30
+	msgWindow     = time.Minute
+)
+
 type Handler struct {
-	svc    *service.Service
-	signer *auth.Signer
-	log    *slog.Logger
+	svc       *service.Service
+	signer    *auth.Signer
+	log       *slog.Logger
+	limiter   *ratelimit.Limiter // nil → no rate limiting
 }
 
-func New(svc *service.Service, signer *auth.Signer, log *slog.Logger) *Handler {
-	return &Handler{svc: svc, signer: signer, log: log}
+func New(svc *service.Service, signer *auth.Signer, limiter *ratelimit.Limiter, log *slog.Logger) *Handler {
+	return &Handler{svc: svc, signer: signer, limiter: limiter, log: log}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -336,6 +344,17 @@ func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
+
+	// Phase I: rate limiting per-user.
+	if h.limiter != nil {
+		d := h.limiter.Check(ctx, "msg:"+actorID, msgsPerMinute, msgWindow)
+		if !d.Allow {
+			w.Header().Set("Retry-After", strconv.Itoa(d.RetryAfter))
+			writeError(w, http.StatusTooManyRequests, "rate_limited",
+				"too many messages, retry in seconds")
+			return
+		}
+	}
 
 	kind := domain.MessageKind(req.Kind)
 	if kind == "" {

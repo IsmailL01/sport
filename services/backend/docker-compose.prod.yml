@@ -207,12 +207,15 @@ services:
       MESSAGING_DB_URL: "postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable"
       IDENTITY_JWT_SECRET: "${JWT_SECRET:?need JWT_SECRET >=32 chars}"
       NATS_URL: "nats://nats:4222"
+      REDIS_URL: "redis://redis:6379/0"
     depends_on:
       postgres:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
       nats:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
@@ -227,12 +230,15 @@ services:
       FEED_DB_URL: "postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable"
       IDENTITY_JWT_SECRET: "${JWT_SECRET:?need JWT_SECRET >=32 chars}"
       NATS_URL: "nats://nats:4222"
+      REDIS_URL: "redis://redis:6379/0"
     depends_on:
       postgres:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
       nats:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 

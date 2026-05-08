@@ -21,6 +21,17 @@ export type ApiError = {
   message: string;
 };
 
+/**
+ * Phase I: парсинг 429 Too Many Requests. Возвращает retryAfterS если
+ * сервер прислал заголовок Retry-After, иначе null.
+ */
+export function parseRateLimit(resp: Response): { retryAfterS: number } | null {
+  if (resp.status !== 429) return null;
+  const h = resp.headers.get('Retry-After') ?? resp.headers.get('retry-after');
+  const n = h !== null ? parseInt(h, 10) : NaN;
+  return { retryAfterS: Number.isFinite(n) && n > 0 ? n : 60 };
+}
+
 export class ApiClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;

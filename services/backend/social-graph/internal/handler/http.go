@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/runningecosystem/backend/pkg/auth"
+	"github.com/runningecosystem/backend/pkg/ratelimit"
 	"github.com/runningecosystem/backend/social-graph/internal/domain"
 	"github.com/runningecosystem/backend/social-graph/internal/repository/postgres"
 	"github.com/runningecosystem/backend/social-graph/internal/service"
@@ -19,14 +20,40 @@ import (
 
 const requestTimeout = 30 * time.Second
 
+// Phase I: rate-limit budgets per-user.
+const (
+	followsPerMinute = 5
+	reportsPerHour   = 5
+	rateWindowMinute = time.Minute
+	rateWindowHour   = time.Hour
+)
+
 type Handler struct {
-	svc    *service.Service
-	signer *auth.Signer
-	log    *slog.Logger
+	svc     *service.Service
+	signer  *auth.Signer
+	limiter *ratelimit.Limiter
+	log     *slog.Logger
 }
 
-func New(svc *service.Service, signer *auth.Signer, log *slog.Logger) *Handler {
-	return &Handler{svc: svc, signer: signer, log: log}
+func New(svc *service.Service, signer *auth.Signer, limiter *ratelimit.Limiter, log *slog.Logger) *Handler {
+	return &Handler{svc: svc, signer: signer, limiter: limiter, log: log}
+}
+
+func (h *Handler) rateLimit(
+	w http.ResponseWriter, ctx context.Context,
+	scope, actorID string, limit int, window time.Duration,
+) bool {
+	if h.limiter == nil {
+		return true
+	}
+	d := h.limiter.Check(ctx, scope+":"+actorID, limit, window)
+	if !d.Allow {
+		w.Header().Set("Retry-After", strconv.Itoa(d.RetryAfter))
+		writeError(w, http.StatusTooManyRequests, "rate_limited",
+			"too many requests, retry after Retry-After seconds")
+		return false
+	}
+	return true
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -210,6 +237,9 @@ func (h *Handler) follow(w http.ResponseWriter, r *http.Request) {
 	actorID := userIDFromContext(r.Context())
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
+	if !h.rateLimit(w, ctx, "flw", actorID, followsPerMinute, rateWindowMinute) {
+		return
+	}
 	if err := h.svc.Follow(ctx, actorID, targetID); err != nil {
 		writeServiceError(w, err)
 		return

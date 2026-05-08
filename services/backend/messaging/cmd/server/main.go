@@ -25,6 +25,7 @@ import (
 	"github.com/runningecosystem/backend/messaging/internal/repository/postgres"
 	"github.com/runningecosystem/backend/messaging/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
+	"github.com/runningecosystem/backend/pkg/ratelimit"
 )
 
 func main() {
@@ -42,6 +43,7 @@ func run() error {
 	dbURL := envOr("MESSAGING_DB_URL", "postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable")
 	jwtSecret := []byte(envOr("IDENTITY_JWT_SECRET", "dev-secret-must-be-at-least-32-bytes-long!!"))
 	natsURL := envOr("NATS_URL", "nats://localhost:4222")
+	redisURL := envOr("REDIS_URL", "redis://localhost:6379/0")
 
 	signer, err := auth.NewSigner(jwtSecret)
 	if err != nil {
@@ -79,7 +81,16 @@ func run() error {
 	outboxRepo := postgres.NewOutboxRepo(pool)
 
 	svc := service.New(convRepo, memRepo, msgRepo, reactRepo, outboxRepo)
-	h := handler.New(svc, signer, logger)
+
+	limiter, err := ratelimit.New(redisURL)
+	if err != nil {
+		logger.Warn("ratelimit init failed; rate limiting disabled", "error", err)
+	} else {
+		defer limiter.Close()
+		logger.Info("rate limiter ready")
+	}
+
+	h := handler.New(svc, signer, limiter, logger)
 
 	// Outbox publisher sidecar.
 	go outbox.Run(ctx, outboxRepo, nc, logger)

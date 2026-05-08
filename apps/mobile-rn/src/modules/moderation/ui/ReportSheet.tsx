@@ -71,6 +71,14 @@ export function ReportSheet({
       reset();
       onClose();
     } catch (e) {
+      if (e instanceof Error && e.name === 'RateLimitedError') {
+        const retry = (e as Error & { retryAfterS?: number }).retryAfterS ?? 3600;
+        Alert.alert(
+          'Слишком много жалоб',
+          `Попробуйте через ${Math.ceil(retry / 60)} мин.`,
+        );
+        return;
+      }
       Alert.alert('Ошибка отправки', e instanceof Error ? e.message : String(e));
     }
   };

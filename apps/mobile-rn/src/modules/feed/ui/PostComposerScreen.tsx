@@ -71,6 +71,12 @@ export function PostComposerScreen({ visible, myUserId, onClose, onPosted }: Pro
       onPosted?.();
       onClose();
     } catch (e) {
+      // Phase I: rate limit message.
+      if (e instanceof Error && e.name === 'RateLimitedError') {
+        const retry = (e as Error & { retryAfterS?: number }).retryAfterS ?? 60;
+        setError(`Слишком много постов. Попробуйте через ${retry} сек.`);
+        return;
+      }
       setError(e instanceof Error ? e.message : String(e));
     }
   };

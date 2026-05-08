@@ -72,6 +72,9 @@ func (h *Handler) createReport(w http.ResponseWriter, r *http.Request) {
 	actorID := userIDFromContext(r.Context())
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
+	if !h.rateLimit(w, ctx, "rep", actorID, reportsPerHour, rateWindowHour) {
+		return
+	}
 	report, err := h.svc.CreateReport(ctx, actorID, postgres.CreateReportInput{
 		TargetKind: domain.ReportTargetKind(req.TargetKind),
 		TargetID:   req.TargetID,

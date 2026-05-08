@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/runningecosystem/backend/pkg/auth"
+	"github.com/runningecosystem/backend/pkg/ratelimit"
 	"github.com/runningecosystem/backend/social-graph/internal/handler"
 	"github.com/runningecosystem/backend/social-graph/internal/repository/postgres"
 	"github.com/runningecosystem/backend/social-graph/internal/service"
@@ -41,6 +42,7 @@ func run() error {
 	addr := envOr("SOCIAL_GRAPH_HTTP_ADDR", ":8084")
 	dbURL := envOr("SOCIAL_GRAPH_DB_URL", "postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable")
 	jwtSecret := []byte(envOr("IDENTITY_JWT_SECRET", "dev-secret-must-be-at-least-32-bytes-long!!"))
+	redisURL := envOr("REDIS_URL", "redis://localhost:6379/0")
 
 	signer, err := auth.NewSigner(jwtSecret)
 	if err != nil {
@@ -66,7 +68,16 @@ func run() error {
 	reportRepo := postgres.NewReportRepo(pool)
 	auditRepo := postgres.NewAuditRepo(pool)
 	svc := service.New(profRepo, followRepo, blockRepo, reportRepo, auditRepo)
-	h := handler.New(svc, signer, logger)
+
+	limiter, err := ratelimit.New(redisURL)
+	if err != nil {
+		logger.Warn("ratelimit init failed; rate limiting disabled", "error", err)
+	} else {
+		defer limiter.Close()
+		logger.Info("rate limiter ready")
+	}
+
+	h := handler.New(svc, signer, limiter, logger)
 
 	srv := &http.Server{
 		Addr:              addr,

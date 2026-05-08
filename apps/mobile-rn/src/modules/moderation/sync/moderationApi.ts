@@ -6,7 +6,7 @@
 //   GET  /admin/reports?status=
 //   POST /admin/reports/{id}/resolve
 
-import { apiClient } from '../../../auth/apiClient';
+import { apiClient, parseRateLimit } from '../../../auth/apiClient';
 import type {
   Report,
   ReportReason,
@@ -14,6 +14,15 @@ import type {
   ReportTargetKind,
   ResolutionAction,
 } from '../domain/types';
+
+export class RateLimitedError extends Error {
+  retryAfterS: number;
+  constructor(retryAfterS: number) {
+    super(`rate limited; retry in ${retryAfterS}s`);
+    this.name = 'RateLimitedError';
+    this.retryAfterS = retryAfterS;
+  }
+}
 
 type ServerReportDTO = {
   id: string;
@@ -47,6 +56,8 @@ function dtoToReport(d: ServerReportDTO): Report {
 
 async function expectJSON<T>(resp: Response, label: string): Promise<T> {
   if (!resp.ok) {
+    const rl = parseRateLimit(resp);
+    if (rl !== null) throw new RateLimitedError(rl.retryAfterS);
     const text = await resp.text().catch(() => '<unreadable>');
     throw new Error(`${label} failed: ${resp.status} ${text}`);
   }
