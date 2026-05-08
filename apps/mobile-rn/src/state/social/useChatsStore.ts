@@ -17,6 +17,8 @@ type ChatsStore = {
   refresh: () => Promise<void>;
   /** Создать или найти DM с peer; возвращает chat. */
   createOrFindDM: (peerUserId: string) => Promise<Chat | null>;
+  /** Создать group с title и memberIds (creator = owner). */
+  createGroup: (title: string, memberIds: string[]) => Promise<Chat | null>;
 
   /** Вызов из realtime listener при получении message.new — обновить last_message + bump unread. */
   applyIncomingMessage: (e: {
@@ -121,6 +123,26 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
       return c;
     } catch (e) {
       console.warn('[chats] createOrFindDM failed', e);
+      return null;
+    }
+  },
+
+  createGroup: async (title, memberIds) => {
+    if (!apiClient.isAuthenticated()) return null;
+    if (title.trim() === '' || memberIds.length === 0) return null;
+    try {
+      const resp = await apiClient.api('/conversations', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'group', title: title.trim(), memberIds }),
+      });
+      if (!resp.ok) return null;
+      const s = (await resp.json()) as ServerChat;
+      const c = fromServer(s);
+      upsertChat(c);
+      set({ chats: listChats() });
+      return c;
+    } catch (e) {
+      console.warn('[chats] createGroup failed', e);
       return null;
     }
   },

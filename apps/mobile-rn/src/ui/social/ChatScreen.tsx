@@ -17,9 +17,10 @@ type Props = {
   chat: Chat;
   myUserId: string;
   onBack: () => void;
+  onOpenSettings?: () => void;
 };
 
-export function ChatScreen({ chat, myUserId, onBack }: Props) {
+export function ChatScreen({ chat, myUserId, onBack, onOpenSettings }: Props) {
   const messages = useChatStore((s) => s.messages);
   const open = useChatStore((s) => s.open);
   const close = useChatStore((s) => s.close);
@@ -73,8 +74,25 @@ export function ChatScreen({ chat, myUserId, onBack }: Props) {
         <Pressable onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>‹</Text>
         </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
-        <View style={{ width: 32 }} />
+        <Pressable
+          style={styles.headerTitleBtn}
+          onPress={chat.type === 'group' && onOpenSettings ? onOpenSettings : undefined}
+          disabled={!(chat.type === 'group' && onOpenSettings)}
+        >
+          <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
+          {chat.type === 'group' && (
+            <Text style={styles.headerSubtitle}>
+              {chat.membersCount} участник{chat.membersCount === 1 ? '' : chat.membersCount < 5 ? 'а' : 'ов'}
+            </Text>
+          )}
+        </Pressable>
+        {chat.type === 'group' && onOpenSettings ? (
+          <Pressable onPress={onOpenSettings} style={styles.settingsBtn}>
+            <Text style={styles.settingsBtnText}>⚙</Text>
+          </Pressable>
+        ) : (
+          <View style={{ width: 32 }} />
+        )}
       </View>
 
       <FlatList
@@ -82,7 +100,11 @@ export function ChatScreen({ chat, myUserId, onBack }: Props) {
         inverted
         keyExtractor={(m) => m.clientId}
         renderItem={({ item }) => (
-          <Bubble msg={item} mine={item.senderId === myUserId} />
+          <Bubble
+            msg={item}
+            mine={item.senderId === myUserId}
+            showSender={chat.type === 'group' && item.senderId !== myUserId}
+          />
         )}
         contentContainerStyle={styles.messagesList}
         onEndReached={loadOlder}
@@ -115,7 +137,12 @@ export function ChatScreen({ chat, myUserId, onBack }: Props) {
   );
 }
 
-function Bubble({ msg, mine }: { msg: Message; mine: boolean }) {
+function Bubble({ msg, mine, showSender }: { msg: Message; mine: boolean; showSender: boolean }) {
+  const sender = useUsersStore((s) => s.byId[msg.senderId]);
+  const getOrFetch = useUsersStore((s) => s.getOrFetch);
+  // Lazy-load sender profile если показываем имя.
+  if (showSender && sender === undefined) getOrFetch(msg.senderId);
+
   const tickGlyph = (() => {
     if (msg.status === 'pending') return '⏳';
     if (msg.status === 'failed') return '⚠';
@@ -135,6 +162,11 @@ function Bubble({ msg, mine }: { msg: Message; mine: boolean }) {
 
   return (
     <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheir]}>
+      {showSender && (
+        <Text style={styles.bubbleSender}>
+          {sender?.displayName ?? sender?.username ?? msg.senderId.slice(0, 8)}
+        </Text>
+      )}
       <Text style={styles.bubbleText}>{msg.text}</Text>
       <View style={styles.bubbleMeta}>
         <Text style={styles.bubbleTime}>{formatHM(msg.createdAt)}</Text>
@@ -162,7 +194,12 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   backText: { fontSize: 28, color: '#111827', marginTop: -4 },
-  headerTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: '#111827', textAlign: 'center' },
+  headerTitleBtn: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
+  headerSubtitle: { fontSize: 11, color: '#6B7280', marginTop: 1 },
+  settingsBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  settingsBtnText: { fontSize: 18, color: '#6B7280' },
+  bubbleSender: { fontSize: 11, fontWeight: '700', color: '#6366F1', marginBottom: 2 },
 
   messagesList: { paddingHorizontal: 12, paddingVertical: 8, flexGrow: 1 },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 100 },

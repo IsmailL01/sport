@@ -50,6 +50,21 @@ func (r *OutboxRepo) FetchUnpublished(ctx context.Context, limit int) ([]OutboxR
 	return out, rows.Err()
 }
 
+// Insert — записать новый event в outbox. Используется для member-events
+// (group rename, member added/removed, role changed). Сообщения создаются
+// через MessageRepo.SendInTx и пишут outbox в той же tx — здесь же мы пишем
+// атомарно отдельно, без strong transactional guarantee — но для member-events
+// это OK: если outbox INSERT упадёт после UPDATE conversation_members, событие
+// потеряется, но member-row останется. Push-уведомление просто не придёт —
+// при следующем GET /conversations клиент увидит актуальное состояние.
+func (r *OutboxRepo) Insert(ctx context.Context, subject string, payload []byte) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO messaging_outbox (event_subject, payload) VALUES ($1, $2)`,
+		subject, payload,
+	)
+	return err
+}
+
 func (r *OutboxRepo) MarkPublished(ctx context.Context, ids []int64) error {
 	if len(ids) == 0 {
 		return nil

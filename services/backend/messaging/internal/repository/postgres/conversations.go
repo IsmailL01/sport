@@ -108,6 +108,70 @@ func (r *ConversationRepo) FindOrCreateDM(ctx context.Context, userA, userB stri
 	return &conv, true, nil
 }
 
+// CreateGroup — atomic INSERT conversations(type=group) + initial members
+// (creator = owner; rest = member). Возвращает созданную conversation.
+func (r *ConversationRepo) CreateGroup(
+	ctx context.Context,
+	creatorID string,
+	title string,
+	memberIDs []string, // включая creator или нет — мы добавим creator gracefully
+) (*domain.Conversation, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var conv domain.Conversation
+	err = tx.QueryRow(ctx,
+		`INSERT INTO conversations (type, title, created_by) VALUES ('group', $1, $2)
+		 RETURNING `+convCols, title, creatorID,
+	).Scan(&conv.ID, &conv.Type, &conv.Title, &conv.AvatarMediaID, &conv.CreatedBy,
+		&conv.CreatedAt, &conv.UpdatedAt, &conv.LastMessageAt, &conv.DeletedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Dedupe: убедимся что creator один раз и как owner.
+	seen := map[string]bool{creatorID: true}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO conversation_members (conversation_id, user_id, role)
+		 VALUES ($1, $2, 'owner')`, conv.ID, creatorID,
+	); err != nil {
+		return nil, err
+	}
+	for _, uid := range memberIDs {
+		if seen[uid] {
+			continue
+		}
+		seen[uid] = true
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO conversation_members (conversation_id, user_id, role)
+			 VALUES ($1, $2, 'member')`, conv.ID, uid,
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &conv, nil
+}
+
+// UpdateMeta — title / avatar_media_id (admin/owner only — checked в service).
+func (r *ConversationRepo) UpdateMeta(ctx context.Context, id string, title *string, avatarMediaID *string) (*domain.Conversation, error) {
+	const sql = `
+		UPDATE conversations SET
+		  title = COALESCE($2, title),
+		  avatar_media_id = COALESCE($3::uuid, avatar_media_id),
+		  updated_at = now()
+		WHERE id = $1
+		RETURNING ` + convCols
+	row := r.pool.QueryRow(ctx, sql, id, title, avatarMediaID)
+	return scanConv(row)
+}
+
 func (r *ConversationRepo) GetByID(ctx context.Context, id string) (*domain.Conversation, error) {
 	row := r.pool.QueryRow(ctx, `SELECT `+convCols+` FROM conversations WHERE id=$1 AND deleted_at IS NULL`, id)
 	return scanConv(row)
@@ -276,4 +340,65 @@ func (r *MemberRepo) MarkRead(ctx context.Context, convID, userID, lastReadMessa
 		convID, userID, lastReadMessageID,
 	)
 	return err
+}
+
+// AddMember — INSERT new member with role. Idempotent (ON CONFLICT DO NOTHING).
+func (r *MemberRepo) AddMember(ctx context.Context, convID, userID string, role domain.MemberRole) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO conversation_members (conversation_id, user_id, role)
+		 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		convID, userID, role,
+	)
+	return err
+}
+
+// RemoveMember.
+func (r *MemberRepo) RemoveMember(ctx context.Context, convID, userID string) error {
+	_, err := r.pool.Exec(ctx,
+		`DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2`,
+		convID, userID,
+	)
+	return err
+}
+
+// UpdateRole.
+func (r *MemberRepo) UpdateRole(ctx context.Context, convID, userID string, role domain.MemberRole) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE conversation_members SET role=$3 WHERE conversation_id=$1 AND user_id=$2`,
+		convID, userID, role,
+	)
+	return err
+}
+
+// CountByRole — для проверки CanSelfLeave (нужно знать сколько owner-ов).
+func (r *MemberRepo) CountByRole(ctx context.Context, convID string, role domain.MemberRole) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx,
+		`SELECT count(*) FROM conversation_members WHERE conversation_id=$1 AND role=$2`,
+		convID, role,
+	).Scan(&n)
+	return n, err
+}
+
+// ListMembers — все члены с ролями.
+func (r *MemberRepo) ListMembers(ctx context.Context, convID string) ([]*domain.Member, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT conversation_id, user_id, role, joined_at, last_read_message_id, muted_until, notif_level
+		 FROM conversation_members WHERE conversation_id=$1 ORDER BY joined_at ASC`,
+		convID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*domain.Member
+	for rows.Next() {
+		var m domain.Member
+		if err := rows.Scan(&m.ConversationID, &m.UserID, &m.Role, &m.JoinedAt,
+			&m.LastReadMessageID, &m.MutedUntil, &m.NotifLevel); err != nil {
+			return nil, err
+		}
+		out = append(out, &m)
+	}
+	return out, rows.Err()
 }

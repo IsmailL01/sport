@@ -35,6 +35,11 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /conversations", h.requireAuth(h.createOrFindConv))
 	mux.HandleFunc("GET /conversations", h.requireAuth(h.listConvs))
 	mux.HandleFunc("GET /conversations/{id}", h.requireAuth(h.getConv))
+	mux.HandleFunc("PATCH /conversations/{id}", h.requireAuth(h.patchConv))
+	mux.HandleFunc("GET /conversations/{id}/members", h.requireAuth(h.listMembers))
+	mux.HandleFunc("POST /conversations/{id}/members", h.requireAuth(h.addMembers))
+	mux.HandleFunc("DELETE /conversations/{id}/members/{userId}", h.requireAuth(h.removeMember))
+	mux.HandleFunc("PATCH /conversations/{id}/members/{userId}", h.requireAuth(h.changeRole))
 	mux.HandleFunc("POST /conversations/{id}/messages", h.requireAuth(h.sendMessage))
 	mux.HandleFunc("GET /conversations/{id}/messages", h.requireAuth(h.listMessages))
 	mux.HandleFunc("POST /conversations/{id}/read", h.requireAuth(h.markRead))
@@ -50,9 +55,31 @@ func (h *Handler) healthz(w http.ResponseWriter, _ *http.Request) {
 // === DTOs ===
 
 type createConvRequest struct {
-	Type   string `json:"type"`             // 'dm' (Phase A); 'group' Phase B
-	PeerID string `json:"peerId,omitempty"` // для DM
-	// Phase B: members[] для group
+	Type      string   `json:"type"`             // 'dm' | 'group'
+	PeerID    string   `json:"peerId,omitempty"` // для DM
+	Title     string   `json:"title,omitempty"`  // для group
+	MemberIDs []string `json:"memberIds,omitempty"` // для group
+}
+
+type addMembersRequest struct {
+	UserIDs []string `json:"userIds"`
+}
+
+type changeRoleRequest struct {
+	Role string `json:"role"`
+}
+
+type patchConvRequest struct {
+	Title         *string `json:"title,omitempty"`
+	AvatarMediaID *string `json:"avatarMediaId,omitempty"`
+}
+
+type memberDTO struct {
+	UserID            string  `json:"userId"`
+	Role              string  `json:"role"`
+	JoinedAt          int64   `json:"joinedAt"`
+	LastReadMessageID *string `json:"lastReadMessageId,omitempty"`
+	NotifLevel        string  `json:"notifLevel"`
 }
 
 type convDTO struct {
@@ -122,10 +149,117 @@ func (h *Handler) createOrFindConv(w http.ResponseWriter, r *http.Request) {
 			Conversation: *conv, MyRole: domain.RoleMember, MembersCount: 2,
 		}))
 	case "group":
-		writeError(w, http.StatusNotImplemented, "not_implemented", "group conversations: Phase B")
+		conv, err := h.svc.CreateGroup(ctx, actorID, req.Title, req.MemberIDs)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, convToDTO(&domain.ConversationView{
+			Conversation: *conv, MyRole: domain.RoleOwner,
+			MembersCount: len(req.MemberIDs) + 1,
+		}))
 	default:
 		writeError(w, http.StatusBadRequest, "invalid_request", "type must be 'dm' or 'group'")
 	}
+}
+
+func (h *Handler) patchConv(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	actorID := userIDFromContext(r.Context())
+	var req patchConvRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	conv, err := h.svc.UpdateConversationMeta(ctx, actorID, convID, req.Title, req.AvatarMediaID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, convToDTO(&domain.ConversationView{Conversation: *conv}))
+}
+
+func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	actorID := userIDFromContext(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	members, err := h.svc.ListMembers(ctx, actorID, convID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	out := make([]memberDTO, len(members))
+	for i, m := range members {
+		out[i] = memberDTO{
+			UserID: m.UserID, Role: string(m.Role),
+			JoinedAt:          m.JoinedAt.UnixMilli(),
+			LastReadMessageID: m.LastReadMessageID,
+			NotifLevel:        m.NotifLevel,
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) addMembers(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	actorID := userIDFromContext(r.Context())
+	var req addMembersRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if len(req.UserIDs) == 0 || len(req.UserIDs) > 50 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "userIds must be 1..50")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	if err := h.svc.AddMembers(ctx, actorID, convID, req.UserIDs); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	targetID := r.PathValue("userId")
+	actorID := userIDFromContext(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	if err := h.svc.RemoveMember(ctx, actorID, convID, targetID); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) changeRole(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	targetID := r.PathValue("userId")
+	actorID := userIDFromContext(r.Context())
+	var req changeRoleRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	switch domain.MemberRole(req.Role) {
+	case domain.RoleOwner, domain.RoleAdmin, domain.RoleModerator,
+		domain.RoleMember, domain.RoleRestricted:
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid role")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	if err := h.svc.ChangeRole(ctx, actorID, convID, targetID, domain.MemberRole(req.Role)); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) listConvs(w http.ResponseWriter, r *http.Request) {

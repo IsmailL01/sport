@@ -1,14 +1,16 @@
 // Package service — бизнес-логика messaging.
-// Phase A2 MVP: DM only, text only, no reactions/replies/edits.
+// Phase A2: DM + text. Phase B1: + groups, member management.
 package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/runningecosystem/backend/messaging/internal/domain"
+	"github.com/runningecosystem/backend/messaging/internal/permissions"
 	"github.com/runningecosystem/backend/messaging/internal/repository/postgres"
 )
 
@@ -18,10 +20,29 @@ type Service struct {
 	convs    *postgres.ConversationRepo
 	members  *postgres.MemberRepo
 	messages *postgres.MessageRepo
+	outbox   *postgres.OutboxRepo // для emit member-events
 }
 
-func New(c *postgres.ConversationRepo, m *postgres.MemberRepo, msgs *postgres.MessageRepo) *Service {
-	return &Service{convs: c, members: m, messages: msgs}
+func New(c *postgres.ConversationRepo, m *postgres.MemberRepo, msgs *postgres.MessageRepo, ob *postgres.OutboxRepo) *Service {
+	return &Service{convs: c, members: m, messages: msgs, outbox: ob}
+}
+
+// publishMemberEvent — INSERT outbox-rows для каждого члена с member-event.
+// Outbox publisher (sidecar) разошлёт через NATS rt.user.{id}.
+// Errors logged silently — outbox events не должны блокировать main op.
+func (s *Service) publishMemberEvent(ctx context.Context, eventType string, convID string, payload map[string]any) {
+	memberIDs, err := s.members.MemberIDs(ctx, convID)
+	if err != nil {
+		return
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	for _, mid := range memberIDs {
+		_ = s.outbox.Insert(ctx, "rt.user."+mid, body)
+	}
+	_ = eventType // included в payload["event"] caller-side
 }
 
 // FindOrCreateDM — atomic create-or-fetch DM с peerID.
@@ -30,6 +51,192 @@ func (s *Service) FindOrCreateDM(ctx context.Context, actorID, peerID string) (*
 		return nil, false, domain.ErrSelfTarget
 	}
 	return s.convs.FindOrCreateDM(ctx, actorID, peerID)
+}
+
+// CreateGroup — создатель становится owner-ом, остальные members.
+func (s *Service) CreateGroup(ctx context.Context, creatorID, title string, memberIDs []string) (*domain.Conversation, error) {
+	title = strings.TrimSpace(title)
+	if title == "" || len(title) > 200 {
+		return nil, domain.ErrInvalidArg
+	}
+	// Dedupe + remove creator из списка (он добавится как owner).
+	seen := map[string]bool{creatorID: true}
+	clean := make([]string, 0, len(memberIDs))
+	for _, id := range memberIDs {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		clean = append(clean, id)
+	}
+	if len(clean) == 0 {
+		return nil, domain.ErrInvalidArg // group без members = просто self-DM
+	}
+	conv, err := s.convs.CreateGroup(ctx, creatorID, title, clean)
+	if err != nil {
+		return nil, err
+	}
+	// Notify all members.
+	s.publishMemberEvent(ctx, "conversation.created", conv.ID, map[string]any{
+		"event":          "conversation.created",
+		"conversationId": conv.ID,
+		"type":           "group",
+		"title":          title,
+		"createdBy":      creatorID,
+	})
+	return conv, nil
+}
+
+// AddMembers — owner/admin adds members to group.
+func (s *Service) AddMembers(ctx context.Context, actorID, convID string, userIDs []string) error {
+	_, actorRole, err := s.members.IsMember(ctx, convID, actorID)
+	if err != nil {
+		return err
+	}
+	if actorRole == "" {
+		return domain.ErrNotMember
+	}
+	if !permissions.CanAddMember(actorRole) {
+		return domain.ErrForbidden
+	}
+	for _, uid := range userIDs {
+		if uid == "" || uid == actorID {
+			continue
+		}
+		if err := s.members.AddMember(ctx, convID, uid, domain.RoleMember); err != nil {
+			return err
+		}
+		s.publishMemberEvent(ctx, "member.added", convID, map[string]any{
+			"event":          "member.added",
+			"conversationId": convID,
+			"userId":         uid,
+			"role":           "member",
+			"addedBy":        actorID,
+		})
+	}
+	return nil
+}
+
+// RemoveMember — kick (если actor != target) или self-leave (actor == target).
+func (s *Service) RemoveMember(ctx context.Context, actorID, convID, targetID string) error {
+	_, actorRole, err := s.members.IsMember(ctx, convID, actorID)
+	if err != nil {
+		return err
+	}
+	if actorRole == "" {
+		return domain.ErrNotMember
+	}
+	_, targetRole, err := s.members.IsMember(ctx, convID, targetID)
+	if err != nil {
+		return err
+	}
+	if targetRole == "" {
+		return domain.ErrNotMember
+	}
+
+	if actorID == targetID {
+		// Self-leave; check owner uniqueness.
+		ownerCount, err := s.members.CountByRole(ctx, convID, domain.RoleOwner)
+		if err != nil {
+			return err
+		}
+		if !permissions.CanSelfLeave(actorRole, ownerCount) {
+			return domain.ErrForbidden
+		}
+	} else {
+		if !permissions.CanRemoveMember(actorRole, targetRole) {
+			return domain.ErrForbidden
+		}
+	}
+
+	if err := s.members.RemoveMember(ctx, convID, targetID); err != nil {
+		return err
+	}
+	s.publishMemberEvent(ctx, "member.removed", convID, map[string]any{
+		"event":          "member.removed",
+		"conversationId": convID,
+		"userId":         targetID,
+		"removedBy":      actorID,
+		"selfLeave":      actorID == targetID,
+	})
+	return nil
+}
+
+// ChangeRole.
+func (s *Service) ChangeRole(ctx context.Context, actorID, convID, targetID string, newRole domain.MemberRole) error {
+	_, actorRole, err := s.members.IsMember(ctx, convID, actorID)
+	if err != nil {
+		return err
+	}
+	if actorRole == "" {
+		return domain.ErrNotMember
+	}
+	_, targetCurrent, err := s.members.IsMember(ctx, convID, targetID)
+	if err != nil {
+		return err
+	}
+	if targetCurrent == "" {
+		return domain.ErrNotMember
+	}
+	if !permissions.CanChangeRole(actorRole, targetCurrent, newRole, actorID == targetID) {
+		return domain.ErrForbidden
+	}
+	if err := s.members.UpdateRole(ctx, convID, targetID, newRole); err != nil {
+		return err
+	}
+	s.publishMemberEvent(ctx, "role.changed", convID, map[string]any{
+		"event":          "role.changed",
+		"conversationId": convID,
+		"userId":         targetID,
+		"role":           string(newRole),
+		"changedBy":      actorID,
+	})
+	return nil
+}
+
+// UpdateConversationMeta — title / avatar (admin/owner only).
+func (s *Service) UpdateConversationMeta(ctx context.Context, actorID, convID string, title *string, avatarMediaID *string) (*domain.Conversation, error) {
+	_, actorRole, err := s.members.IsMember(ctx, convID, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if actorRole == "" {
+		return nil, domain.ErrNotMember
+	}
+	if !permissions.CanRenameConversation(actorRole) {
+		return nil, domain.ErrForbidden
+	}
+	if title != nil {
+		t := strings.TrimSpace(*title)
+		if t == "" || len(t) > 200 {
+			return nil, domain.ErrInvalidArg
+		}
+		title = &t
+	}
+	conv, err := s.convs.UpdateMeta(ctx, convID, title, avatarMediaID)
+	if err != nil {
+		return nil, err
+	}
+	s.publishMemberEvent(ctx, "conversation.meta", convID, map[string]any{
+		"event":          "conversation.meta",
+		"conversationId": convID,
+		"title":          conv.Title,
+		"avatarMediaId":  conv.AvatarMediaID,
+		"updatedBy":      actorID,
+	})
+	return conv, nil
+}
+
+// ListMembers — для UI ChatSettingsScreen.
+func (s *Service) ListMembers(ctx context.Context, actorID, convID string) ([]*domain.Member, error) {
+	isMember, _, err := s.members.IsMember(ctx, convID, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if !isMember {
+		return nil, domain.ErrNotMember
+	}
+	return s.members.ListMembers(ctx, convID)
 }
 
 // ListConversations — мои чаты, sorted by last_message_at desc.
@@ -128,9 +335,15 @@ func (s *Service) DeleteMessage(ctx context.Context, actorID, msgID string) erro
 	if msg.DeletedAt != nil {
 		return domain.ErrMsgNotFound
 	}
-	// Phase A: only own messages. Phase E расширит admin/moderator capabilities.
+	// Свои — всегда можно. Чужие — owner/admin/moderator (Phase B1).
 	if msg.SenderID != actorID {
-		return domain.ErrForbidden
+		_, role, err := s.members.IsMember(ctx, msg.ConversationID, actorID)
+		if err != nil {
+			return err
+		}
+		if !permissions.CanDeleteOthersMessage(role) {
+			return domain.ErrForbidden
+		}
 	}
 	memberIDs, err := s.members.MemberIDs(ctx, msg.ConversationID)
 	if err != nil {

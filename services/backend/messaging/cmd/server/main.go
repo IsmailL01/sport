@@ -77,7 +77,7 @@ func run() error {
 	msgRepo := postgres.NewMessageRepo(pool)
 	outboxRepo := postgres.NewOutboxRepo(pool)
 
-	svc := service.New(convRepo, memRepo, msgRepo)
+	svc := service.New(convRepo, memRepo, msgRepo, outboxRepo)
 	h := handler.New(svc, signer, logger)
 
 	// Outbox publisher sidecar.
