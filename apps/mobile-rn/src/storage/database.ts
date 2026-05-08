@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 7;
+const TARGET_VERSION = 9;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -16,6 +16,8 @@ let _db: SQLite.SQLiteDatabase | null = null;
  * - v5: + таблица `sensor_readings` для HR/cadence/power (Phase 5 / P5-A-04).
  * - v6: + колонки `avg_hr_bpm` и `max_hr_bpm` в sessions (агрегация HR на finalize).
  * - v7: + колонка `calories_kcal` в sessions (MET-based estimate на finalize).
+ * - v8: + таблицы `social_users` (cache profiles) и `chats` (Phase 8 / A5).
+ * - v9: + таблица `messages` с outbox-полями (Phase 8 / A5).
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
@@ -138,6 +140,91 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       db.execSync(`ALTER TABLE sessions ADD COLUMN calories_kcal REAL;`);
     }
     current = 7;
+  }
+
+  if (current < 8) {
+    // social_users — кэш профилей других пользователей. Имя ≠ users чтобы
+    // не путать с identity-таблицей на бэкенде.
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS social_users (
+        id TEXT PRIMARY KEY,
+        display_name TEXT,
+        username TEXT,
+        avatar_url TEXT,
+        bio TEXT,
+        is_blocked INTEGER NOT NULL DEFAULT 0,
+        followers_count INTEGER NOT NULL DEFAULT 0,
+        following_count INTEGER NOT NULL DEFAULT 0,
+        cached_at INTEGER NOT NULL
+      );
+    `);
+    db.execSync(`CREATE INDEX IF NOT EXISTS idx_social_users_username ON social_users (username);`);
+
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS chats (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL UNIQUE,
+        type TEXT NOT NULL,
+        title TEXT,
+        avatar_url TEXT,
+        my_role TEXT NOT NULL DEFAULT 'member',
+        members_count INTEGER NOT NULL DEFAULT 0,
+        peer_user_id TEXT,                    -- для DM: id собеседника (cache)
+        last_message_id TEXT,
+        last_message_text TEXT,
+        last_message_sender_id TEXT,
+        last_message_ts INTEGER,
+        last_read_message_id TEXT,
+        unread_count INTEGER NOT NULL DEFAULT 0,
+        muted INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        synced_at INTEGER,
+        server_id TEXT
+      );
+    `);
+    db.execSync(`CREATE INDEX IF NOT EXISTS idx_chats_last_msg_ts ON chats (last_message_ts DESC);`);
+    current = 8;
+  }
+
+  if (current < 9) {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL UNIQUE,
+        chat_id TEXT NOT NULL,
+        sender_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        text TEXT,
+        media_local_uri TEXT,
+        media_remote_url TEXT,
+        media_width INTEGER,
+        media_height INTEGER,
+        media_duration_s REAL,
+        reply_to_message_id TEXT,
+        status TEXT NOT NULL DEFAULT 'sent',  -- pending | sent | delivered | read | failed
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        deleted_by TEXT,
+        reactions_json TEXT,
+        created_at INTEGER NOT NULL,
+        edited_at INTEGER,
+        synced_at INTEGER,
+        updated_at INTEGER,
+        attempts INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    db.execSync(`CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON messages (chat_id, created_at DESC);`);
+    db.execSync(`CREATE INDEX IF NOT EXISTS idx_messages_pending ON messages (status, created_at) WHERE status IN ('pending','failed');`);
+
+    // sync_cursors — для GET delta queries (per-chat, per-feed).
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS sync_cursors (
+        key TEXT PRIMARY KEY,
+        cursor TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+    current = 9;
   }
 
   if (current !== TARGET_VERSION) {

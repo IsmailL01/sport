@@ -4,11 +4,15 @@
 
 ## Текущая фаза
 
-**Phase 6.5 — Polish** (Phase 6 done + quality-of-life)
+**Phase 8 / A — Internal messenger MVP** (DM + real-time WS + push)
 
 Phase 0 закрыта — выбран Expo React Native, см. [DECISION.md](DECISION.md). Flutter архивирован в `apps/mobile_flutter.archived/`.
 
-Phase 1–5 закрыты на code-level. Phase 6 / P6-A code-level done: TSS (HR + rTSS), Banister PMC (CTL/ATL/TSB), Race predictor (Riegel + Cameron), VO2max (Cooper + Daniels), LTHR estimator, Workout library + Workout Player. Phase 7 P7-A-01..03 scaffold (Mock health adapter). Phase 6.5 polish: per-km splits, avgHr/maxHr per session, session detail modal (map+stats+splits+HR chart+share GPX), real expo-speech TTS adapter. tsc clean, jest 183/183 passing.
+Phase 1–5 закрыты на code-level. Phase 6 / P6-A code-level done. Phase 6.5 polish done. Phase 7 scaffold (Mock health adapter). Phase 9 P9-A-01 plan generator. **Phase 3.1 production deploy на Hetzner-like VPS** (https://148-253-214-156.sslip.io) — Caddy HTTPS Let's Encrypt + Postgres+TimescaleDB.
+
+**Phase 8 / A — Messenger:** план в `~/.claude/plans/eventual-sniffing-cerf.md`. **Backend Phase A полностью развёрнут**: 4 Go-сервиса (social-graph, messaging, realtime-gw, notifications) + NATS JetStream + Redis. **Mobile Phase A5** клиент: SQLite v8-v9, Realtime/Notifications adapters, 5 zustand stores, ChatsModal с 3 screens (list, chat, search), outbox messageSync, JWT-authenticated WebSocket. End-to-end smoke pass: real-time message delivery <1s.
+
+tsc clean, jest 239/239 passing.
 
 ## Phase 1 progress
 

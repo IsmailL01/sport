@@ -29,6 +29,8 @@ type SettingsStore = {
   batteryHintShown: boolean;
   weekStartDay: WeekStartDay;
   goals: Goals;
+  /** Стабильный deviceId этого устройства (для real-time WebSocket). Phase 8 / A5. */
+  deviceId: string | null;
 
   setUnits: (units: Units) => void;
   setTheme: (theme: Theme) => void;
@@ -38,6 +40,7 @@ type SettingsStore = {
   setAthlete: (patch: Partial<AthleteProfile>) => void;
   setGoals: (patch: Partial<Goals>) => void;
   setWeekStartDay: (d: WeekStartDay) => void;
+  setDeviceId: (id: string) => void;
 };
 
 const DEFAULT_ATHLETE: AthleteProfile = {
@@ -80,6 +83,7 @@ export const useSettingsStore = create<SettingsStore>()(
       batteryHintShown: false,
       weekStartDay: 'monday',
       goals: DEFAULT_GOALS,
+      deviceId: null,
 
       setUnits: (units) => set({ units }),
       setTheme: (theme) => set({ theme }),
@@ -94,23 +98,28 @@ export const useSettingsStore = create<SettingsStore>()(
         })),
       setGoals: (patch) => set((s) => ({ goals: { ...s.goals, ...patch } })),
       setWeekStartDay: (weekStartDay) => set({ weekStartDay }),
+      setDeviceId: (deviceId) => set({ deviceId }),
     }),
     {
       name: 'running-ecosystem-settings',
       storage: createJSONStorage(() => mmkvStorage),
-      version: 2,
+      version: 3,
       // v1 → v2: добавились athlete/goals/weekStartDay. Старые поля сохраняются.
+      // v2 → v3: добавился deviceId (Phase 8 / A5).
       migrate: (persisted, fromVersion) => {
-        const p = (persisted ?? {}) as Partial<SettingsStore>;
+        let p = (persisted ?? {}) as Partial<SettingsStore>;
         if (fromVersion < 2) {
           const w = p.weightKg ?? DEFAULT_ATHLETE.weightKg ?? 70;
-          return {
+          p = {
             ...(p as object),
             weightKg: w,
             athlete: { ...DEFAULT_ATHLETE, weightKg: w },
             weekStartDay: 'monday',
             goals: DEFAULT_GOALS,
-          } as SettingsStore;
+          } as Partial<SettingsStore>;
+        }
+        if (fromVersion < 3) {
+          p = { ...p, deviceId: null };
         }
         return p as SettingsStore;
       },

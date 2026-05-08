@@ -54,6 +54,12 @@ import { useSensorsStore } from './src/state/sensors';
 import { writeSessionToHealth } from './src/health/sync';
 import { setSpeechAdapter } from './src/util/speech';
 import { expoSpeechAdapter } from './src/util/expoSpeechAdapter';
+import 'react-native-get-random-values';
+import { v4 as uuid } from 'uuid';
+import { apiClient } from './src/auth/apiClient';
+import { ChatsModal } from './src/ui/social/ChatsModal';
+import { useRealtimeStore } from './src/state/social/useRealtimeStore';
+import { useNotificationsStore } from './src/state/social/useNotificationsStore';
 
 // Регистрируем real TTS адаптер на старте — single-shot side effect.
 setSpeechAdapter(expoSpeechAdapter);
@@ -132,6 +138,33 @@ function Inner() {
     useSyncStore.getState().pullDown().catch((e) => {
       console.warn('[App] pullDown after auth failed', e);
     });
+
+    // Phase 8 / A5: Connect WebSocket для real-time чатов + register push token.
+    const user = useAuthStore.getState().user;
+    if (user !== null) {
+      const accessToken = apiClient.getAccessToken();
+      if (accessToken !== null) {
+        let deviceID = useSettingsStore.getState().deviceId;
+        if (deviceID === null) {
+          deviceID = uuid();
+          useSettingsStore.getState().setDeviceId(deviceID);
+        }
+        useRealtimeStore.getState().connect(user.id, accessToken, deviceID).catch((e) => {
+          console.warn('[App] realtime connect failed', e);
+        });
+        // Push token registration (best effort, требует permission).
+        useNotificationsStore.getState().requestAndRegister().catch((e) => {
+          console.warn('[App] push register failed', e);
+        });
+      }
+    }
+  }, [authState]);
+
+  // Phase 8 / A5: Disconnect realtime при logout.
+  useEffect(() => {
+    if (authState === 'unauthenticated') {
+      useRealtimeStore.getState().disconnect();
+    }
   }, [authState]);
 
   // Cleanup на unmount: гарантируем что подписка location снимается
@@ -297,6 +330,9 @@ function MapScreen() {
   const [sensorsVisible, setSensorsVisible] = useState(false);
   const [trainingVisible, setTrainingVisible] = useState(false);
   const [workoutPlayerVisible, setWorkoutPlayerVisible] = useState(false);
+  const [chatsVisible, setChatsVisible] = useState(false);
+  const myUser = useAuthStore((s) => s.user);
+  const realtimeStatus = useRealtimeStore((s) => s.status);
   const activeWorkout = useWorkoutPlayerStore((s) => s.workout);
   // Подцепить worker, который слушает activityStore и тикает workout session.
   useEffect(() => {
@@ -477,6 +513,11 @@ function MapScreen() {
         <Pressable style={styles.historyBtn} onPress={() => setTrainingVisible(true)}>
           <Text style={styles.historyBtnText}>🏋 Тренировки</Text>
         </Pressable>
+        <Pressable style={styles.historyBtn} onPress={() => setChatsVisible(true)}>
+          <Text style={styles.historyBtnText}>
+            💬 Чаты {realtimeStatus === 'connected' ? '●' : realtimeStatus === 'connecting' || realtimeStatus === 'reconnecting' ? '○' : ''}
+          </Text>
+        </Pressable>
         {activeWorkout !== null && (
           <Pressable
             style={[styles.historyBtn, styles.historyBtnAccent]}
@@ -521,6 +562,13 @@ function MapScreen() {
         visible={workoutPlayerVisible}
         onClose={() => setWorkoutPlayerVisible(false)}
       />
+      {myUser !== null && (
+        <ChatsModal
+          visible={chatsVisible}
+          myUserId={myUser.id}
+          onClose={() => setChatsVisible(false)}
+        />
+      )}
 
       <View style={styles.topOverlay} pointerEvents="none">
         <MetricsBar
