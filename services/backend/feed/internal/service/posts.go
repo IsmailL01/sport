@@ -1,0 +1,217 @@
+// Posts business logic — Phase 8 / D.
+//
+// Изолирован от stories.go: разные сущности. Шарят errors + nats.Conn
+// через общую Service struct (см. svc.go).
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+
+	"github.com/runningecosystem/backend/feed/internal/domain"
+	"github.com/runningecosystem/backend/feed/internal/repository/postgres"
+)
+
+const (
+	maxPostBodyLen    = 4000
+	maxCommentBodyLen = 2000
+	defaultFeedLimit  = 50
+	maxFeedLimit      = 100
+)
+
+// CreatePostInput — DTO к hadnler уровню; service валидирует поля.
+type CreatePostInput struct {
+	Kind       domain.PostKind
+	Body       *string
+	MediaID    *string
+	SessionRef *string
+}
+
+func (s *Service) CreatePost(
+	ctx context.Context, authorID string, in CreatePostInput,
+) (*domain.Post, error) {
+	// Валидация: kind задаёт обязательные поля.
+	switch in.Kind {
+	case domain.PostKindText:
+		if in.Body == nil {
+			return nil, domain.ErrInvalidArg
+		}
+		t := strings.TrimSpace(*in.Body)
+		if t == "" || len(t) > maxPostBodyLen {
+			return nil, domain.ErrInvalidArg
+		}
+		in.Body = &t
+		in.MediaID = nil
+		in.SessionRef = nil
+	case domain.PostKindPhoto:
+		if in.MediaID == nil || *in.MediaID == "" {
+			return nil, domain.ErrInvalidArg
+		}
+		if in.Body != nil {
+			t := strings.TrimSpace(*in.Body)
+			if len(t) > maxPostBodyLen {
+				return nil, domain.ErrInvalidArg
+			}
+			if t == "" {
+				in.Body = nil
+			} else {
+				in.Body = &t
+			}
+		}
+		in.SessionRef = nil
+	case domain.PostKindSession:
+		if in.SessionRef == nil || *in.SessionRef == "" {
+			return nil, domain.ErrInvalidArg
+		}
+		if in.Body != nil {
+			t := strings.TrimSpace(*in.Body)
+			if len(t) > maxPostBodyLen {
+				return nil, domain.ErrInvalidArg
+			}
+			if t == "" {
+				in.Body = nil
+			} else {
+				in.Body = &t
+			}
+		}
+		in.MediaID = nil
+	default:
+		return nil, domain.ErrInvalidArg
+	}
+
+	post, err := s.posts.Create(ctx, postgres.CreatePostInput{
+		AuthorID:   authorID,
+		Kind:       in.Kind,
+		Body:       in.Body,
+		MediaID:    in.MediaID,
+		SessionRef: in.SessionRef,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if s.nc != nil {
+		payload, _ := json.Marshal(map[string]any{
+			"event":     "feed.post.created",
+			"postId":    post.ID,
+			"authorId":  post.AuthorID,
+			"kind":      string(post.Kind),
+			"createdAt": post.CreatedAt,
+		})
+		_ = s.nc.Publish("feed.post.created.v1", payload)
+	}
+	return post, nil
+}
+
+func (s *Service) GetPost(ctx context.Context, id string) (*domain.Post, error) {
+	return s.posts.GetByID(ctx, id)
+}
+
+func (s *Service) DeletePost(ctx context.Context, actorID, postID string) error {
+	post, err := s.posts.GetByID(ctx, postID)
+	if err != nil {
+		return err
+	}
+	if post.AuthorID != actorID {
+		return domain.ErrForbidden
+	}
+	return s.posts.SoftDelete(ctx, postID)
+}
+
+// HomeFeed — chronological. Cursor-pagination.
+func (s *Service) HomeFeed(
+	ctx context.Context, userID, cursor string, limit int,
+) ([]*domain.PostWithViewerState, string, error) {
+	if limit <= 0 || limit > maxFeedLimit {
+		limit = defaultFeedLimit
+	}
+	return s.posts.HomeFeed(ctx, userID, cursor, limit)
+}
+
+// === Likes ===
+
+func (s *Service) LikePost(ctx context.Context, userID, postID string) error {
+	// Validate post exists (Returns NotFound otherwise).
+	if _, err := s.posts.GetByID(ctx, postID); err != nil {
+		return err
+	}
+	added, err := s.posts.AddLike(ctx, postID, userID)
+	if err != nil {
+		return err
+	}
+	if added && s.nc != nil {
+		payload, _ := json.Marshal(map[string]any{
+			"event":  "feed.post.liked",
+			"postId": postID,
+			"userId": userID,
+		})
+		_ = s.nc.Publish("feed.post.liked.v1", payload)
+	}
+	return nil
+}
+
+func (s *Service) UnlikePost(ctx context.Context, userID, postID string) error {
+	return s.posts.RemoveLike(ctx, postID, userID)
+}
+
+// === Comments ===
+
+func (s *Service) CommentOnPost(
+	ctx context.Context, authorID, postID, body string,
+) (*domain.PostComment, error) {
+	body = strings.TrimSpace(body)
+	if body == "" || len(body) > maxCommentBodyLen {
+		return nil, domain.ErrInvalidArg
+	}
+	if _, err := s.posts.GetByID(ctx, postID); err != nil {
+		return nil, err
+	}
+	c, err := s.posts.CreateComment(ctx, postID, authorID, body)
+	if err != nil {
+		return nil, err
+	}
+	if s.nc != nil {
+		payload, _ := json.Marshal(map[string]any{
+			"event":     "feed.post.commented",
+			"postId":    postID,
+			"commentId": c.ID,
+			"authorId":  authorID,
+		})
+		_ = s.nc.Publish("feed.post.commented.v1", payload)
+	}
+	return c, nil
+}
+
+func (s *Service) ListComments(
+	ctx context.Context, postID, cursor string, limit int,
+) ([]*domain.PostComment, string, error) {
+	if limit <= 0 || limit > maxFeedLimit {
+		limit = defaultFeedLimit
+	}
+	return s.posts.ListComments(ctx, postID, cursor, limit)
+}
+
+// DeleteComment — owner-of-comment OR owner-of-post.
+func (s *Service) DeleteComment(
+	ctx context.Context, actorID, postID, commentID string,
+) error {
+	c, err := s.posts.GetComment(ctx, commentID)
+	if err != nil {
+		return err
+	}
+	if c.PostID != postID {
+		return domain.ErrNotFound
+	}
+	if c.AuthorID == actorID {
+		return s.posts.SoftDeleteComment(ctx, commentID)
+	}
+	post, err := s.posts.GetByID(ctx, postID)
+	if err != nil {
+		return err
+	}
+	if post.AuthorID == actorID {
+		return s.posts.SoftDeleteComment(ctx, commentID)
+	}
+	return domain.ErrForbidden
+}

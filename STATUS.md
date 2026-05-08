@@ -4,7 +4,7 @@
 
 ## Текущая фаза
 
-**Phase 8 / C — Stories** ✅ code-complete (backend + mobile + smoke)
+**Phase 8 / D — Лента (posts/likes/comments)** ✅ code-complete (backend + mobile + smoke)
 
 Phase 0 закрыта — выбран Expo React Native, см. [DECISION.md](DECISION.md). Flutter архивирован в `apps/mobile_flutter.archived/`.
 
@@ -14,12 +14,14 @@ Phase 1–5 закрыты на code-level. Phase 6 / P6-A code-level done. Phas
 
 **Phase 8 / B — Groups + media** ✅: messaging extension (group conversations, member roles, reactions, replies, edits) + media сервис + MinIO с presigned PUT/GET через Caddy s3.148-253-214-156.sslip.io. Mobile: SQLite v10 (media columns), MediaAdapter, mediaUpload, NewGroupScreen, ChatSettingsScreen.
 
-**Phase 8 / C — Stories** ✅ code-complete:
-- **Backend:** новый `feed` сервис (Go, port 8085), migration `0016_stories` (`stories` + `story_views`), endpoints `POST /stories`, `GET /stories/{feed,me,{id}/views}`, `POST /stories/{id}/views`, `DELETE /stories/{id}` + cleanup-cron sidecar (1h), NATS events `feed.story.{published,expired}.v1`. Caddy routes wired, deployed на VPS.
-- **Mobile:** новый паттерн **`src/modules/<name>/`** (отделённый от существующего layered кода). `modules/stories/` содержит {`domain/`, `storage/`, `state/`, `sync/`, `ui/`, `index.ts`} — single public surface через index.ts. Components: `StoriesRail` (horizontal scroll кружков над списком чатов), `StoriesViewer` (full-screen modal с прогрессбарами), `StoryComposerScreen` (gallery/camera + caption + post). SQLite v11 (`stories` + `story_views`). Offline-first: drafts с retry, optimistic markViewed, автохайдрейт из кэша.
-- **E2E smoke** (`services/backend/scripts/smoke_stories.py`): register-2-users → follow → upload → publish → feed → markViewed → viewers → delete. Pass.
+**Phase 8 / C — Stories** ✅: новый `feed` сервис (Go, port 8085), migration `0016_stories`, stories endpoints + cleanup-cron + NATS events. Mobile **`src/modules/stories/`** по новому модульному паттерну `{domain,storage,state,sync,ui}/index.ts`. SQLite v11.
 
-tsc clean, jest **246/246 passing** (+7 stories). 12 контейнеров на VPS включая `re_feed`.
+**Phase 8 / D — Лента (posts/likes/comments)** ✅ code-complete:
+- **Backend:** расширение `feed` сервиса (тот же контейнер). Migration `0017_feed_posts` (posts + post_likes + post_comments + триггеры для денормализованных like_count/comment_count). Endpoints: `POST/GET/DELETE /posts`, `POST/DELETE /posts/{id}/likes`, `POST/GET /posts/{id}/comments`, `DELETE /posts/{postId}/comments/{commentId}`, `GET /feed/home?cursor=` (cursor-pagination, chronological merge of self+followees). NATS events `feed.post.{created,liked,commented}.v1`.
+- **Mobile:** `modules/feed/` по тому же модульному паттерну. Components: FeedScreen (FlatList с pull-to-refresh + infinite scroll), PostCard (text/photo/session-share), PostDetailScreen (пост + comments + composer), PostComposerScreen (text + photo через MediaAdapter), FeedModal (host modal). SQLite v12 (feed_posts + feed_comments + drafts). Offline-first drafts с retry. Auto-share: после Save пробежки prompt «Опубликовать в ленте?» → composeSession.
+- **E2E smoke** (`services/backend/scripts/smoke_posts.py`, 14 шагов): register-2 → follow → upload → publish photo+text → feed/home → like/unlike → comment/uncomment → delete post → forbidden negative-test. Pass.
+
+tsc clean, jest **253/253 passing** (+14 stories+feed).
 
 ## Phase 1 progress
 

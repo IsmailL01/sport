@@ -58,6 +58,7 @@ import 'react-native-get-random-values';
 import { v4 as uuid } from 'uuid';
 import { apiClient } from './src/auth/apiClient';
 import { ChatsModal } from './src/ui/social/ChatsModal';
+import { FeedModal, useFeedStore } from './src/modules/feed';
 import { useRealtimeStore } from './src/state/social/useRealtimeStore';
 import { useNotificationsStore } from './src/state/social/useNotificationsStore';
 
@@ -331,6 +332,7 @@ function MapScreen() {
   const [trainingVisible, setTrainingVisible] = useState(false);
   const [workoutPlayerVisible, setWorkoutPlayerVisible] = useState(false);
   const [chatsVisible, setChatsVisible] = useState(false);
+  const [feedVisible, setFeedVisible] = useState(false);
   const myUser = useAuthStore((s) => s.user);
   const realtimeStatus = useRealtimeStore((s) => s.status);
   const activeWorkout = useWorkoutPlayerStore((s) => s.workout);
@@ -383,6 +385,33 @@ function MapScreen() {
     }
   };
 
+  // Phase D: предложить поделиться завершённой пробежкой в ленте.
+  // Дёргается после Save → trigger в handleStop.
+  const maybeOfferAutoShare = (
+    sessionId: number, startedAt: number, endedAt: number, distanceM: number,
+  ) => {
+    if (myUser === null) return;
+    const km = distanceM / 1000;
+    const minutes = Math.round((endedAt - startedAt) / 60000);
+    const caption = `🏃 Пробежка: ${km.toFixed(2)} км · ${minutes} мин`;
+    Alert.alert(
+      'Поделиться в ленте?',
+      caption,
+      [
+        { text: 'Не делиться', style: 'cancel' },
+        {
+          text: 'Опубликовать',
+          isPreferred: true,
+          onPress: () => {
+            useFeedStore.getState()
+              .composeSession(myUser.id, String(sessionId), caption)
+              .catch((e) => console.warn('[App] composeSession failed', e));
+          },
+        },
+      ],
+    );
+  };
+
   const handleStop = async () => {
     Alert.alert(
       'Завершить запись?',
@@ -422,6 +451,9 @@ function MapScreen() {
                 avgHrBpm: sess?.avgHrBpm ?? null,
                 calories: sess?.caloriesKcal ?? null,
               }).catch((e) => console.warn('[App] writeSessionToHealth failed', e));
+
+              // Phase D: предложить поделиться пробежкой в ленте.
+              maybeOfferAutoShare(s.sessionId, s.startedAt, s.endedAt, totalDistance(s.points));
             }
           },
         },
@@ -518,6 +550,9 @@ function MapScreen() {
             💬 Чаты {realtimeStatus === 'connected' ? '●' : realtimeStatus === 'connecting' || realtimeStatus === 'reconnecting' ? '○' : ''}
           </Text>
         </Pressable>
+        <Pressable style={styles.historyBtn} onPress={() => setFeedVisible(true)}>
+          <Text style={styles.historyBtnText}>📰 Лента</Text>
+        </Pressable>
         {activeWorkout !== null && (
           <Pressable
             style={[styles.historyBtn, styles.historyBtnAccent]}
@@ -567,6 +602,13 @@ function MapScreen() {
           visible={chatsVisible}
           myUserId={myUser.id}
           onClose={() => setChatsVisible(false)}
+        />
+      )}
+      {myUser !== null && (
+        <FeedModal
+          visible={feedVisible}
+          myUserId={myUser.id}
+          onClose={() => setFeedVisible(false)}
         />
       )}
 

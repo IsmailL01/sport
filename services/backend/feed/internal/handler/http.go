@@ -39,6 +39,17 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /stories/{id}/views", h.requireAuth(h.markViewed))
 	mux.HandleFunc("DELETE /stories/{id}", h.requireAuth(h.deleteStory))
 
+	// Phase D: posts + likes + comments + home feed.
+	mux.HandleFunc("POST /posts", h.requireAuth(h.createPost))
+	mux.HandleFunc("GET /posts/{id}", h.requireAuth(h.getPost))
+	mux.HandleFunc("DELETE /posts/{id}", h.requireAuth(h.deletePost))
+	mux.HandleFunc("POST /posts/{id}/likes", h.requireAuth(h.likePost))
+	mux.HandleFunc("DELETE /posts/{id}/likes", h.requireAuth(h.unlikePost))
+	mux.HandleFunc("GET /posts/{id}/comments", h.requireAuth(h.listComments))
+	mux.HandleFunc("POST /posts/{id}/comments", h.requireAuth(h.commentOnPost))
+	mux.HandleFunc("DELETE /posts/{postId}/comments/{commentId}", h.requireAuth(h.deleteComment))
+	mux.HandleFunc("GET /feed/home", h.requireAuth(h.homeFeed))
+
 	return loggingMiddleware(h.log)(mux)
 }
 

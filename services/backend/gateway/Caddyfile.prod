@@ -100,11 +100,20 @@ s3.148-253-214-156.sslip.io {
 		reverse_proxy media:8086
 	}
 
-	# Feed (Phase C: stories; Phase D: posts/likes/comments).
+	# Feed (Phase C: stories; Phase D: posts/likes/comments + home feed).
 	handle /stories {
 		reverse_proxy feed:8085
 	}
 	handle /stories/* {
+		reverse_proxy feed:8085
+	}
+	handle /posts {
+		reverse_proxy feed:8085
+	}
+	handle /posts/* {
+		reverse_proxy feed:8085
+	}
+	handle /feed/* {
 		reverse_proxy feed:8085
 	}
 

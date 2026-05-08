@@ -1,4 +1,4 @@
-// feed/cmd/server — Phase C: stories. Phase D добавит posts/likes/comments.
+// feed/cmd/server — Phase C: stories. Phase D: posts/likes/comments + home feed.
 package main
 
 import (
@@ -68,7 +68,8 @@ func run() error {
 	logger.Info("nats connected", "url", natsURL)
 
 	storyRepo := postgres.NewStoryRepo(pool)
-	svc := service.New(storyRepo, nc)
+	postRepo := postgres.NewPostRepo(pool)
+	svc := service.New(storyRepo, postRepo, nc)
 
 	go cleanup.Run(ctx, svc, logger)
 

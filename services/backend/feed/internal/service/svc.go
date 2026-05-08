@@ -18,11 +18,12 @@ const maxOverlayLen = 200
 
 type Service struct {
 	stories *postgres.StoryRepo
+	posts   *postgres.PostRepo
 	nc      *nats.Conn
 }
 
-func New(stories *postgres.StoryRepo, nc *nats.Conn) *Service {
-	return &Service{stories: stories, nc: nc}
+func New(stories *postgres.StoryRepo, posts *postgres.PostRepo, nc *nats.Conn) *Service {
+	return &Service{stories: stories, posts: posts, nc: nc}
 }
 
 func (s *Service) PublishStory(ctx context.Context, authorID, mediaID string, overlay *string) (*domain.Story, error) {

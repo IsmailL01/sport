@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 11;
+const TARGET_VERSION = 12;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -20,6 +20,7 @@ let _db: SQLite.SQLiteDatabase | null = null;
  * - v9: + таблица `messages` с outbox-полями (Phase 8 / A5).
  * - v10: + media_id + media_mime в messages (Phase 8 / B3 image attachments).
  * - v11: + таблицы `stories` + `story_views` (Phase 8 / C — модуль `modules/stories`).
+ * - v12: + таблицы `feed_posts` + `feed_comments` (Phase 8 / D — модуль `modules/feed`).
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
@@ -278,6 +279,54 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       );
     `);
     current = 11;
+  }
+
+  if (current < 12) {
+    // Phase 8 / D: лента — posts + comments. Кэш + локальные drafts.
+    // Имя feed_posts (не posts) чтобы не пересекалось с reserved-словом.
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS feed_posts (
+        id TEXT PRIMARY KEY,
+        author_id TEXT NOT NULL,
+        kind TEXT NOT NULL,                 -- text | photo | session
+        body TEXT,
+        media_id TEXT,
+        media_local_uri TEXT,
+        media_mime TEXT,
+        media_width INTEGER,
+        media_height INTEGER,
+        session_ref TEXT,
+        like_count INTEGER NOT NULL DEFAULT 0,
+        comment_count INTEGER NOT NULL DEFAULT 0,
+        i_liked INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        edited_at INTEGER,
+        is_draft INTEGER NOT NULL DEFAULT 0,
+        client_id TEXT,
+        status TEXT,
+        attempts INTEGER DEFAULT 0,
+        last_error TEXT
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_feed_posts_created ON feed_posts (created_at DESC);`,
+    );
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_feed_posts_drafts ON feed_posts (status, created_at) WHERE is_draft = 1;`,
+    );
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS feed_comments (
+        id TEXT PRIMARY KEY,
+        post_id TEXT NOT NULL,
+        author_id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_feed_comments_post ON feed_comments (post_id, created_at DESC);`,
+    );
+    current = 12;
   }
 
   if (current !== TARGET_VERSION) {
