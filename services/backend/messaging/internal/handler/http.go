@@ -106,6 +106,7 @@ type sendMessageRequest struct {
 	Kind        string  `json:"kind,omitempty"` // default text
 	Body        *string `json:"body,omitempty"`
 	ReplyToID   *string `json:"replyToId,omitempty"`
+	MediaID     *string `json:"mediaId,omitempty"`
 }
 
 type messageDTO struct {
@@ -118,6 +119,10 @@ type messageDTO struct {
 	ReplyToID      *string            `json:"replyToId,omitempty"`
 	ReplyPreview   *replyPreviewDTO   `json:"replyPreview,omitempty"`
 	Reactions      []reactionDTO      `json:"reactions,omitempty"`
+	MediaID        *string            `json:"mediaId,omitempty"`
+	MediaMime      *string            `json:"mediaMime,omitempty"`
+	MediaWidth     *int               `json:"mediaWidth,omitempty"`
+	MediaHeight    *int               `json:"mediaHeight,omitempty"`
 	EditedAt       *int64             `json:"editedAt,omitempty"`
 	DeletedAt      *int64             `json:"deletedAt,omitempty"`
 	CreatedAt      int64              `json:"createdAt"`
@@ -343,6 +348,7 @@ func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		Kind:        kind,
 		Body:        req.Body,
 		ReplyToID:   req.ReplyToID,
+		MediaID:     req.MediaID,
 	})
 	if err != nil {
 		writeServiceError(w, err)
@@ -455,6 +461,12 @@ func messageToDTO(m *domain.Message) messageDTO {
 			Kind:      m.ReplyPreview.Kind,
 			Deleted:   m.ReplyPreview.Deleted,
 		}
+	}
+	if m.MediaID != nil {
+		d.MediaID = m.MediaID
+		d.MediaMime = m.MediaMime
+		d.MediaWidth = m.MediaWidth
+		d.MediaHeight = m.MediaHeight
 	}
 	if len(m.Reactions) > 0 {
 		d.Reactions = make([]reactionDTO, len(m.Reactions))

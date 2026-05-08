@@ -16,6 +16,7 @@ COPY social-graph/go.mod ./social-graph/
 COPY messaging/go.mod ./messaging/
 COPY realtime-gw/go.mod ./realtime-gw/
 COPY notifications/go.mod ./notifications/
+COPY media/go.mod ./media/
 
 RUN cd activity-sync && go mod download
 RUN cd pkg && go mod download

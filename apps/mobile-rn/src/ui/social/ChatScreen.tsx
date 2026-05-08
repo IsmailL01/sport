@@ -3,12 +3,14 @@
 
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform,
   Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 
 import type { Chat, Message } from '../../domain/social';
 import { canDeleteMessage } from '../../domain/social';
+import { getMediaAdapter } from '../../media';
+import { fetchMediaURL, uploadImage } from '../../sync/mediaUpload';
 import { runMessagesPush } from '../../sync/messageSync';
 import { useChatStore } from '../../state/social/useChatStore';
 import { useChatsStore } from '../../state/social/useChatsStore';
@@ -34,7 +36,9 @@ export function ChatScreen({ chat, myUserId, onBack, onOpenSettings }: Props) {
   const toggleReaction = useChatStore((s) => s.toggleReaction);
   const editMessage = useChatStore((s) => s.editMessage);
   const deleteMessage = useChatStore((s) => s.deleteMessage);
+  const sendImage = useChatStore((s) => s.sendImage);
   const markRead = useChatsStore((s) => s.markRead);
+  const [uploading, setUploading] = useState(false);
 
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<{ messageId: string; original: string } | null>(null);
@@ -128,6 +132,34 @@ export function ChatScreen({ chat, myUserId, onBack, onOpenSettings }: Props) {
   const cancelReply = () => setReplyTo(null);
   const cancelEdit = () => { setEditing(null); setDraft(''); };
 
+  const handleAttach = async () => {
+    if (uploading || editing !== null) return;
+    const adapter = getMediaAdapter();
+    const granted = await adapter.requestPermission('gallery');
+    if (!granted) {
+      Alert.alert('Доступ к галерее', 'Разрешите доступ в настройках приложения.');
+      return;
+    }
+    const picked = await adapter.pickFromGallery({ type: 'image' });
+    if (picked === null) return;
+    setUploading(true);
+    try {
+      const result = await uploadImage(picked);
+      await sendImage(chat.id, myUserId, {
+        mediaId: result.mediaId,
+        localUri: picked.uri,
+        mime: result.mime,
+        width: result.width,
+        height: result.height,
+        caption: null,
+      });
+    } catch (e) {
+      Alert.alert('Не удалось загрузить', String((e as Error)?.message ?? e));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -202,6 +234,17 @@ export function ChatScreen({ chat, myUserId, onBack, onOpenSettings }: Props) {
       )}
 
       <View style={styles.composer}>
+        <Pressable
+          onPress={handleAttach}
+          disabled={uploading || editing !== null}
+          style={[styles.attachBtn, (uploading || editing !== null) && styles.attachBtnDisabled]}
+        >
+          {uploading ? (
+            <ActivityIndicator size="small" color="#6B7280" />
+          ) : (
+            <Text style={styles.attachText}>+</Text>
+          )}
+        </Pressable>
         <TextInput
           style={styles.input}
           value={draft}
@@ -239,6 +282,32 @@ function Bubble({
   if (msg.replyPreview !== null && replyTargetSender === undefined) {
     getOrFetch(msg.replyPreview.senderId);
   }
+
+  // Lazy-fetch presigned media URL для bubble (TTL 1h).
+  const [mediaURL, setMediaURL] = useState<string | null>(msg.mediaLocalUri);
+  useEffect(() => {
+    let cancelled = false;
+    if (msg.kind === 'image' || msg.kind === 'video') {
+      // Если есть локальный URI (свежий optimistic upload) — используем его.
+      if (msg.mediaLocalUri !== null) {
+        setMediaURL(msg.mediaLocalUri);
+        return;
+      }
+      // Иначе fetchPresigned для server-acked media.
+      if (msg.mediaId !== null) {
+        fetchMediaURL(msg.mediaId).then((url) => {
+          if (!cancelled) setMediaURL(url);
+        });
+      }
+    }
+    return () => { cancelled = true; };
+  }, [msg.kind, msg.mediaId, msg.mediaLocalUri]);
+
+  const isImage = msg.kind === 'image';
+  // Aspect ratio для image bubble.
+  const aspect = (msg.mediaWidth && msg.mediaHeight && msg.mediaHeight > 0)
+    ? msg.mediaWidth / msg.mediaHeight
+    : 1;
 
   // Aggregate reactions: emoji → count + my-included flag.
   const reactionsByEmoji = msg.reactions.reduce<Record<string, { count: number; mine: boolean }>>(
@@ -293,7 +362,25 @@ function Bubble({
             </View>
           </View>
         )}
-        <Text style={styles.bubbleText}>{msg.text}</Text>
+        {isImage && (
+          <View style={[styles.imageBox, { aspectRatio: aspect }]}>
+            {mediaURL !== null ? (
+              <Image source={{ uri: mediaURL }} style={styles.image} resizeMode="cover" />
+            ) : (
+              <View style={styles.imagePlaceholder}>
+                <ActivityIndicator color="#6B7280" />
+              </View>
+            )}
+            {msg.status === 'pending' && (
+              <View style={styles.imageOverlay}>
+                <ActivityIndicator color="#FFFFFF" />
+              </View>
+            )}
+          </View>
+        )}
+        {msg.text !== null && msg.text !== '' && (
+          <Text style={styles.bubbleText}>{msg.text}</Text>
+        )}
         <View style={styles.bubbleMeta}>
           {msg.editedAt !== null && (
             <Text style={styles.editedTag}>изменено</Text>
@@ -378,6 +465,27 @@ const styles = StyleSheet.create({
     width: 24, height: 24, alignItems: 'center', justifyContent: 'center',
   },
   replyChipCloseText: { fontSize: 14, color: '#9CA3AF' },
+  imageBox: {
+    width: 240, maxWidth: 280, borderRadius: 8, overflow: 'hidden',
+    backgroundColor: '#F3F4F6', marginBottom: 6,
+  },
+  image: { width: '100%', height: '100%' },
+  imagePlaceholder: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+  },
+  imageOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  attachBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    borderWidth: 1, borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  attachBtnDisabled: { opacity: 0.5 },
+  attachText: { fontSize: 24, color: '#6B7280', marginTop: -3, fontWeight: '300' },
 
   messagesList: { paddingHorizontal: 12, paddingVertical: 8, flexGrow: 1 },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 100 },

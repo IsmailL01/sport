@@ -10,6 +10,20 @@
 	email {env.CADDY_ACME_EMAIL}
 }
 
+# MinIO S3-compatible object storage proxy (Phase B3).
+# Client uses presigned URLs against this hostname; Caddy forwards
+# к internal minio:9000. Caddy v2 reverse_proxy preserve-ит Host header
+# по-умолчанию — MinIO видит s3.148-253-214-156.sslip.io и signature
+# валидация работает.
+s3.148-253-214-156.sslip.io {
+	reverse_proxy minio:9000
+
+	log {
+		output stdout
+		format json
+	}
+}
+
 148-253-214-156.sslip.io {
 	# CORS для будущего веб-клиента.
 	@cors_preflight method OPTIONS
@@ -73,6 +87,17 @@
 	}
 	handle /messages/* {
 		reverse_proxy messaging:8083
+	}
+
+	# Media (Phase B3: presigned URL issuance + metadata).
+	handle /uploads {
+		reverse_proxy media:8086
+	}
+	handle /uploads/* {
+		reverse_proxy media:8086
+	}
+	handle /media/* {
+		reverse_proxy media:8086
 	}
 
 	# Social-graph (Phase A: profiles + follows + blocks + search).

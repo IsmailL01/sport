@@ -204,6 +204,8 @@ type MessageRow = {
   text: string | null;
   media_local_uri: string | null;
   media_remote_url: string | null;
+  media_id: string | null;
+  media_mime: string | null;
   media_width: number | null;
   media_height: number | null;
   media_duration_s: number | null;
@@ -236,6 +238,7 @@ function rowToMessage(r: MessageRow): Message {
     id: r.id, clientId: r.client_id, chatId: r.chat_id, senderId: r.sender_id,
     kind: r.kind as MessageKind, text: r.text,
     mediaLocalUri: r.media_local_uri, mediaRemoteUrl: r.media_remote_url,
+    mediaId: r.media_id, mediaMime: r.media_mime,
     mediaWidth: r.media_width, mediaHeight: r.media_height,
     mediaDurationS: r.media_duration_s,
     replyToMessageId: r.reply_to_message_id,
@@ -253,13 +256,15 @@ export function upsertMessage(m: Message): void {
   db.runSync(
     `INSERT OR REPLACE INTO messages
      (id, client_id, chat_id, sender_id, kind, text,
-      media_local_uri, media_remote_url, media_width, media_height, media_duration_s,
+      media_local_uri, media_remote_url, media_id, media_mime,
+      media_width, media_height, media_duration_s,
       reply_to_message_id, status, is_deleted, deleted_by, reactions_json,
       created_at, edited_at, attempts, synced_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       m.id, m.clientId, m.chatId, m.senderId, m.kind, m.text,
-      m.mediaLocalUri, m.mediaRemoteUrl, m.mediaWidth, m.mediaHeight, m.mediaDurationS,
+      m.mediaLocalUri, m.mediaRemoteUrl, m.mediaId, m.mediaMime,
+      m.mediaWidth, m.mediaHeight, m.mediaDurationS,
       m.replyToMessageId, m.status, m.isDeleted ? 1 : 0, m.deletedBy,
       JSON.stringify({ reactions: m.reactions, replyPreview: m.replyPreview }),
       m.createdAt, m.editedAt, m.attempts,

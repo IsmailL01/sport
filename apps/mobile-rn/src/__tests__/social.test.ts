@@ -5,6 +5,7 @@ function msg(overrides: Partial<Message>): Message {
     id: 'm1', clientId: 'c1', chatId: 'chat1', senderId: 'alice',
     kind: 'text', text: 'hi',
     mediaLocalUri: null, mediaRemoteUrl: null,
+    mediaId: null, mediaMime: null,
     mediaWidth: null, mediaHeight: null, mediaDurationS: null,
     replyToMessageId: null, replyPreview: null, reactions: [],
     status: 'sent', isDeleted: false, deletedBy: null,

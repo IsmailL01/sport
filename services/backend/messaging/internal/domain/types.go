@@ -50,6 +50,9 @@ type MessageKind string
 const (
 	MessageText   MessageKind = "text"
 	MessageMedia  MessageKind = "media"
+	MessageImage  MessageKind = "image"
+	MessageVideo  MessageKind = "video"
+	MessageAudio  MessageKind = "audio"
 	MessageSystem MessageKind = "system"
 )
 
@@ -61,14 +64,19 @@ type Message struct {
 	Kind           MessageKind
 	Body           *string
 	ReplyToID      *string
+	MediaID        *string // Phase B3: optional reference в media table
 	EditedAt       *time.Time
 	DeletedAt      *time.Time
 	Flagged        bool
 	CreatedAt      time.Time
-	// Reactions / ReplyPreview заполняются при ListByConversation для UI;
-	// в send/get-by-id остаются nil.
-	Reactions     []MessageReaction
-	ReplyPreview  *MessageReplyPreview
+	// Reactions / ReplyPreview / MediaURL заполняются в ListByConversation
+	// для UI; в send/get-by-id остаются nil.
+	Reactions    []MessageReaction
+	ReplyPreview *MessageReplyPreview
+	MediaURL     *string // presigned download URL TTL 1h
+	MediaMime    *string
+	MediaWidth   *int
+	MediaHeight  *int
 }
 
 type MessageReaction struct {

@@ -42,7 +42,7 @@ export type Chat = {
   updatedAt: number;
 };
 
-export type MessageKind = 'text' | 'image' | 'video' | 'system';
+export type MessageKind = 'text' | 'image' | 'video' | 'audio' | 'media' | 'system';
 
 export type DeliveryStatus =
   | 'pending'   // в outbox, ждёт sync
@@ -75,8 +75,13 @@ export type Message = {
   text: string | null;
   /** Локальный URI медиа (file://) до upload — UI рендерит из него optimistically. */
   mediaLocalUri: string | null;
-  /** S3 URL после upload через media сервис. */
+  /** S3 URL после upload через media сервис. На клиенте — резолвится lazy
+   *  через GET /media/{mediaId} перед первым рендером в bubble (TTL 1h). */
   mediaRemoteUrl: string | null;
+  /** Server media UUID (после server-ack). UI делает fetchMediaURL(mediaId)
+   *  для получения presigned download URL. */
+  mediaId: string | null;
+  mediaMime: string | null;
   mediaWidth: number | null;
   mediaHeight: number | null;
   mediaDurationS: number | null;

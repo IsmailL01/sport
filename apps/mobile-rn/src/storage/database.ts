@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 9;
+const TARGET_VERSION = 10;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -18,6 +18,7 @@ let _db: SQLite.SQLiteDatabase | null = null;
  * - v7: + колонка `calories_kcal` в sessions (MET-based estimate на finalize).
  * - v8: + таблицы `social_users` (cache profiles) и `chats` (Phase 8 / A5).
  * - v9: + таблица `messages` с outbox-полями (Phase 8 / A5).
+ * - v10: + media_id + media_mime в messages (Phase 8 / B3 image attachments).
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
@@ -225,6 +226,17 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       );
     `);
     current = 9;
+  }
+
+  if (current < 10) {
+    const cols = db.getAllSync<{ name: string }>(`PRAGMA table_info(messages);`);
+    if (!cols.some((c) => c.name === 'media_id')) {
+      db.execSync(`ALTER TABLE messages ADD COLUMN media_id TEXT;`);
+    }
+    if (!cols.some((c) => c.name === 'media_mime')) {
+      db.execSync(`ALTER TABLE messages ADD COLUMN media_mime TEXT;`);
+    }
+    current = 10;
   }
 
   if (current !== TARGET_VERSION) {

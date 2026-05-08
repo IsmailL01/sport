@@ -21,7 +21,7 @@ func NewMessageRepo(pool *pgxpool.Pool) *MessageRepo {
 }
 
 const msgCols = `id, conversation_id, sender_id, client_msg_id, kind, body,
-		reply_to_id, edited_at, deleted_at, flagged, created_at`
+		reply_to_id, media_id, edited_at, deleted_at, flagged, created_at`
 
 // SendInTx — INSERT message + outbox-rows для каждого члена + UPDATE conversations.last_message_at,
 // всё в одной транзакции. Идемпотентен через UNIQUE(conversation_id, client_msg_id).
@@ -30,7 +30,7 @@ const msgCols = `id, conversation_id, sender_id, client_msg_id, kind, body,
 func (r *MessageRepo) SendInTx(
 	ctx context.Context,
 	convID, senderID, clientMsgID string,
-	kind domain.MessageKind, body *string, replyToID *string,
+	kind domain.MessageKind, body *string, replyToID *string, mediaID *string,
 	memberIDs []string,
 ) (*domain.Message, bool, error) {
 	tx, err := r.pool.Begin(ctx)
@@ -45,8 +45,8 @@ func (r *MessageRepo) SendInTx(
 		`SELECT `+msgCols+` FROM messages WHERE conversation_id=$1 AND client_msg_id=$2`,
 		convID, clientMsgID,
 	).Scan(&existing.ID, &existing.ConversationID, &existing.SenderID, &existing.ClientMsgID,
-		&existing.Kind, &existing.Body, &existing.ReplyToID, &existing.EditedAt,
-		&existing.DeletedAt, &existing.Flagged, &existing.CreatedAt)
+		&existing.Kind, &existing.Body, &existing.ReplyToID, &existing.MediaID,
+		&existing.EditedAt, &existing.DeletedAt, &existing.Flagged, &existing.CreatedAt)
 	if err == nil {
 		if err := tx.Commit(ctx); err != nil {
 			return nil, false, err
@@ -60,11 +60,11 @@ func (r *MessageRepo) SendInTx(
 	// INSERT new message.
 	var m domain.Message
 	err = tx.QueryRow(ctx,
-		`INSERT INTO messages (conversation_id, sender_id, client_msg_id, kind, body, reply_to_id)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+msgCols,
-		convID, senderID, clientMsgID, kind, body, replyToID,
+		`INSERT INTO messages (conversation_id, sender_id, client_msg_id, kind, body, reply_to_id, media_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+msgCols,
+		convID, senderID, clientMsgID, kind, body, replyToID, mediaID,
 	).Scan(&m.ID, &m.ConversationID, &m.SenderID, &m.ClientMsgID, &m.Kind, &m.Body,
-		&m.ReplyToID, &m.EditedAt, &m.DeletedAt, &m.Flagged, &m.CreatedAt)
+		&m.ReplyToID, &m.MediaID, &m.EditedAt, &m.DeletedAt, &m.Flagged, &m.CreatedAt)
 	if err != nil {
 		return nil, false, err
 	}
@@ -87,6 +87,7 @@ func (r *MessageRepo) SendInTx(
 		"kind":           string(m.Kind),
 		"body":           m.Body,
 		"replyToId":      m.ReplyToID,
+		"mediaId":        m.MediaID,
 		"createdAt":      m.CreatedAt,
 	})
 	if err != nil {
@@ -136,7 +137,8 @@ func (r *MessageRepo) ListByConversation(ctx context.Context, convID string, bef
 	for rows.Next() {
 		var m domain.Message
 		if err := rows.Scan(&m.ID, &m.ConversationID, &m.SenderID, &m.ClientMsgID,
-			&m.Kind, &m.Body, &m.ReplyToID, &m.EditedAt, &m.DeletedAt, &m.Flagged, &m.CreatedAt,
+			&m.Kind, &m.Body, &m.ReplyToID, &m.MediaID,
+			&m.EditedAt, &m.DeletedAt, &m.Flagged, &m.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -161,7 +163,7 @@ func (r *MessageRepo) Edit(ctx context.Context, messageID string, newBody string
 		 RETURNING `+msgCols,
 		messageID, newBody,
 	).Scan(&m.ID, &m.ConversationID, &m.SenderID, &m.ClientMsgID, &m.Kind, &m.Body,
-		&m.ReplyToID, &m.EditedAt, &m.DeletedAt, &m.Flagged, &m.CreatedAt)
+		&m.ReplyToID, &m.MediaID, &m.EditedAt, &m.DeletedAt, &m.Flagged, &m.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrMsgNotFound
@@ -189,6 +191,44 @@ func (r *MessageRepo) Edit(ctx context.Context, messageID string, newBody string
 		return nil, err
 	}
 	return &m, nil
+}
+
+// LoadMediaInfo — для batch messages, выгрузить media metadata (mime, size,
+// dimensions). Presigned URL — НЕ генерится здесь (cross-service); client
+// получает media_id и зовёт /media/{id} отдельно для presigned download URL.
+// Возвращает map[messageID] → mediaInfo.
+type MediaInfo struct {
+	Mime        string
+	Width       *int
+	Height      *int
+	DurationMs  *int
+	Status      string // pending | ready | failed
+}
+
+func (r *MessageRepo) LoadMediaInfo(ctx context.Context, messageIDs []string) (map[string]*MediaInfo, error) {
+	if len(messageIDs) == 0 {
+		return map[string]*MediaInfo{}, nil
+	}
+	const sql = `
+		SELECT m.id, md.mime, md.width, md.height, md.duration_ms, md.status
+		FROM messages m
+		JOIN media md ON md.id = m.media_id
+		WHERE m.id = ANY($1) AND m.media_id IS NOT NULL`
+	rows, err := r.pool.Query(ctx, sql, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]*MediaInfo)
+	for rows.Next() {
+		var msgID string
+		var info MediaInfo
+		if err := rows.Scan(&msgID, &info.Mime, &info.Width, &info.Height, &info.DurationMs, &info.Status); err != nil {
+			return nil, err
+		}
+		out[msgID] = &info
+	}
+	return out, rows.Err()
 }
 
 // LoadReplyPreviews — для batch messages, загрузить snapshot их reply-targets.
@@ -228,7 +268,7 @@ func (r *MessageRepo) GetByID(ctx context.Context, id string) (*domain.Message, 
 	var m domain.Message
 	err := r.pool.QueryRow(ctx, `SELECT `+msgCols+` FROM messages WHERE id=$1`, id).
 		Scan(&m.ID, &m.ConversationID, &m.SenderID, &m.ClientMsgID, &m.Kind, &m.Body,
-			&m.ReplyToID, &m.EditedAt, &m.DeletedAt, &m.Flagged, &m.CreatedAt)
+			&m.ReplyToID, &m.MediaID, &m.EditedAt, &m.DeletedAt, &m.Flagged, &m.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrMsgNotFound
 	}

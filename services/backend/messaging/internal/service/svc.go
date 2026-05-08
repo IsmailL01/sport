@@ -267,6 +267,7 @@ type SendMessageInput struct {
 	Kind        domain.MessageKind
 	Body        *string
 	ReplyToID   *string
+	MediaID     *string // Phase B3: для image/video/audio
 }
 
 // SendMessage — POST /conversations/{id}/messages.
@@ -278,13 +279,24 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (*domain
 	if in.Kind == "" {
 		in.Kind = domain.MessageText
 	}
-	if in.Kind == domain.MessageText {
+	switch in.Kind {
+	case domain.MessageText:
 		if in.Body == nil || strings.TrimSpace(*in.Body) == "" {
 			return nil, false, domain.ErrInvalidArg
 		}
 		if len(*in.Body) > maxBodyLen {
 			return nil, false, domain.ErrInvalidArg
 		}
+	case domain.MessageImage, domain.MessageVideo, domain.MessageAudio, domain.MessageMedia:
+		if in.MediaID == nil || *in.MediaID == "" {
+			return nil, false, domain.ErrInvalidArg
+		}
+		// Body — опциональный caption.
+		if in.Body != nil && len(*in.Body) > maxBodyLen {
+			return nil, false, domain.ErrInvalidArg
+		}
+	default:
+		return nil, false, domain.ErrInvalidArg
 	}
 
 	isMember, _, err := s.members.IsMember(ctx, in.ConvID, in.SenderID)
@@ -301,7 +313,7 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (*domain
 	}
 
 	return s.messages.SendInTx(ctx, in.ConvID, in.SenderID, in.ClientMsgID,
-		in.Kind, in.Body, in.ReplyToID, memberIDs)
+		in.Kind, in.Body, in.ReplyToID, in.MediaID, memberIDs)
 }
 
 func (s *Service) ListMessages(ctx context.Context, actorID, convID string, before *int64, limit int) ([]*domain.Message, error) {
@@ -334,10 +346,19 @@ func (s *Service) ListMessages(ctx context.Context, actorID, convID string, befo
 	if err != nil {
 		return nil, err
 	}
+	mediaByMsg, err := s.messages.LoadMediaInfo(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	for _, m := range msgs {
 		m.Reactions = reactionsByMsg[m.ID]
 		if p, ok := previewsByMsg[m.ID]; ok {
 			m.ReplyPreview = p
+		}
+		if mi, ok := mediaByMsg[m.ID]; ok {
+			m.MediaMime = &mi.Mime
+			m.MediaWidth = mi.Width
+			m.MediaHeight = mi.Height
 		}
 	}
 	return msgs, nil

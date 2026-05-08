@@ -24,6 +24,16 @@ type ChatStore = {
   /** Отправить текст. Создаёт оптимистичный message в outbox.  */
   sendText: (chatId: string, senderId: string, text: string, replyToMessageId?: string | null) => Promise<Message | null>;
 
+  /** Отправить image. Caller сначала зовёт mediaUpload.uploadImage. */
+  sendImage: (chatId: string, senderId: string, params: {
+    mediaId: string;
+    localUri: string;
+    mime: string;
+    width: number | null;
+    height: number | null;
+    caption?: string | null;
+  }) => Promise<Message | null>;
+
   /** Применить incoming event от RealtimeAdapter. */
   applyIncoming: (e: {
     messageId: string; clientMsgId: string; conversationId: string;
@@ -59,6 +69,10 @@ type ServerMessage = {
   kind: string; body: string | null; replyToId: string | null;
   replyPreview?: ServerReplyPreview | null;
   reactions?: ServerReaction[];
+  mediaId?: string | null;
+  mediaMime?: string | null;
+  mediaWidth?: number | null;
+  mediaHeight?: number | null;
   editedAt?: number | null; deletedAt?: number | null; createdAt: number;
 };
 
@@ -66,8 +80,16 @@ function fromServer(s: ServerMessage): Message {
   return {
     id: s.id, clientId: s.clientMsgId, chatId: s.conversationId,
     senderId: s.senderId, kind: s.kind as Message['kind'],
-    text: s.body, mediaLocalUri: null, mediaRemoteUrl: null,
-    mediaWidth: null, mediaHeight: null, mediaDurationS: null,
+    text: s.body,
+    mediaLocalUri: null,
+    // mediaRemoteUrl на момент fromServer не известен — fetch отдельно
+    // через fetchMediaURL(mediaId) когда bubble рендерит media (TTL 1h).
+    mediaRemoteUrl: null,
+    mediaId: s.mediaId ?? null,
+    mediaMime: s.mediaMime ?? null,
+    mediaWidth: s.mediaWidth ?? null,
+    mediaHeight: s.mediaHeight ?? null,
+    mediaDurationS: null,
     replyToMessageId: s.replyToId,
     replyPreview: s.replyPreview ? {
       messageId: s.replyPreview.messageId,
@@ -188,6 +210,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       id: clientId, clientId, chatId, senderId,
       kind: 'text', text: trimmed,
       mediaLocalUri: null, mediaRemoteUrl: null,
+      mediaId: null, mediaMime: null,
       mediaWidth: null, mediaHeight: null, mediaDurationS: null,
       replyToMessageId: replyToMessageId ?? null, replyPreview,
       reactions: [],
@@ -199,6 +222,67 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       ? { messages: [optimistic, ...s.messages] }
       : {});
     return optimistic;
+  },
+
+  sendImage: async (chatId, senderId, params) => {
+    const clientId = uuid();
+    const now = Date.now();
+    const kind: Message['kind'] = params.mime.startsWith('video/') ? 'video' : 'image';
+    const optimistic: Message = {
+      id: clientId, clientId, chatId, senderId,
+      kind, text: params.caption ?? null,
+      mediaLocalUri: params.localUri,
+      mediaRemoteUrl: null,
+      mediaId: params.mediaId, mediaMime: params.mime,
+      mediaWidth: params.width, mediaHeight: params.height,
+      mediaDurationS: null,
+      replyToMessageId: null, replyPreview: null,
+      reactions: [],
+      status: 'pending', isDeleted: false, deletedBy: null,
+      createdAt: now, editedAt: null, attempts: 0,
+    };
+    upsertMessage(optimistic);
+    set((s) => s.activeChatId === chatId
+      ? { messages: [optimistic, ...s.messages] }
+      : {});
+
+    // POST на server. mediaId уже uploaded.
+    try {
+      const resp = await apiClient.api(`/conversations/${chatId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          clientMsgId: clientId,
+          kind,
+          mediaId: params.mediaId,
+          body: params.caption ?? null,
+        }),
+      });
+      if (!resp.ok) {
+        // Failed — пометить optimistic как failed.
+        set((s) => ({
+          messages: s.messages.map((m) => m.clientId === clientId
+            ? { ...m, status: 'failed' as const } : m),
+        }));
+        return null;
+      }
+      const data = (await resp.json()) as { id: string };
+      // Update optimistic с server id.
+      const updated: Message = {
+        ...optimistic, id: data.id, status: 'sent',
+      };
+      upsertMessage(updated);
+      set((s) => ({
+        messages: s.messages.map((m) => m.clientId === clientId ? updated : m),
+      }));
+      return updated;
+    } catch (e) {
+      console.warn('[chat] sendImage failed', e);
+      set((s) => ({
+        messages: s.messages.map((m) => m.clientId === clientId
+          ? { ...m, status: 'failed' as const } : m),
+      }));
+      return null;
+    }
   },
 
   applyEdited: (messageId, body, editedAt) => {
@@ -310,6 +394,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         id: e.messageId, clientId: e.clientMsgId, chatId: e.conversationId,
         senderId: e.senderId, kind: e.kind as Message['kind'],
         text: e.body, mediaLocalUri: null, mediaRemoteUrl: null,
+        mediaId: null, mediaMime: null,
         mediaWidth: null, mediaHeight: null, mediaDurationS: null,
         replyToMessageId: null, replyPreview: null, reactions: [],
         status: 'delivered', isDeleted: false, deletedBy: null,
