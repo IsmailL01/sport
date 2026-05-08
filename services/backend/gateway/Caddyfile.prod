@@ -41,6 +41,23 @@
 		reverse_proxy activity-sync:8082
 	}
 
+	# Notifications (Phase A4: push devices, in-app, preferences).
+	handle /devices {
+		reverse_proxy notifications:8087
+	}
+	handle /devices/* {
+		reverse_proxy notifications:8087
+	}
+	handle /notifications {
+		reverse_proxy notifications:8087
+	}
+	handle /notifications/* {
+		reverse_proxy notifications:8087
+	}
+	handle /preferences {
+		reverse_proxy notifications:8087
+	}
+
 	# Realtime gateway (Phase A3: WebSocket terminus).
 	# Caddy v2 поддерживает WS upgrade автоматически — нужен только reverse_proxy.
 	handle /ws {

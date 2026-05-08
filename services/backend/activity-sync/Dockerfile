@@ -15,6 +15,7 @@ COPY activity-sync/go.mod activity-sync/go.sum ./activity-sync/
 COPY social-graph/go.mod ./social-graph/
 COPY messaging/go.mod ./messaging/
 COPY realtime-gw/go.mod ./realtime-gw/
+COPY notifications/go.mod ./notifications/
 
 RUN cd activity-sync && go mod download
 RUN cd pkg && go mod download

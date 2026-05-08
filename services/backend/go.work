@@ -4,6 +4,7 @@ use (
 	./activity-sync
 	./identity
 	./messaging
+	./notifications
 	./pkg
 	./realtime-gw
 	./social-graph

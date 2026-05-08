@@ -12,22 +12,22 @@ COPY messaging/go.mod ./messaging/
 COPY realtime-gw/go.mod ./realtime-gw/
 COPY notifications/go.mod ./notifications/
 
-RUN cd realtime-gw && go mod download
+RUN cd notifications && go mod download
 RUN cd pkg && go mod download
 
 COPY pkg ./pkg
-COPY realtime-gw ./realtime-gw
+COPY notifications ./notifications
 
-RUN cd realtime-gw && \
+RUN cd notifications && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/realtime-gw ./cmd/server
+    go build -trimpath -ldflags="-s -w" -o /out/notifications ./cmd/server
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /app
-COPY --from=build /out/realtime-gw /app/realtime-gw
+COPY --from=build /out/notifications /app/notifications
 
 USER nonroot:nonroot
-EXPOSE 8090
+EXPOSE 8087
 
-ENTRYPOINT ["/app/realtime-gw"]
+ENTRYPOINT ["/app/notifications"]
