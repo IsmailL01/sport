@@ -11,22 +11,22 @@ COPY social-graph/go.mod ./social-graph/
 COPY messaging/go.mod ./messaging/
 COPY realtime-gw/go.mod ./realtime-gw/
 
-RUN cd messaging && go mod download
+RUN cd realtime-gw && go mod download
 RUN cd pkg && go mod download
 
 COPY pkg ./pkg
-COPY messaging ./messaging
+COPY realtime-gw ./realtime-gw
 
-RUN cd messaging && \
+RUN cd realtime-gw && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/messaging ./cmd/server
+    go build -trimpath -ldflags="-s -w" -o /out/realtime-gw ./cmd/server
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /app
-COPY --from=build /out/messaging /app/messaging
+COPY --from=build /out/realtime-gw /app/realtime-gw
 
 USER nonroot:nonroot
-EXPOSE 8083
+EXPOSE 8090
 
-ENTRYPOINT ["/app/messaging"]
+ENTRYPOINT ["/app/realtime-gw"]

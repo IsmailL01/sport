@@ -41,6 +41,12 @@
 		reverse_proxy activity-sync:8082
 	}
 
+	# Realtime gateway (Phase A3: WebSocket terminus).
+	# Caddy v2 поддерживает WS upgrade автоматически — нужен только reverse_proxy.
+	handle /ws {
+		reverse_proxy realtime-gw:8090
+	}
+
 	# Messaging (Phase A2: DM conversations + messages + outbox).
 	handle /conversations {
 		reverse_proxy messaging:8083

@@ -115,6 +115,21 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # realtime-gw — WebSocket terminus, NATS-subscribed (Phase A3).
+  realtime-gw:
+    build:
+      context: .
+      dockerfile: realtime-gw/Dockerfile
+    container_name: re_realtime_gw
+    environment:
+      REALTIME_GW_HTTP_ADDR: ":8090"
+      IDENTITY_JWT_SECRET: "${JWT_SECRET:?need JWT_SECRET >=32 chars}"
+      NATS_URL: "nats://nats:4222"
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
   # messaging — conversations + messages + outbox publisher (Phase A2).
   messaging:
     build:
@@ -176,6 +191,7 @@ services:
       - activity-sync
       - social-graph
       - messaging
+      - realtime-gw
     restart: unless-stopped
 
 volumes:
