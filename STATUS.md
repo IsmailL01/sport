@@ -30,6 +30,13 @@ tsc clean, jest **253/253 passing** (+14 stories+feed).
 
 tsc clean, jest **265/265 passing** (+12 moderation).
 
+**Phase 8 / F — Realtime + push для feed-событий** ✅:
+- **Backend:** feed-сервис при like/comment публикует `event:feed.post.{liked,commented}` напрямую в `rt.user.{authorId}` (skip self-events). Realtime-gw (subscribed на `rt.user.{userId}` per WS) форвардит фрейм мгновенно. Notifications-сервис (subscribed на `rt.user.*`) распознаёт feed events и шлёт Expo Push с заголовком «❤ Новый лайк» / «💬 Комментарий», persist-ит in-app notification.
+- **Mobile:** RealtimeAdapter получил типы `feed.post.liked` + `feed.post.commented`. useRealtimeStore диспетчер lazy-import-ит `modules/feed` и вызывает `applyLikeIncoming` / `applyCommentIncoming` — bump like/comment count в кэше без re-fetch.
+- **E2E smoke** (`services/backend/scripts/smoke_realtime_feed.py`, 8 шагов): like/comment + verify in-app notification в SQL. Self-like skip verified. Pass.
+
+Pipeline теперь end-to-end: action → DB → NATS rt.user.{authorId} → одновременно WS (если online) + Expo Push (если есть push token). Без новых контейнеров и миграций.
+
 ## Phase 1 progress
 
 | Подсекция | Статус | Что готово |

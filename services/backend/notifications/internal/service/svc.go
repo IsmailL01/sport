@@ -156,5 +156,137 @@ func (s *Service) HandleMessageEvent(ctx context.Context, recipientUserID string
 	return nil
 }
 
+// HandleFeedEvent — обработать событие лайка / коммента к посту.
+// Phase D+ realtime: feed-сервис публикует на rt.user.{authorId}, мы
+// доставляем как Expo Push (если author offline; для online — WS уже
+// доставил мгновенно).
+//
+// Payload форматы:
+//   feed.post.liked     {postId, authorId, userId}
+//   feed.post.commented {postId, commentId, postAuthorId, commenterId, body}
+func (s *Service) HandleFeedEvent(ctx context.Context, recipientUserID string, payload []byte) error {
+	var ev struct {
+		Event        string  `json:"event"`
+		PostID       string  `json:"postId"`
+		AuthorID     string  `json:"authorId"`     // для liked
+		UserID       string  `json:"userId"`       // для liked
+		CommentID    string  `json:"commentId"`
+		PostAuthorID string  `json:"postAuthorId"` // для commented
+		CommenterID  string  `json:"commenterId"`  // для commented
+		Body         *string `json:"body"`
+	}
+	if err := json.Unmarshal(payload, &ev); err != nil {
+		return err
+	}
+	switch ev.Event {
+	case "feed.post.liked":
+		return s.deliverLikePush(ctx, recipientUserID, ev.PostID, ev.UserID, payload)
+	case "feed.post.commented":
+		body := ""
+		if ev.Body != nil {
+			body = *ev.Body
+		}
+		return s.deliverCommentPush(ctx, recipientUserID, ev.PostID, ev.CommenterID, body, payload)
+	}
+	return nil
+}
+
+func (s *Service) deliverLikePush(
+	ctx context.Context, recipientUserID, postID, likerID string, payload []byte,
+) error {
+	// Self-like skip.
+	if likerID == recipientUserID {
+		return nil
+	}
+	if err := s.notifications.Create(ctx, recipientUserID, "feed.post.liked", payload); err != nil {
+		s.log.Warn("notification persist failed", "error", err)
+	}
+	prefs, err := s.prefs.Get(ctx, recipientUserID)
+	if err != nil {
+		return err
+	}
+	if !prefs.PushEnabled || !prefs.PushFollows { // Reuse PushFollows как "social interactions".
+		return nil
+	}
+	tokens, err := s.devices.TokensForUser(ctx, recipientUserID)
+	if err != nil || len(tokens) == 0 {
+		return err
+	}
+	msgs := make([]expopush.Message, 0, len(tokens))
+	for _, t := range tokens {
+		msgs = append(msgs, expopush.Message{
+			To:    t,
+			Title: "❤ Новый лайк",
+			Body:  "Кто-то поставил лайк вашему посту",
+			Sound: "default",
+			Data: map[string]any{
+				"event":  "feed.post.liked",
+				"postId": postID,
+			},
+		})
+	}
+	return s.sendAndCleanup(ctx, recipientUserID, tokens, msgs)
+}
+
+func (s *Service) deliverCommentPush(
+	ctx context.Context, recipientUserID, postID, commenterID, body string, payload []byte,
+) error {
+	if commenterID == recipientUserID {
+		return nil
+	}
+	if err := s.notifications.Create(ctx, recipientUserID, "feed.post.commented", payload); err != nil {
+		s.log.Warn("notification persist failed", "error", err)
+	}
+	prefs, err := s.prefs.Get(ctx, recipientUserID)
+	if err != nil {
+		return err
+	}
+	if !prefs.PushEnabled || !prefs.PushFollows {
+		return nil
+	}
+	tokens, err := s.devices.TokensForUser(ctx, recipientUserID)
+	if err != nil || len(tokens) == 0 {
+		return err
+	}
+	preview := "Новый комментарий"
+	if body != "" {
+		preview = body
+		if len(preview) > 80 {
+			preview = preview[:77] + "..."
+		}
+	}
+	msgs := make([]expopush.Message, 0, len(tokens))
+	for _, t := range tokens {
+		msgs = append(msgs, expopush.Message{
+			To:    t,
+			Title: "💬 Комментарий",
+			Body:  preview,
+			Sound: "default",
+			Data: map[string]any{
+				"event":  "feed.post.commented",
+				"postId": postID,
+			},
+		})
+	}
+	return s.sendAndCleanup(ctx, recipientUserID, tokens, msgs)
+}
+
+func (s *Service) sendAndCleanup(
+	ctx context.Context, recipientUserID string, tokens []string, msgs []expopush.Message,
+) error {
+	tickets, err := s.expo.Send(ctx, msgs)
+	if err != nil {
+		s.log.Warn("expo push failed", "error", err, "tokens", len(tokens))
+		return err
+	}
+	for i, t := range tickets {
+		if t.Status == "error" && strings.Contains(strings.ToLower(t.Message), "devicenotregistered") {
+			s.log.Info("removing dead token", "userId", recipientUserID, "token", tokens[i])
+			_ = s.devices.Delete(ctx, recipientUserID, tokens[i])
+		}
+	}
+	return nil
+}
+
 func IsNotFound(err error) bool { return errors.Is(err, domain.ErrNotFound) }
 func IsInvalidArg(err error) bool { return errors.Is(err, domain.ErrInvalidArg) }

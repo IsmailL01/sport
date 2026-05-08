@@ -65,6 +65,11 @@ type FeedState = {
   deletePost: (postId: string) => Promise<void>;
   loadComments: (postId: string) => Promise<void>;
 
+  /** Realtime: кто-то лайкнул мой пост. Bump like_count, не трогая iLiked. */
+  applyLikeIncoming: (postId: string, _likerId: string) => void;
+  /** Realtime: кто-то закомментил мой пост. Bump comment_count. */
+  applyCommentIncoming: (postId: string) => void;
+
   clearAll: () => void;
 };
 
@@ -228,6 +233,24 @@ export const useFeedStore = create<FeedState>((set, get) => ({
     const cached = listCommentsLocal(postId);
     set({
       commentsByPost: { ...get().commentsByPost, [postId]: cached },
+    });
+  },
+
+  applyLikeIncoming: (postId, _likerId) => {
+    // Bump like_count в кэше; iLiked не трогаем — это про меня, а incoming от
+    // другого пользователя.
+    set({
+      posts: get().posts.map((p) =>
+        p.id === postId ? { ...p, likeCount: p.likeCount + 1 } : p,
+      ),
+    });
+  },
+
+  applyCommentIncoming: (postId) => {
+    set({
+      posts: get().posts.map((p) =>
+        p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p,
+      ),
     });
   },
 

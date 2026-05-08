@@ -91,8 +91,13 @@ func run() error {
 		go func() {
 			handlerCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
+			// Lightweight type-detect по event-полю в payload, чтобы не парсить
+			// дважды. Service сам решит is-relevant.
 			if err := svc.HandleMessageEvent(handlerCtx, userID, msg.Data); err != nil {
-				logger.Warn("handle event failed", "userId", userID, "error", err)
+				logger.Warn("handle message event failed", "userId", userID, "error", err)
+			}
+			if err := svc.HandleFeedEvent(handlerCtx, userID, msg.Data); err != nil {
+				logger.Warn("handle feed event failed", "userId", userID, "error", err)
 			}
 		}()
 	}); err != nil {

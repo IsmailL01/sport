@@ -132,8 +132,8 @@ func (s *Service) HomeFeed(
 // === Likes ===
 
 func (s *Service) LikePost(ctx context.Context, userID, postID string) error {
-	// Validate post exists (Returns NotFound otherwise).
-	if _, err := s.posts.GetByID(ctx, postID); err != nil {
+	post, err := s.posts.GetByID(ctx, postID)
+	if err != nil {
 		return err
 	}
 	added, err := s.posts.AddLike(ctx, postID, userID)
@@ -142,11 +142,18 @@ func (s *Service) LikePost(ctx context.Context, userID, postID string) error {
 	}
 	if added && s.nc != nil {
 		payload, _ := json.Marshal(map[string]any{
-			"event":  "feed.post.liked",
-			"postId": postID,
-			"userId": userID,
+			"event":    "feed.post.liked",
+			"postId":   postID,
+			"authorId": post.AuthorID,
+			"userId":   userID,
 		})
+		// Generic broadcast (для будущих consumers / debug stream).
 		_ = s.nc.Publish("feed.post.liked.v1", payload)
+		// Targeted realtime delivery: WS author получит instant; notifications
+		// сервис конвертит в Expo Push если author offline. Skip self-likes.
+		if post.AuthorID != userID {
+			_ = s.nc.Publish("rt.user."+post.AuthorID, payload)
+		}
 	}
 	return nil
 }
@@ -167,6 +174,10 @@ func (s *Service) CommentOnPost(
 	if _, err := s.posts.GetByID(ctx, postID); err != nil {
 		return nil, err
 	}
+	post, err := s.posts.GetByID(ctx, postID)
+	if err != nil {
+		return nil, err
+	}
 	c, err := s.posts.CreateComment(ctx, postID, authorID, body)
 	if err != nil {
 		return nil, err
@@ -176,9 +187,15 @@ func (s *Service) CommentOnPost(
 			"event":     "feed.post.commented",
 			"postId":    postID,
 			"commentId": c.ID,
-			"authorId":  authorID,
+			"postAuthorId": post.AuthorID,
+			"commenterId":  authorID,
+			"body":         c.Body,
 		})
 		_ = s.nc.Publish("feed.post.commented.v1", payload)
+		// Targeted realtime + push для post author (если не self-comment).
+		if post.AuthorID != authorID {
+			_ = s.nc.Publish("rt.user."+post.AuthorID, payload)
+		}
 	}
 	return c, nil
 }

@@ -77,6 +77,26 @@ export const useRealtimeStore = create<RealtimeStore>((set, get) => ({
           );
           break;
         }
+        // Phase D realtime: лайки/комменты к моим постам.
+        case 'feed.post.liked': {
+          // Lazy-import чтобы не создавать импортный цикл с modules/feed.
+          import('../../modules/feed')
+            .then(({ useFeedStore }) => {
+              const ev = e as Extract<RealtimeEvent, { event: 'feed.post.liked' }>;
+              useFeedStore.getState().applyLikeIncoming(ev.postId, ev.userId);
+            })
+            .catch(() => { /* модуль не загружен — игнор */ });
+          break;
+        }
+        case 'feed.post.commented': {
+          import('../../modules/feed')
+            .then(({ useFeedStore }) => {
+              const ev = e as Extract<RealtimeEvent, { event: 'feed.post.commented' }>;
+              useFeedStore.getState().applyCommentIncoming(ev.postId);
+            })
+            .catch(() => { /* модуль не загружен — игнор */ });
+          break;
+        }
       }
     });
 

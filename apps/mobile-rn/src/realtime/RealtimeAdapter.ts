@@ -11,6 +11,12 @@ export type RealtimeEvent =
   | { event: 'message.deleted'; messageId: string; conversationId: string; deletedBy: string }
   | { event: 'message.edited'; messageId: string; body: string; editedAt: string }
   | { event: 'read.updated'; chatId: string; userId: string; lastReadMessageId: string }
+  // Phase D realtime: лайки/комменты к моим постам.
+  | { event: 'feed.post.liked'; postId: string; authorId: string; userId: string }
+  | { event: 'feed.post.commented';
+      postId: string; commentId: string;
+      postAuthorId: string; commenterId: string;
+      body?: string | null }
   | { event: string; [k: string]: unknown }; // catch-all для будущих типов
 
 export type RealtimeListener = (e: RealtimeEvent) => void;
