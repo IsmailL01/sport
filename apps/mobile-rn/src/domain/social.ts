@@ -12,7 +12,14 @@ export type SocialUser = {
   isBlocked: boolean;
   followersCount: number;
   followingCount: number;
+  /** Phase E: 'user' | 'premium' | 'moderator' | 'admin'. */
+  globalRole?: string;
 };
+
+/** Phase E: проверка прав модератора / админа. */
+export function isAdminRole(role: string | undefined | null): boolean {
+  return role === 'moderator' || role === 'admin';
+}
 
 export type ChatType = 'dm' | 'group';
 export type ChatRole = 'owner' | 'admin' | 'moderator' | 'member' | 'restricted';

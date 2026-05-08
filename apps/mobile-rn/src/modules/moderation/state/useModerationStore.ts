@@ -5,6 +5,8 @@
 
 import { create } from 'zustand';
 
+import { apiClient } from '../../../auth/apiClient';
+import { isAdminRole } from '../../../domain/social';
 import type { Report, ReportReason, ReportTargetKind, ResolutionAction, ReportStatus } from '../domain/types';
 import {
   fetchAdminReports,
@@ -19,6 +21,10 @@ type State = {
   submitting: boolean;
   loading: boolean;
   error: string | null;
+  /** Phase E: моя global_role; null если не загружено. */
+  myRole: string | null;
+  /** Convenience flag — true для moderator/admin. */
+  isAdmin: boolean;
 
   submit: (input: {
     targetKind: ReportTargetKind;
@@ -31,6 +37,9 @@ type State = {
   refreshAdmin: (status?: ReportStatus) => Promise<void>;
   resolveReport: (id: string, action: ResolutionAction) => Promise<void>;
 
+  /** Загрузить свою роль (вызывается при auth/login). */
+  fetchMyRole: (myUserId: string) => Promise<void>;
+
   clearAll: () => void;
 };
 
@@ -40,6 +49,8 @@ export const useModerationStore = create<State>((set, get) => ({
   submitting: false,
   loading: false,
   error: null,
+  myRole: null,
+  isAdmin: false,
 
   submit: async (input) => {
     set({ submitting: true, error: null });
@@ -87,6 +98,19 @@ export const useModerationStore = create<State>((set, get) => ({
     });
   },
 
+  fetchMyRole: async (myUserId) => {
+    if (!apiClient.isAuthenticated()) return;
+    try {
+      const resp = await apiClient.api(`/profiles/${myUserId}`);
+      if (!resp.ok) return;
+      const data = (await resp.json()) as { globalRole?: string };
+      const role = data.globalRole ?? 'user';
+      set({ myRole: role, isAdmin: isAdminRole(role) });
+    } catch (e) {
+      console.warn('[moderation] fetchMyRole failed', e);
+    }
+  },
+
   clearAll: () => {
     set({
       myReports: [],
@@ -94,6 +118,8 @@ export const useModerationStore = create<State>((set, get) => ({
       submitting: false,
       loading: false,
       error: null,
+      myRole: null,
+      isAdmin: false,
     });
   },
 }));

@@ -37,6 +37,17 @@ tsc clean, jest **265/265 passing** (+12 moderation).
 
 Pipeline теперь end-to-end: action → DB → NATS rt.user.{authorId} → одновременно WS (если online) + Expo Push (если есть push token). Без новых контейнеров и миграций.
 
+**Phase 8 / G — Admin Queue UI (in-app moderation)** ✅:
+- **Mobile-only**: расширение `modules/moderation/` без backend-изменений (Phase E API уже готов).
+- `AdminQueueScreen` — список reports с табами по статусу (Open / In review / Resolved / Rejected); строки с reporter / target / reason / preview body; refresh + pull-to-refresh.
+- `AdminResolveSheet` — bottom-sheet с picker'ом из 5 actions (delete / warn / mute / ban / no_action).
+- `AdminModal` — host modal.
+- `useModerationStore.fetchMyRole()` загружает global_role при auth, флаг `isAdmin` гейтит UI.
+- App.tsx: кнопка «🛡 Модерация» в правой колонке + AdminModal — оба условные на `isAdmin`. Не-admin не видит UI вообще.
+- Promote через `UPDATE profiles SET global_role='admin'` (smoke verified).
+
+tsc clean, jest **268/268 passing** (+3 isAdminRole).
+
 ## Phase 1 progress
 
 | Подсекция | Статус | Что готово |

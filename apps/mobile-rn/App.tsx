@@ -59,6 +59,7 @@ import { v4 as uuid } from 'uuid';
 import { apiClient } from './src/auth/apiClient';
 import { ChatsModal } from './src/ui/social/ChatsModal';
 import { FeedModal, useFeedStore } from './src/modules/feed';
+import { AdminModal, useModerationStore } from './src/modules/moderation';
 import { useRealtimeStore } from './src/state/social/useRealtimeStore';
 import { useNotificationsStore } from './src/state/social/useNotificationsStore';
 
@@ -333,6 +334,9 @@ function MapScreen() {
   const [workoutPlayerVisible, setWorkoutPlayerVisible] = useState(false);
   const [chatsVisible, setChatsVisible] = useState(false);
   const [feedVisible, setFeedVisible] = useState(false);
+  const [adminVisible, setAdminVisible] = useState(false);
+  const isAdmin = useModerationStore((s) => s.isAdmin);
+  const fetchMyRole = useModerationStore((s) => s.fetchMyRole);
   const myUser = useAuthStore((s) => s.user);
   const realtimeStatus = useRealtimeStore((s) => s.status);
   const activeWorkout = useWorkoutPlayerStore((s) => s.workout);
@@ -348,6 +352,13 @@ function MapScreen() {
   useEffect(() => {
     hydrateSensors();
   }, [hydrateSensors]);
+
+  // Phase E: подгрузить свою global_role при auth для admin-gating UI.
+  useEffect(() => {
+    if (myUser !== null) {
+      void fetchMyRole(myUser.id);
+    }
+  }, [myUser, fetchMyRole]);
 
   // На старте экрана — загрузить список + точки всех закрытых сессий
   // (для отрисовки all-time territory layer на карте).
@@ -553,6 +564,11 @@ function MapScreen() {
         <Pressable style={styles.historyBtn} onPress={() => setFeedVisible(true)}>
           <Text style={styles.historyBtnText}>📰 Лента</Text>
         </Pressable>
+        {isAdmin && (
+          <Pressable style={styles.historyBtn} onPress={() => setAdminVisible(true)}>
+            <Text style={styles.historyBtnText}>🛡 Модерация</Text>
+          </Pressable>
+        )}
         {activeWorkout !== null && (
           <Pressable
             style={[styles.historyBtn, styles.historyBtnAccent]}
@@ -609,6 +625,12 @@ function MapScreen() {
           visible={feedVisible}
           myUserId={myUser.id}
           onClose={() => setFeedVisible(false)}
+        />
+      )}
+      {isAdmin && (
+        <AdminModal
+          visible={adminVisible}
+          onClose={() => setAdminVisible(false)}
         />
       )}
 

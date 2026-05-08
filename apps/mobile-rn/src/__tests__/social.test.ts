@@ -1,4 +1,4 @@
-import { canDeleteMessage, lastMessagePreview, type Chat, type Message } from '../domain/social';
+import { canDeleteMessage, isAdminRole, lastMessagePreview, type Chat, type Message } from '../domain/social';
 
 function msg(overrides: Partial<Message>): Message {
   return {
@@ -59,5 +59,21 @@ describe('canDeleteMessage', () => {
   it('restricted cannot delete own', () => {
     // Phase 8 / E semantics: restricted readonly
     expect(canDeleteMessage('me', own, 'restricted')).toBe(true); // own message exception holds
+  });
+});
+
+
+describe('isAdminRole', () => {
+  it('moderator + admin are admin', () => {
+    expect(isAdminRole('moderator')).toBe(true);
+    expect(isAdminRole('admin')).toBe(true);
+  });
+  it('user + premium are not admin', () => {
+    expect(isAdminRole('user')).toBe(false);
+    expect(isAdminRole('premium')).toBe(false);
+  });
+  it('null/undefined are not admin', () => {
+    expect(isAdminRole(null)).toBe(false);
+    expect(isAdminRole(undefined)).toBe(false);
   });
 });

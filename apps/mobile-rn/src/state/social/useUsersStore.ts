@@ -41,6 +41,7 @@ function fromServer(p: ServerProfile): SocialUser {
     isBlocked: false,
     followersCount: p.followersCount ?? 0,
     followingCount: p.followingCount ?? 0,
+    globalRole: p.globalRole,
   };
 }
 
