@@ -63,7 +63,9 @@ func run() error {
 	profRepo := postgres.NewProfileRepo(pool)
 	followRepo := postgres.NewFollowRepo(pool)
 	blockRepo := postgres.NewBlockRepo(pool)
-	svc := service.New(profRepo, followRepo, blockRepo)
+	reportRepo := postgres.NewReportRepo(pool)
+	auditRepo := postgres.NewAuditRepo(pool)
+	svc := service.New(profRepo, followRepo, blockRepo, reportRepo, auditRepo)
 	h := handler.New(svc, signer, logger)
 
 	srv := &http.Server{

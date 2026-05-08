@@ -4,7 +4,7 @@
 
 ## Текущая фаза
 
-**Phase 8 / D — Лента (posts/likes/comments)** ✅ code-complete (backend + mobile + smoke)
+**Phase 8 / E — Модерация (reports + audit + admin)** ✅ code-complete (backend + mobile + smoke)
 
 Phase 0 закрыта — выбран Expo React Native, см. [DECISION.md](DECISION.md). Flutter архивирован в `apps/mobile_flutter.archived/`.
 
@@ -22,6 +22,13 @@ Phase 1–5 закрыты на code-level. Phase 6 / P6-A code-level done. Phas
 - **E2E smoke** (`services/backend/scripts/smoke_posts.py`, 14 шагов): register-2 → follow → upload → publish photo+text → feed/home → like/unlike → comment/uncomment → delete post → forbidden negative-test. Pass.
 
 tsc clean, jest **253/253 passing** (+14 stories+feed).
+
+**Phase 8 / E — Модерация (reports + audit + admin)** ✅ code-complete:
+- **Backend:** расширение `social-graph` сервиса. Migration `0018_moderation` (reports + audit_log + indexes). Endpoints: `POST /reports`, `GET /reports/me`, `GET /admin/reports?status=`, `POST /admin/reports/{id}/resolve`. Admin gate через `profiles.global_role IN ('moderator','admin')` (чек в `requireAdmin`). Audit log: пишется на `report_opened`, `report_resolved`, `block_user`, `unblock_user` (best-effort, не fail-ит основное действие).
+- **Mobile:** `modules/moderation/` по тому же модульному паттерну `{domain,sync,state,ui}/index.ts`. ReportSheet — bottom-sheet modal с radio-выбором причины (6 reasons из REPORT_REASONS) + опциональный textarea + submit с success-alert. Integration в PostCard (long-press → ActionSheet «Пожаловаться» / «Удалить» для своих) и ChatScreen (добавлена кнопка «⚠ Пожаловаться» в существующее long-press menu для чужих сообщений).
+- **E2E smoke** (`services/backend/scripts/smoke_moderation.py`, 11 шагов): register-2 → publish post → submit report → my reports → 403 для non-admin → promote bob to admin via psql → admin queue → resolve → status updated → audit_log entries verified. Pass.
+
+tsc clean, jest **265/265 passing** (+12 moderation).
 
 ## Phase 1 progress
 

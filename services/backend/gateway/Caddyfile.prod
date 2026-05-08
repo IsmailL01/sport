@@ -117,8 +117,12 @@ s3.148-253-214-156.sslip.io {
 		reverse_proxy feed:8085
 	}
 
-	# Social-graph (Phase A: profiles + follows + blocks + search).
+	# Social-graph (Phase A: profiles + follows + blocks + search;
+	# Phase E: reports + admin + audit).
 	handle /profiles/* {
+		reverse_proxy social-graph:8084
+	}
+	handle /profiles {
 		reverse_proxy social-graph:8084
 	}
 	handle /search/users {
@@ -131,6 +135,15 @@ s3.148-253-214-156.sslip.io {
 		reverse_proxy social-graph:8084
 	}
 	handle /blocks/* {
+		reverse_proxy social-graph:8084
+	}
+	handle /reports {
+		reverse_proxy social-graph:8084
+	}
+	handle /reports/* {
+		reverse_proxy social-graph:8084
+	}
+	handle /admin/* {
 		reverse_proxy social-graph:8084
 	}
 

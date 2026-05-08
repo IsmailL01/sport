@@ -52,4 +52,79 @@ var (
 	ErrUsernameTaken   = errors.New("username taken")
 	ErrInvalidArg      = errors.New("invalid argument")
 	ErrForbidden       = errors.New("forbidden")
+	ErrNotFound        = errors.New("not found")
 )
+
+// === Phase 8 / E: модерация ===
+
+type ReportTargetKind string
+
+const (
+	ReportTargetMessage ReportTargetKind = "message"
+	ReportTargetPost    ReportTargetKind = "post"
+	ReportTargetComment ReportTargetKind = "comment"
+	ReportTargetStory   ReportTargetKind = "story"
+	ReportTargetUser    ReportTargetKind = "user"
+)
+
+type ReportReason string
+
+const (
+	ReasonSpam       ReportReason = "spam"
+	ReasonHarassment ReportReason = "harassment"
+	ReasonNudity     ReportReason = "nudity"
+	ReasonViolence   ReportReason = "violence"
+	ReasonIllegal    ReportReason = "illegal"
+	ReasonOther      ReportReason = "other"
+)
+
+type ReportStatus string
+
+const (
+	ReportOpen        ReportStatus = "open"
+	ReportUnderReview ReportStatus = "under_review"
+	ReportResolved    ReportStatus = "resolved"
+	ReportRejected    ReportStatus = "rejected"
+)
+
+type ResolutionAction string
+
+const (
+	ResolveDelete   ResolutionAction = "delete"
+	ResolveWarn     ResolutionAction = "warn"
+	ResolveBan      ResolutionAction = "ban"
+	ResolveMute     ResolutionAction = "mute"
+	ResolveNoAction ResolutionAction = "no_action"
+)
+
+type Report struct {
+	ID               string
+	ReporterID       string
+	TargetKind       ReportTargetKind
+	TargetID         string
+	Reason           ReportReason
+	Body             *string
+	Status           ReportStatus
+	ResolutionAction *ResolutionAction
+	ResolvedAt       *time.Time
+	ResolvedBy       *string
+	CreatedAt        time.Time
+}
+
+// AuditEntry — append-only журнал действий админов / системных делитов.
+type AuditEntry struct {
+	ID         int64
+	ActorID    *string
+	Action     string
+	TargetKind string
+	TargetID   string
+	Before     []byte // JSON raw
+	After      []byte // JSON raw
+	Metadata   []byte // JSON raw
+	CreatedAt  time.Time
+}
+
+// IsAdminRole — moderator / admin имеют admin capabilities.
+func IsAdminRole(role string) bool {
+	return role == "moderator" || role == "admin"
+}

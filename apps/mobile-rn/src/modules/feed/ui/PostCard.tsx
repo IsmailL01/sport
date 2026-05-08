@@ -1,13 +1,14 @@
 // PostCard — карточка поста в FeedScreen / PostDetailScreen.
-// Нейтральный дизайн.
+// Нейтральный дизайн. Phase E: long-press → ActionSheet с «Пожаловаться».
 
 import { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { Post } from '../domain/types';
 import { useFeedStore } from '../state/useFeedStore';
 import { useUsersStore } from '../../../state/social/useUsersStore';
 import { fetchMediaURL } from '../../../sync/mediaUpload';
+import { ReportSheet } from '../../moderation';
 
 type Props = {
   post: Post;
@@ -23,6 +24,7 @@ export function PostCard({ post, myUserId, onPress, expanded }: Props) {
   const toggleLike = useFeedStore((s) => s.toggleLike);
   const deletePost = useFeedStore((s) => s.deletePost);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
     if (author === undefined && post.authorId) {
@@ -44,8 +46,31 @@ export function PostCard({ post, myUserId, onPress, expanded }: Props) {
   const authorName =
     author?.displayName ?? author?.username ?? post.authorId.slice(0, 6);
 
+  const onLongPressMenu = () => {
+    if (isMine) {
+      Alert.alert('Действия', undefined, [
+        { text: 'Удалить', style: 'destructive', onPress: () => { void deletePost(post.id); } },
+        { text: 'Отмена', style: 'cancel' },
+      ]);
+    } else {
+      Alert.alert('Действия', undefined, [
+        {
+          text: 'Пожаловаться',
+          style: 'destructive',
+          onPress: () => setReportOpen(true),
+        },
+        { text: 'Отмена', style: 'cancel' },
+      ]);
+    }
+  };
+
   return (
-    <Pressable onPress={onPress} disabled={!onPress} style={styles.card}>
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPressMenu}
+      disabled={!onPress}
+      style={styles.card}
+    >
       <View style={styles.header}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{authorName[0]?.toUpperCase()}</Text>
@@ -114,6 +139,14 @@ export function PostCard({ post, myUserId, onPress, expanded }: Props) {
           <Text style={styles.actionText}>💬 {post.commentCount}</Text>
         </Pressable>
       </View>
+
+      <ReportSheet
+        visible={reportOpen}
+        targetKind="post"
+        targetId={post.id}
+        targetLabel={post.body?.slice(0, 80) ?? `пост от ${authorName}`}
+        onClose={() => setReportOpen(false)}
+      />
     </Pressable>
   );
 }

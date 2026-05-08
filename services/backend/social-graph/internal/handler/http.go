@@ -53,6 +53,12 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("DELETE /blocks/{user_id}", h.requireAuth(h.unblock))
 	mux.HandleFunc("GET /blocks/me", h.requireAuth(h.listBlocks))
 
+	// Phase E: модерация — reports + admin queue.
+	mux.HandleFunc("POST /reports", h.requireAuth(h.createReport))
+	mux.HandleFunc("GET /reports/me", h.requireAuth(h.myReports))
+	mux.HandleFunc("GET /admin/reports", h.requireAuth(h.adminListReports))
+	mux.HandleFunc("POST /admin/reports/{id}/resolve", h.requireAuth(h.adminResolveReport))
+
 	return loggingMiddleware(h.log)(mux)
 }
 

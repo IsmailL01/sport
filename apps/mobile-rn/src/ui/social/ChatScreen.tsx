@@ -15,6 +15,7 @@ import { runMessagesPush } from '../../sync/messageSync';
 import { useChatStore } from '../../state/social/useChatStore';
 import { useChatsStore } from '../../state/social/useChatsStore';
 import { useUsersStore } from '../../state/social/useUsersStore';
+import { ReportSheet } from '../../modules/moderation';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -42,6 +43,7 @@ export function ChatScreen({ chat, myUserId, onBack, onOpenSettings }: Props) {
 
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<{ messageId: string; original: string } | null>(null);
+  const [reportTarget, setReportTarget] = useState<{ id: string; label: string } | null>(null);
 
   const peer = useUsersStore((s) => (chat.peerUserId !== null ? s.byId[chat.peerUserId] : undefined));
   const getOrFetch = useUsersStore((s) => s.getOrFetch);
@@ -119,6 +121,14 @@ export function ChatScreen({ chat, myUserId, onBack, onOpenSettings }: Props) {
           const ok = await deleteMessage(msg.id);
           if (!ok) Alert.alert('Не удалось удалить');
         },
+      });
+    }
+    // Phase E: пожаловаться (только на чужие).
+    if (!isMine) {
+      buttons.push({
+        text: '⚠ Пожаловаться',
+        style: 'destructive',
+        onPress: () => setReportTarget({ id: msg.id, label: msg.text ?? '(медиа)' }),
       });
     }
     buttons.push({ text: 'Отмена', style: 'cancel' });
@@ -262,6 +272,13 @@ export function ChatScreen({ chat, myUserId, onBack, onOpenSettings }: Props) {
           <Text style={styles.sendText}>{editing !== null ? '✓' : '↑'}</Text>
         </Pressable>
       </View>
+      <ReportSheet
+        visible={reportTarget !== null}
+        targetKind="message"
+        targetId={reportTarget?.id ?? ''}
+        targetLabel={reportTarget?.label}
+        onClose={() => setReportTarget(null)}
+      />
     </KeyboardAvoidingView>
   );
 }

@@ -139,6 +139,12 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } catch (e) {
       console.warn('[auth] feed clearAll failed', e);
     }
+    try {
+      const { useModerationStore } = await import('../modules/moderation');
+      useModerationStore.getState().clearAll();
+    } catch (e) {
+      console.warn('[auth] moderation clearAll failed', e);
+    }
     set({ state: 'unauthenticated', user: null, error: null });
   },
 

@@ -14,10 +14,21 @@ type Service struct {
 	profiles *postgres.ProfileRepo
 	follows  *postgres.FollowRepo
 	blocks   *postgres.BlockRepo
+	reports  *postgres.ReportRepo
+	audit    *postgres.AuditRepo
 }
 
-func New(profiles *postgres.ProfileRepo, follows *postgres.FollowRepo, blocks *postgres.BlockRepo) *Service {
-	return &Service{profiles: profiles, follows: follows, blocks: blocks}
+func New(
+	profiles *postgres.ProfileRepo,
+	follows *postgres.FollowRepo,
+	blocks *postgres.BlockRepo,
+	reports *postgres.ReportRepo,
+	audit *postgres.AuditRepo,
+) *Service {
+	return &Service{
+		profiles: profiles, follows: follows, blocks: blocks,
+		reports: reports, audit: audit,
+	}
 }
 
 // GetProfile — получить профиль пользователя; lazy-create если ещё нет.
@@ -117,11 +128,31 @@ func (s *Service) Block(ctx context.Context, actorID, targetID string) error {
 	// Удаляем follow в обе стороны (best-effort).
 	_ = s.follows.Unfollow(ctx, actorID, targetID)
 	_ = s.follows.Unfollow(ctx, targetID, actorID)
+	// Phase E: audit log (best-effort — не fail-ить block если audit упал).
+	if s.audit != nil {
+		_ = s.audit.Log(ctx, postgres.AuditInput{
+			ActorID:    &actorID,
+			Action:     "block_user",
+			TargetKind: "user",
+			TargetID:   targetID,
+		})
+	}
 	return nil
 }
 
 func (s *Service) Unblock(ctx context.Context, actorID, targetID string) error {
-	return s.blocks.Unblock(ctx, actorID, targetID)
+	if err := s.blocks.Unblock(ctx, actorID, targetID); err != nil {
+		return err
+	}
+	if s.audit != nil {
+		_ = s.audit.Log(ctx, postgres.AuditInput{
+			ActorID:    &actorID,
+			Action:     "unblock_user",
+			TargetKind: "user",
+			TargetID:   targetID,
+		})
+	}
+	return nil
 }
 
 func (s *Service) ListBlocked(ctx context.Context, actorID string, limit int) ([]string, error) {
@@ -174,8 +205,10 @@ func (s *Service) FollowCounts(ctx context.Context, userID string) (followers in
 
 // === error helpers (handler-friendly) ===
 
-func IsNotFound(err error) bool { return errors.Is(err, domain.ErrProfileNotFound) }
-func IsForbidden(err error) bool { return errors.Is(err, domain.ErrForbidden) }
-func IsSelfTarget(err error) bool { return errors.Is(err, domain.ErrSelfTarget) }
-func IsUsernameTaken(err error) bool { return errors.Is(err, domain.ErrUsernameTaken) }
-func IsInvalidArg(err error) bool { return errors.Is(err, domain.ErrInvalidArg) }
+func IsNotFound(err error) bool {
+	return errors.Is(err, domain.ErrProfileNotFound) || errors.Is(err, domain.ErrNotFound)
+}
+func IsForbidden(err error) bool      { return errors.Is(err, domain.ErrForbidden) }
+func IsSelfTarget(err error) bool     { return errors.Is(err, domain.ErrSelfTarget) }
+func IsUsernameTaken(err error) bool  { return errors.Is(err, domain.ErrUsernameTaken) }
+func IsInvalidArg(err error) bool     { return errors.Is(err, domain.ErrInvalidArg) }
