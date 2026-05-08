@@ -41,6 +41,17 @@
 		reverse_proxy activity-sync:8082
 	}
 
+	# Messaging (Phase A2: DM conversations + messages + outbox).
+	handle /conversations {
+		reverse_proxy messaging:8083
+	}
+	handle /conversations/* {
+		reverse_proxy messaging:8083
+	}
+	handle /messages/* {
+		reverse_proxy messaging:8083
+	}
+
 	# Social-graph (Phase A: profiles + follows + blocks + search).
 	handle /profiles/* {
 		reverse_proxy social-graph:8084

@@ -115,6 +115,26 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # messaging — conversations + messages + outbox publisher (Phase A2).
+  messaging:
+    build:
+      context: .
+      dockerfile: messaging/Dockerfile
+    container_name: re_messaging
+    environment:
+      MESSAGING_HTTP_ADDR: ":8083"
+      MESSAGING_DB_URL: "postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable"
+      IDENTITY_JWT_SECRET: "${JWT_SECRET:?need JWT_SECRET >=32 chars}"
+      NATS_URL: "nats://nats:4222"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
   # social-graph — profiles, follows, blocks, search-by-username
   # (см. план: Phase A1, Phase 8 / messenger).
   social-graph:
@@ -155,6 +175,7 @@ services:
       - identity
       - activity-sync
       - social-graph
+      - messaging
     restart: unless-stopped
 
 volumes:
