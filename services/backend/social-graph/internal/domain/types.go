@@ -124,7 +124,8 @@ type AuditEntry struct {
 	CreatedAt  time.Time
 }
 
-// IsAdminRole — moderator / admin имеют admin capabilities.
+// IsAdminRole — wrapper над pkg/permissions для legacy callers.
+// Новый код должен использовать permissions.IsModerator() напрямую.
 func IsAdminRole(role string) bool {
 	return role == "moderator" || role == "admin"
 }

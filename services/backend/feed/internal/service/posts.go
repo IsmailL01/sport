@@ -8,10 +8,15 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/runningecosystem/backend/feed/internal/domain"
 	"github.com/runningecosystem/backend/feed/internal/repository/postgres"
+	"github.com/runningecosystem/backend/pkg/permissions"
 )
+
+// timeNow — abstraction для тестов / стабильности clock.
+var timeNow = time.Now
 
 const (
 	maxPostBodyLen    = 4000
@@ -31,6 +36,11 @@ type CreatePostInput struct {
 func (s *Service) CreatePost(
 	ctx context.Context, authorID string, in CreatePostInput,
 ) (*domain.Post, error) {
+	// Phase K: ban check + capability.
+	subject := s.loadSubject(ctx, authorID)
+	if !permissions.Allow(subject, permissions.CapPostCreate, permissions.ResourceContext{}) {
+		return nil, domain.ErrForbidden
+	}
 	// Валидация: kind задаёт обязательные поля.
 	switch in.Kind {
 	case domain.PostKindText:
@@ -113,7 +123,14 @@ func (s *Service) DeletePost(ctx context.Context, actorID, postID string) error 
 	if err != nil {
 		return err
 	}
+	subject := s.loadSubject(ctx, actorID)
+	cap := permissions.CapPostDeleteOwn
 	if post.AuthorID != actorID {
+		cap = permissions.CapPostDeleteOthers
+	}
+	if !permissions.Allow(subject, cap, permissions.ResourceContext{
+		OwnerID: post.AuthorID,
+	}) {
 		return domain.ErrForbidden
 	}
 	return s.posts.SoftDelete(ctx, postID)
@@ -167,12 +184,13 @@ func (s *Service) UnlikePost(ctx context.Context, userID, postID string) error {
 func (s *Service) CommentOnPost(
 	ctx context.Context, authorID, postID, body string,
 ) (*domain.PostComment, error) {
+	subject := s.loadSubject(ctx, authorID)
+	if !permissions.Allow(subject, permissions.CapCommentCreate, permissions.ResourceContext{}) {
+		return nil, domain.ErrForbidden
+	}
 	body = strings.TrimSpace(body)
 	if body == "" || len(body) > maxCommentBodyLen {
 		return nil, domain.ErrInvalidArg
-	}
-	if _, err := s.posts.GetByID(ctx, postID); err != nil {
-		return nil, err
 	}
 	post, err := s.posts.GetByID(ctx, postID)
 	if err != nil {
@@ -209,7 +227,7 @@ func (s *Service) ListComments(
 	return s.posts.ListComments(ctx, postID, cursor, limit)
 }
 
-// DeleteComment — owner-of-comment OR owner-of-post.
+// DeleteComment — owner-of-comment OR owner-of-post OR global moderator/admin.
 func (s *Service) DeleteComment(
 	ctx context.Context, actorID, postID, commentID string,
 ) error {
@@ -220,14 +238,34 @@ func (s *Service) DeleteComment(
 	if c.PostID != postID {
 		return domain.ErrNotFound
 	}
+	subject := s.loadSubject(ctx, actorID)
+
+	// Path 1: автор коммента — DeleteOwn capability.
 	if c.AuthorID == actorID {
-		return s.posts.SoftDeleteComment(ctx, commentID)
+		if permissions.Allow(subject, permissions.CapCommentDeleteOwn,
+			permissions.ResourceContext{OwnerID: c.AuthorID}) {
+			return s.posts.SoftDeleteComment(ctx, commentID)
+		}
+		return domain.ErrForbidden
 	}
+
+	// Path 2: post-owner — на свой пост может удалять чужие комменты.
 	post, err := s.posts.GetByID(ctx, postID)
 	if err != nil {
 		return err
 	}
 	if post.AuthorID == actorID {
+		// Здесь cap=DeleteOthers, но ownership хоста-поста — отдельный case.
+		// pkg/permissions не знает о post-ownership коммента, проверяем явно.
+		if subject.IsBanned(timeNow()) {
+			return domain.ErrForbidden
+		}
+		return s.posts.SoftDeleteComment(ctx, commentID)
+	}
+
+	// Path 3: global moderator / admin.
+	if permissions.Allow(subject, permissions.CapCommentDeleteOthers,
+		permissions.ResourceContext{OwnerID: c.AuthorID}) {
 		return s.posts.SoftDeleteComment(ctx, commentID)
 	}
 	return domain.ErrForbidden

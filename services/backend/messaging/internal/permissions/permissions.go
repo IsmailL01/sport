@@ -24,28 +24,24 @@
 // ² admin can act on members below admin (not on other admins or owner)
 // ³ owner cannot leave если он единственный owner (нужно сначала transfer)
 
+// Этот файл — service-local thin wrapper над pkg/permissions. Capability
+// matrix живёт в pkg/permissions, здесь только маппинг между внутренним
+// domain.MemberRole и shared permissions.ConvRole.
 package permissions
 
-import "github.com/runningecosystem/backend/messaging/internal/domain"
+import (
+	"github.com/runningecosystem/backend/messaging/internal/domain"
+	pkg "github.com/runningecosystem/backend/pkg/permissions"
+)
 
 type Role = domain.MemberRole
 
-// roleRank — иерархия для сравнений; higher = more privileged.
-func roleRank(r Role) int {
-	switch r {
-	case domain.RoleOwner:
-		return 5
-	case domain.RoleAdmin:
-		return 4
-	case domain.RoleModerator:
-		return 3
-	case domain.RoleMember:
-		return 2
-	case domain.RoleRestricted:
-		return 1
-	}
-	return 0
-}
+// toConvRole — local → shared mapping. Roles совпадают по строковым
+// значениям, но через явный convert легче рефакторить.
+func toConvRole(r Role) pkg.ConvRole { return pkg.ConvRole(string(r)) }
+
+// roleRank — для legacy use; читает из shared lib чтобы не дублировать.
+func roleRank(r Role) int { return pkg.ConvRoleRank(toConvRole(r)) }
 
 // CanSend — может ли отправить сообщение в конверсацию.
 func CanSend(role Role) bool {

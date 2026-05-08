@@ -75,6 +75,41 @@ tsc clean, jest **268/268 passing** (+3 isAdminRole).
   - `feed.story.published` → ChatsModal (StoriesRail сверху)
   Item-level navigation (открыть конкретный пост / чат / story-viewer) — следующая итерация (требует прокинуть `pendingId` через Modal props).
 
+**Phase 8 / K — Унифицированная RBAC система** ✅:
+
+Аудит выявил 3 баги и 6 архитектурных проблем; зафиксил.
+
+**Фиксы багов:**
+1. 🐛 **Admin override** — global moderator/admin теперь МОЖЕТ удалять чужие posts/comments/stories (раньше mod не мог действовать по report «delete»).
+2. 🐛 **Ban enforcement** — `profiles.banned_until` теперь enforce-ится на write-actions: post/comment/story create. Read-only остаётся доступным.
+3. 🐛 **Edit-window server-side** — 24h окно для message edit теперь policy в shared lib, не только client-side hardcode.
+
+**Архитектура:**
+- **Backend `pkg/permissions`** — новая shared library:
+  - 28 capability strings (`post.create`, `comment.delete_others`, `admin.list_reports`, etc) — стабильные ID для audit_log + UI gating
+  - Role hierarchy с `rank()` функциями (global: user<premium<moderator<admin; conv: restricted<member<moderator<admin<owner)
+  - `Subject { UserID, GlobalRole, BannedUntil, IsAuthenticated }` + `ResourceContext { OwnerID, MyConvRole, ... }`
+  - `Check(subject, capability, ctx) Decision { Allow, Reason }` — единая точка решения
+  - Defense-in-depth: auth → ban → moderator-override → ownership → conv-role → policy
+  - `PgLoader.LoadSubject(userID)` — O(1) PK lookup на profiles
+  - 16 unit tests covering matrix
+- **Backend services** теперь импортируют `pkg/permissions`:
+  - `feed/service`: PublishStory/CreatePost/CommentOnPost/Delete{Story,Post,Comment} → `permissions.Allow(...)` вместо ad-hoc `if AuthorID != actorID`
+  - `messaging/internal/permissions` — теперь thin wrapper, `roleRank` reads from shared lib
+  - `social-graph::IsAdminRole` зачищен (legacy alias)
+- **Mobile `modules/permissions/`** — exact 1-1 mirror (TypeScript), идентичная матрица. UI gate: `if (allow(subject, 'post.delete_others', { ownerId })) ...` показывает кнопку только когда сервер согласится. **29 unit tests** с тем же набором кейсов что и Go — рассинхронизация матрицы заfail-ит обе стороны.
+- **`isAdminRole`** в `domain/social.ts` теперь re-export из `modules/permissions::isModerator` — single source of truth.
+
+**E2E smoke** (`scripts/smoke_permissions.py`, 7 шагов):
+- Regular user не может удалить чужой post (403) ✓
+- Admin может удалить чужой post / comment / story (баг fix) ✓
+- Banned user не может create post / comment (403) ✓
+- Banned user может читать /feed/home (200, read-only OK) ✓
+
+**Что O(n) НЕ найдено** (важно): все role-checks идут через PK lookup (`profiles.user_id` или `conversation_members(conv_id, user_id)`). Никаких массивов сканирования.
+
+tsc clean, jest **297/297 passing** (+29 permissions). Go tests green (matrix unit tests).
+
 ## Phase 1 progress
 
 | Подсекция | Статус | Что готово |

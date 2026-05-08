@@ -12,6 +12,7 @@ import (
 
 	"github.com/runningecosystem/backend/feed/internal/domain"
 	"github.com/runningecosystem/backend/feed/internal/repository/postgres"
+	"github.com/runningecosystem/backend/pkg/permissions"
 )
 
 const maxOverlayLen = 200
@@ -20,13 +21,47 @@ type Service struct {
 	stories *postgres.StoryRepo
 	posts   *postgres.PostRepo
 	nc      *nats.Conn
+	// permLoader — lookup global_role + banned_until per actor.
+	// nil → fallback на ownership-only checks (legacy behavior).
+	permLoader permissions.SubjectLoader
 }
 
-func New(stories *postgres.StoryRepo, posts *postgres.PostRepo, nc *nats.Conn) *Service {
-	return &Service{stories: stories, posts: posts, nc: nc}
+func New(
+	stories *postgres.StoryRepo,
+	posts *postgres.PostRepo,
+	nc *nats.Conn,
+	permLoader permissions.SubjectLoader,
+) *Service {
+	return &Service{stories: stories, posts: posts, nc: nc, permLoader: permLoader}
+}
+
+// loadSubject — best-effort. На loader-error → unauth Subject (deny всё).
+func (s *Service) loadSubject(ctx context.Context, actorID string) permissions.Subject {
+	if s.permLoader == nil {
+		// Legacy fallback: assume regular user.
+		return permissions.Subject{
+			UserID:          actorID,
+			GlobalRole:      permissions.GlobalUser,
+			IsAuthenticated: true,
+		}
+	}
+	subj, err := s.permLoader.LoadSubject(ctx, actorID)
+	if err != nil {
+		// Conservative: log + treat as user.
+		return permissions.Subject{
+			UserID:          actorID,
+			GlobalRole:      permissions.GlobalUser,
+			IsAuthenticated: true,
+		}
+	}
+	return subj
 }
 
 func (s *Service) PublishStory(ctx context.Context, authorID, mediaID string, overlay *string) (*domain.Story, error) {
+	subject := s.loadSubject(ctx, authorID)
+	if !permissions.Allow(subject, permissions.CapStoryCreate, permissions.ResourceContext{}) {
+		return nil, domain.ErrForbidden
+	}
 	if mediaID == "" {
 		return nil, domain.ErrInvalidArg
 	}
@@ -94,25 +129,36 @@ func (s *Service) MarkViewed(ctx context.Context, viewerID, storyID string) erro
 	return s.stories.MarkViewed(ctx, storyID, viewerID)
 }
 
-// Viewers — список зрителей; только owner может смотреть.
+// Viewers — список зрителей; только owner либо global moderator/admin.
 func (s *Service) Viewers(ctx context.Context, actorID, storyID string, limit int) ([]*domain.StoryView, error) {
 	story, err := s.stories.GetByID(ctx, storyID)
 	if err != nil {
 		return nil, err
 	}
-	if story.AuthorID != actorID {
+	subject := s.loadSubject(ctx, actorID)
+	d := permissions.Check(subject, permissions.CapStoryViewersList, permissions.ResourceContext{
+		OwnerID: story.AuthorID,
+	})
+	if !d.Allow && !permissions.IsModerator(subject.GlobalRole) {
 		return nil, domain.ErrForbidden
 	}
 	return s.stories.Viewers(ctx, storyID, limit)
 }
 
-// Delete — soft delete. Owner only.
+// Delete — soft delete. Owner либо global admin/moderator.
 func (s *Service) Delete(ctx context.Context, actorID, storyID string) error {
 	story, err := s.stories.GetByID(ctx, storyID)
 	if err != nil {
 		return err
 	}
+	subject := s.loadSubject(ctx, actorID)
+	cap := permissions.CapStoryDeleteOwn
 	if story.AuthorID != actorID {
+		cap = permissions.CapStoryDeleteOthers
+	}
+	if !permissions.Allow(subject, cap, permissions.ResourceContext{
+		OwnerID: story.AuthorID,
+	}) {
 		return domain.ErrForbidden
 	}
 	return s.stories.SoftDelete(ctx, storyID)

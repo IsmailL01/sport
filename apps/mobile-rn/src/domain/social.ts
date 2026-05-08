@@ -16,10 +16,14 @@ export type SocialUser = {
   globalRole?: string;
 };
 
-/** Phase E: проверка прав модератора / админа. */
-export function isAdminRole(role: string | undefined | null): boolean {
-  return role === 'moderator' || role === 'admin';
-}
+/**
+ * Phase E: проверка прав модератора / админа.
+ *
+ * Phase K: делегирует на `modules/permissions::isModerator` — единая
+ * иерархия с backend pkg/permissions. Оставляем как именованный re-export
+ * для backward-compat с existing callers.
+ */
+export { isModerator as isAdminRole } from '../modules/permissions';
 
 export type ChatType = 'dm' | 'group';
 export type ChatRole = 'owner' | 'admin' | 'moderator' | 'member' | 'restricted';
