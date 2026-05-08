@@ -60,6 +60,7 @@ import { apiClient } from './src/auth/apiClient';
 import { ChatsModal } from './src/ui/social/ChatsModal';
 import { FeedModal, useFeedStore } from './src/modules/feed';
 import { AdminModal, useModerationStore } from './src/modules/moderation';
+import { getNotificationsAdapter } from './src/notifications';
 import { useRealtimeStore } from './src/state/social/useRealtimeStore';
 import { useNotificationsStore } from './src/state/social/useNotificationsStore';
 
@@ -359,6 +360,33 @@ function MapScreen() {
       void fetchMyRole(myUser.id);
     }
   }, [myUser, fetchMyRole]);
+
+  // Phase J: deep-link при нажатии push notification.
+  // Router логика: event → нужный modal. Для item-level navigation в будущем
+  // можно прокинуть pendingId в Modal-props.
+  useEffect(() => {
+    const adapter = getNotificationsAdapter();
+    const unsub = adapter.onResponse((data) => {
+      const event = (data?.event ?? '') as string;
+      console.log('[push] tap', event, data);
+      switch (event) {
+        case 'message.new':
+          setChatsVisible(true);
+          break;
+        case 'feed.post.liked':
+        case 'feed.post.commented':
+          setFeedVisible(true);
+          break;
+        case 'feed.story.published':
+          // StoriesRail живёт внутри ChatsModal → list screen.
+          setChatsVisible(true);
+          break;
+        default:
+          break;
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // На старте экрана — загрузить список + точки всех закрытых сессий
   // (для отрисовки all-time territory layer на карте).

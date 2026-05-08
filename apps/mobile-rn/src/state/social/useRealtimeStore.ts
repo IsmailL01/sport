@@ -101,10 +101,16 @@ export const useRealtimeStore = create<RealtimeStore>((set, get) => ({
         case 'feed.story.published': {
           import('../../modules/stories')
             .then(({ useStoriesStore }) => {
-              // Refresh — простой вариант который мгновенно подцепит новую
-              // story плюс актуальные view-counts. Для оптимизации можно было
-              // бы applyIncoming с inline-добавлением, но refresh за <100ms.
-              void useStoriesStore.getState().refresh();
+              const ev = e as Extract<RealtimeEvent, { event: 'feed.story.published' }>;
+              // Phase J: inline-prepend без full refresh — instant UX,
+              // zero network. SQLite cache обновляется внутри.
+              useStoriesStore.getState().applyIncomingStory({
+                storyId: ev.storyId,
+                authorId: ev.authorId,
+                mediaId: ev.mediaId,
+                createdAt: ev.createdAt,
+                expiresAt: ev.expiresAt,
+              });
             })
             .catch(() => { /* модуль не загружен — игнор */ });
           break;

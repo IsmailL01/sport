@@ -67,6 +67,14 @@ tsc clean, jest **268/268 passing** (+3 isAdminRole).
 - **Mobile:** `apiClient.parseRateLimit()` helper + новый `RateLimitedError` тип в `feed/sync` и `moderation/sync`. UI surface'ит понятным сообщением «Слишком много постов / жалоб. Попробуйте через X сек/мин».
 - **E2E smoke** (`scripts/smoke_ratelimit.py`, 16 запросов): 5 успехов + 6-й 429 для posts / follows / reports. Retry-After header verified. Pass.
 
+**Phase 8 / J — Inline-prepend + push deep-linking** ✅ (mobile-only):
+- **`useStoriesStore.applyIncomingStory(payload)`** — instant inline-добавление новой story в начало array без full /stories/feed pull. Дедуп по id (если refresh уже подхватил). Persist в SQLite через `upsertFeedStories`. RealtimeAdapter dispatcher переключён с `refresh()` на этот метод — zero network на incoming story.
+- **Push deep-linking:** `getNotificationsAdapter().onResponse` подключён в App.tsx. На tap-push роутер парсит `data.event` и открывает нужный модал:
+  - `message.new` → ChatsModal
+  - `feed.post.{liked,commented}` → FeedModal
+  - `feed.story.published` → ChatsModal (StoriesRail сверху)
+  Item-level navigation (открыть конкретный пост / чат / story-viewer) — следующая итерация (требует прокинуть `pendingId` через Modal props).
+
 ## Phase 1 progress
 
 | Подсекция | Статус | Что готово |

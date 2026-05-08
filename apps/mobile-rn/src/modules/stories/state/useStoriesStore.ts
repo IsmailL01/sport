@@ -26,6 +26,7 @@ import {
   listViewers,
   markViewedLocal,
   removeStory,
+  upsertFeedStories,
 } from '../storage/storiesRepository';
 import {
   createDraftFromPicked,
@@ -62,6 +63,17 @@ type StoriesState = {
   deleteOwn: (storyId: string) => Promise<void>;
   /** Перечитать локальный кэш (после migration / cold start). */
   hydrateFromCache: () => void;
+  /**
+   * Realtime: применить новую story от подписки без full /stories/feed pull.
+   * payload — то что прилетело по WS (см. RealtimeAdapter.ts feed.story.published).
+   */
+  applyIncomingStory: (payload: {
+    storyId: string;
+    authorId: string;
+    mediaId: string;
+    createdAt: string | number;
+    expiresAt: string | number;
+  }) => void;
   /** Явный wipe state на logout. */
   clearAll: () => void;
 };
@@ -195,6 +207,33 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
     const fromCache = listViewers(storyId);
     set({
       viewersByStory: { ...get().viewersByStory, [storyId]: fromCache },
+    });
+  },
+
+  applyIncomingStory: (payload) => {
+    const id = payload.storyId;
+    // Если уже знаем эту story (например только что refresh-нулись) — игнор.
+    if (get().stories.some((s) => s.id === id)) return;
+    const createdAt = typeof payload.createdAt === 'string'
+      ? Date.parse(payload.createdAt) : Number(payload.createdAt);
+    const expiresAt = typeof payload.expiresAt === 'string'
+      ? Date.parse(payload.expiresAt) : Number(payload.expiresAt);
+    const story: StoryWithStats = {
+      id,
+      authorId: payload.authorId,
+      mediaId: payload.mediaId,
+      overlayText: null,
+      createdAt,
+      expiresAt,
+      viewCount: 0,
+      iViewed: false,
+    };
+    const next = [story, ...get().stories];
+    // Persist в SQLite — на след. cold start будет в кэше.
+    upsertFeedStories([story]);
+    set({
+      stories: next,
+      groups: groupByAuthor(next, _selfUserId),
     });
   },
 
