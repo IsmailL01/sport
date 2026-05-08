@@ -57,6 +57,14 @@ export type Reaction = {
   ts: number;
 };
 
+export type ReplyPreview = {
+  messageId: string;
+  senderId: UserId;
+  body: string | null;
+  kind: string;
+  deleted: boolean;
+};
+
 export type Message = {
   /** Server UUID; до server-ack равен clientId. */
   id: string;
@@ -73,6 +81,8 @@ export type Message = {
   mediaHeight: number | null;
   mediaDurationS: number | null;
   replyToMessageId: string | null;
+  /** Snapshot reply-target от сервера для bubble preview. */
+  replyPreview: ReplyPreview | null;
   reactions: Reaction[];
   status: DeliveryStatus;
   isDeleted: boolean;

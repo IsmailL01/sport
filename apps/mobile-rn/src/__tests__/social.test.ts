@@ -6,7 +6,7 @@ function msg(overrides: Partial<Message>): Message {
     kind: 'text', text: 'hi',
     mediaLocalUri: null, mediaRemoteUrl: null,
     mediaWidth: null, mediaHeight: null, mediaDurationS: null,
-    replyToMessageId: null, reactions: [],
+    replyToMessageId: null, replyPreview: null, reactions: [],
     status: 'sent', isDeleted: false, deletedBy: null,
     createdAt: 1_000, editedAt: null, attempts: 0,
     ...overrides,

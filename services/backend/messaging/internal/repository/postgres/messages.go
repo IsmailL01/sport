@@ -145,6 +145,85 @@ func (r *MessageRepo) ListByConversation(ctx context.Context, convID string, bef
 	return out, rows.Err()
 }
 
+// Edit — обновить body. Гарантирует не-deleted + сохраняет sender; service
+// проверяет actor + 24h окно.
+// Возвращает обновлённое сообщение + memberIDs для outbox event.
+func (r *MessageRepo) Edit(ctx context.Context, messageID string, newBody string, memberIDs []string) (*domain.Message, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var m domain.Message
+	err = tx.QueryRow(ctx,
+		`UPDATE messages SET body=$2, edited_at=now() WHERE id=$1 AND deleted_at IS NULL
+		 RETURNING `+msgCols,
+		messageID, newBody,
+	).Scan(&m.ID, &m.ConversationID, &m.SenderID, &m.ClientMsgID, &m.Kind, &m.Body,
+		&m.ReplyToID, &m.EditedAt, &m.DeletedAt, &m.Flagged, &m.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrMsgNotFound
+		}
+		return nil, err
+	}
+
+	// Outbox events для всех членов.
+	payload, _ := json.Marshal(map[string]any{
+		"event":          "message.edited",
+		"messageId":      m.ID,
+		"conversationId": m.ConversationID,
+		"body":           newBody,
+		"editedAt":       m.EditedAt,
+	})
+	for _, mid := range memberIDs {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO messaging_outbox (event_subject, payload) VALUES ($1, $2)`,
+			"rt.user."+mid, payload,
+		); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// LoadReplyPreviews — для batch messages, загрузить snapshot их reply-targets.
+// Возвращает map[messageID]→preview (только для тех у кого reply_to_id != null).
+func (r *MessageRepo) LoadReplyPreviews(ctx context.Context, messageIDs []string) (map[string]*domain.MessageReplyPreview, error) {
+	if len(messageIDs) == 0 {
+		return map[string]*domain.MessageReplyPreview{}, nil
+	}
+	const sql = `
+		SELECT m.id, t.id, t.sender_id, t.body, t.kind, (t.deleted_at IS NOT NULL) AS deleted
+		FROM messages m
+		JOIN messages t ON t.id = m.reply_to_id
+		WHERE m.id = ANY($1) AND m.reply_to_id IS NOT NULL`
+	rows, err := r.pool.Query(ctx, sql, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]*domain.MessageReplyPreview)
+	for rows.Next() {
+		var msgID string
+		var p domain.MessageReplyPreview
+		if err := rows.Scan(&msgID, &p.MessageID, &p.SenderID, &p.Body, &p.Kind, &p.Deleted); err != nil {
+			return nil, err
+		}
+		// Truncate body для preview.
+		if p.Body != nil && len(*p.Body) > 80 {
+			t := (*p.Body)[:77] + "..."
+			p.Body = &t
+		}
+		out[msgID] = &p
+	}
+	return out, rows.Err()
+}
+
 func (r *MessageRepo) GetByID(ctx context.Context, id string) (*domain.Message, error) {
 	var m domain.Message
 	err := r.pool.QueryRow(ctx, `SELECT `+msgCols+` FROM messages WHERE id=$1`, id).

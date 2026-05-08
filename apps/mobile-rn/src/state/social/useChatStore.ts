@@ -22,7 +22,7 @@ type ChatStore = {
   loadOlder: () => Promise<void>;
 
   /** Отправить текст. Создаёт оптимистичный message в outbox.  */
-  sendText: (chatId: string, senderId: string, text: string) => Promise<Message | null>;
+  sendText: (chatId: string, senderId: string, text: string, replyToMessageId?: string | null) => Promise<Message | null>;
 
   /** Применить incoming event от RealtimeAdapter. */
   applyIncoming: (e: {
@@ -31,11 +31,34 @@ type ChatStore = {
   }) => void;
 
   applyDeleted: (messageId: string, deletedBy: string) => void;
+
+  /** Применить server event message.edited. */
+  applyEdited: (messageId: string, body: string, editedAt: number) => void;
+
+  /** Применить server event reaction.added/removed. */
+  applyReaction: (messageId: string, userId: string, emoji: string, removed: boolean, ts: number) => void;
+
+  /** Toggle (add если не было, remove если было) реакцию текущего user. */
+  toggleReaction: (messageId: string, myUserId: string, emoji: string) => Promise<void>;
+
+  /** Редактировать своё сообщение. */
+  editMessage: (messageId: string, newText: string) => Promise<boolean>;
+
+  /** Удалить сообщение (своё или чужое если admin/moderator). */
+  deleteMessage: (messageId: string) => Promise<boolean>;
+};
+
+type ServerReaction = { userId: string; emoji: string; createdAt: number };
+type ServerReplyPreview = {
+  messageId: string; senderId: string;
+  body: string | null; kind: string; deleted: boolean;
 };
 
 type ServerMessage = {
   id: string; conversationId: string; senderId: string; clientMsgId: string;
   kind: string; body: string | null; replyToId: string | null;
+  replyPreview?: ServerReplyPreview | null;
+  reactions?: ServerReaction[];
   editedAt?: number | null; deletedAt?: number | null; createdAt: number;
 };
 
@@ -46,7 +69,17 @@ function fromServer(s: ServerMessage): Message {
     text: s.body, mediaLocalUri: null, mediaRemoteUrl: null,
     mediaWidth: null, mediaHeight: null, mediaDurationS: null,
     replyToMessageId: s.replyToId,
-    reactions: [], status: 'sent',
+    replyPreview: s.replyPreview ? {
+      messageId: s.replyPreview.messageId,
+      senderId: s.replyPreview.senderId,
+      body: s.replyPreview.body,
+      kind: s.replyPreview.kind,
+      deleted: s.replyPreview.deleted,
+    } : null,
+    reactions: (s.reactions ?? []).map((r) => ({
+      userId: r.userId, emoji: r.emoji, ts: r.createdAt,
+    })),
+    status: 'sent',
     isDeleted: s.deletedAt != null, deletedBy: null,
     createdAt: s.createdAt, editedAt: s.editedAt ?? null,
     attempts: 0,
@@ -131,26 +164,134 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  sendText: async (chatId, senderId, text) => {
+  sendText: async (chatId, senderId, text, replyToMessageId) => {
     const trimmed = text.trim();
     if (trimmed === '') return null;
     const clientId = uuid();
     const now = Date.now();
+    // Если есть replyTo — снэпшот reply target из текущего messages.
+    let replyPreview: Message['replyPreview'] = null;
+    if (replyToMessageId) {
+      const target = get().messages.find((m) => m.id === replyToMessageId);
+      if (target !== undefined) {
+        const body = target.text ?? null;
+        replyPreview = {
+          messageId: target.id,
+          senderId: target.senderId,
+          body: body !== null && body.length > 80 ? body.slice(0, 77) + '...' : body,
+          kind: target.kind,
+          deleted: target.isDeleted,
+        };
+      }
+    }
     const optimistic: Message = {
       id: clientId, clientId, chatId, senderId,
       kind: 'text', text: trimmed,
       mediaLocalUri: null, mediaRemoteUrl: null,
       mediaWidth: null, mediaHeight: null, mediaDurationS: null,
-      replyToMessageId: null, reactions: [],
+      replyToMessageId: replyToMessageId ?? null, replyPreview,
+      reactions: [],
       status: 'pending', isDeleted: false, deletedBy: null,
       createdAt: now, editedAt: null, attempts: 0,
     };
     upsertMessage(optimistic);
-    // Update store сразу — UI увидит optimistic bubble.
     set((s) => s.activeChatId === chatId
       ? { messages: [optimistic, ...s.messages] }
       : {});
     return optimistic;
+  },
+
+  applyEdited: (messageId, body, editedAt) => {
+    const cur = listMessagesByChat(get().activeChatId ?? '', null, 200);
+    const found = cur.find((m) => m.id === messageId);
+    if (found !== undefined) {
+      const updated: Message = { ...found, text: body, editedAt };
+      upsertMessage(updated);
+    }
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === messageId ? { ...m, text: body, editedAt } : m,
+      ),
+    }));
+  },
+
+  applyReaction: (messageId, userId, emoji, removed, ts) => {
+    set((s) => ({
+      messages: s.messages.map((m) => {
+        if (m.id !== messageId) return m;
+        let next = m.reactions;
+        if (removed) {
+          next = next.filter((r) => !(r.userId === userId && r.emoji === emoji));
+        } else {
+          if (!next.some((r) => r.userId === userId && r.emoji === emoji)) {
+            next = [...next, { userId, emoji, ts }];
+          }
+        }
+        const updated = { ...m, reactions: next };
+        upsertMessage(updated);
+        return updated;
+      }),
+    }));
+  },
+
+  toggleReaction: async (messageId, myUserId, emoji) => {
+    const msg = get().messages.find((m) => m.id === messageId);
+    const haveIt = msg?.reactions.some((r) => r.userId === myUserId && r.emoji === emoji) ?? false;
+
+    // Optimistic update.
+    get().applyReaction(messageId, myUserId, emoji, haveIt, Date.now());
+
+    try {
+      const resp = haveIt
+        ? await apiClient.api(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' })
+        : await apiClient.api(`/messages/${messageId}/reactions`, {
+            method: 'POST',
+            body: JSON.stringify({ emoji }),
+          });
+      if (!resp.ok) {
+        // Откат если сервер отверг.
+        get().applyReaction(messageId, myUserId, emoji, !haveIt, Date.now());
+      }
+    } catch (e) {
+      console.warn('[chat] toggleReaction failed', e);
+      get().applyReaction(messageId, myUserId, emoji, !haveIt, Date.now());
+    }
+  },
+
+  editMessage: async (messageId, newText) => {
+    const trimmed = newText.trim();
+    if (trimmed === '') return false;
+    try {
+      const resp = await apiClient.api(`/messages/${messageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ body: trimmed }),
+      });
+      if (!resp.ok) return false;
+      const data = (await resp.json()) as { editedAt: number };
+      get().applyEdited(messageId, trimmed, data.editedAt);
+      return true;
+    } catch (e) {
+      console.warn('[chat] edit failed', e);
+      return false;
+    }
+  },
+
+  deleteMessage: async (messageId) => {
+    try {
+      const resp = await apiClient.api(`/messages/${messageId}`, { method: 'DELETE' });
+      if (resp.ok) {
+        // Local mark deleted.
+        set((s) => ({
+          messages: s.messages.map((m) => m.id === messageId
+            ? { ...m, isDeleted: true } : m),
+        }));
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.warn('[chat] delete failed', e);
+      return false;
+    }
   },
 
   applyIncoming: (e) => {
@@ -170,7 +311,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         senderId: e.senderId, kind: e.kind as Message['kind'],
         text: e.body, mediaLocalUri: null, mediaRemoteUrl: null,
         mediaWidth: null, mediaHeight: null, mediaDurationS: null,
-        replyToMessageId: null, reactions: [],
+        replyToMessageId: null, replyPreview: null, reactions: [],
         status: 'delivered', isDeleted: false, deletedBy: null,
         createdAt: e.createdAt, editedAt: null, attempts: 0,
       };

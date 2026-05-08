@@ -65,6 +65,26 @@ type Message struct {
 	DeletedAt      *time.Time
 	Flagged        bool
 	CreatedAt      time.Time
+	// Reactions / ReplyPreview заполняются при ListByConversation для UI;
+	// в send/get-by-id остаются nil.
+	Reactions     []MessageReaction
+	ReplyPreview  *MessageReplyPreview
+}
+
+type MessageReaction struct {
+	MessageID string
+	UserID    string
+	Emoji     string
+	CreatedAt time.Time
+}
+
+// MessageReplyPreview — мини-snapshot reply-target для UI bubble.
+type MessageReplyPreview struct {
+	MessageID string
+	SenderID  string
+	Body      *string  // первые 80 chars если text; nil для media
+	Kind      string
+	Deleted   bool
 }
 
 // ConversationView — denormalized for list endpoint (last message + unread).

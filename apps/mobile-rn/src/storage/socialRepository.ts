@@ -219,8 +219,18 @@ type MessageRow = {
 
 function rowToMessage(r: MessageRow): Message {
   let reactions: Message['reactions'] = [];
+  let replyPreview: Message['replyPreview'] = null;
   if (r.reactions_json) {
-    try { reactions = JSON.parse(r.reactions_json); } catch { /* malformed, ignore */ }
+    try {
+      const parsed = JSON.parse(r.reactions_json) as { reactions?: Message['reactions']; replyPreview?: Message['replyPreview'] } | Message['reactions'];
+      // Backward compat: раньше JSON был просто array reactions, теперь — object {reactions, replyPreview}.
+      if (Array.isArray(parsed)) {
+        reactions = parsed;
+      } else {
+        reactions = parsed.reactions ?? [];
+        replyPreview = parsed.replyPreview ?? null;
+      }
+    } catch { /* malformed */ }
   }
   return {
     id: r.id, clientId: r.client_id, chatId: r.chat_id, senderId: r.sender_id,
@@ -229,6 +239,7 @@ function rowToMessage(r: MessageRow): Message {
     mediaWidth: r.media_width, mediaHeight: r.media_height,
     mediaDurationS: r.media_duration_s,
     replyToMessageId: r.reply_to_message_id,
+    replyPreview,
     reactions,
     status: r.status as DeliveryStatus,
     isDeleted: r.is_deleted === 1, deletedBy: r.deleted_by,
@@ -250,7 +261,8 @@ export function upsertMessage(m: Message): void {
       m.id, m.clientId, m.chatId, m.senderId, m.kind, m.text,
       m.mediaLocalUri, m.mediaRemoteUrl, m.mediaWidth, m.mediaHeight, m.mediaDurationS,
       m.replyToMessageId, m.status, m.isDeleted ? 1 : 0, m.deletedBy,
-      JSON.stringify(m.reactions), m.createdAt, m.editedAt, m.attempts,
+      JSON.stringify({ reactions: m.reactions, replyPreview: m.replyPreview }),
+      m.createdAt, m.editedAt, m.attempts,
       m.status === 'pending' || m.status === 'failed' ? null : Date.now(), Date.now(),
     ],
   );

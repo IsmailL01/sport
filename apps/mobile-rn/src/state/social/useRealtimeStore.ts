@@ -62,6 +62,21 @@ export const useRealtimeStore = create<RealtimeStore>((set, get) => ({
           useChatStore.getState().applyDeleted(ev.messageId, ev.deletedBy);
           break;
         }
+        case 'message.edited': {
+          const ev = e as { messageId: string; body: string; editedAt: string | number };
+          const editedAt = typeof ev.editedAt === 'string' ? Date.parse(ev.editedAt) : Number(ev.editedAt);
+          useChatStore.getState().applyEdited(ev.messageId, ev.body, editedAt);
+          break;
+        }
+        case 'reaction.added':
+        case 'reaction.removed': {
+          const ev = e as { messageId: string; userId: string; emoji: string; event: string };
+          useChatStore.getState().applyReaction(
+            ev.messageId, ev.userId, ev.emoji,
+            ev.event === 'reaction.removed', Date.now(),
+          );
+          break;
+        }
       }
     });
 

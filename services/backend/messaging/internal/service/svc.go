@@ -17,14 +17,18 @@ import (
 const maxBodyLen = 4000
 
 type Service struct {
-	convs    *postgres.ConversationRepo
-	members  *postgres.MemberRepo
-	messages *postgres.MessageRepo
-	outbox   *postgres.OutboxRepo // для emit member-events
+	convs     *postgres.ConversationRepo
+	members   *postgres.MemberRepo
+	messages  *postgres.MessageRepo
+	reactions *postgres.ReactionRepo
+	outbox    *postgres.OutboxRepo
 }
 
-func New(c *postgres.ConversationRepo, m *postgres.MemberRepo, msgs *postgres.MessageRepo, ob *postgres.OutboxRepo) *Service {
-	return &Service{convs: c, members: m, messages: msgs, outbox: ob}
+func New(
+	c *postgres.ConversationRepo, m *postgres.MemberRepo,
+	msgs *postgres.MessageRepo, rx *postgres.ReactionRepo, ob *postgres.OutboxRepo,
+) *Service {
+	return &Service{convs: c, members: m, messages: msgs, reactions: rx, outbox: ob}
 }
 
 // publishMemberEvent — INSERT outbox-rows для каждого члена с member-event.
@@ -313,7 +317,117 @@ func (s *Service) ListMessages(ctx context.Context, actorID, convID string, befo
 		t := time.UnixMilli(*before)
 		beforeT = &t
 	}
-	return s.messages.ListByConversation(ctx, convID, beforeT, limit)
+	msgs, err := s.messages.ListByConversation(ctx, convID, beforeT, limit)
+	if err != nil {
+		return nil, err
+	}
+	// Enrich: reactions + reply previews одним batch-запросом каждый.
+	ids := make([]string, len(msgs))
+	for i, m := range msgs {
+		ids[i] = m.ID
+	}
+	reactionsByMsg, err := s.reactions.ListForMessages(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	previewsByMsg, err := s.messages.LoadReplyPreviews(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range msgs {
+		m.Reactions = reactionsByMsg[m.ID]
+		if p, ok := previewsByMsg[m.ID]; ok {
+			m.ReplyPreview = p
+		}
+	}
+	return msgs, nil
+}
+
+// === Edits ===
+
+const editWindow = 24 * time.Hour
+
+func (s *Service) EditMessage(ctx context.Context, actorID, msgID, newBody string) (*domain.Message, error) {
+	newBody = strings.TrimSpace(newBody)
+	if newBody == "" || len(newBody) > maxBodyLen {
+		return nil, domain.ErrInvalidArg
+	}
+	m, err := s.messages.GetByID(ctx, msgID)
+	if err != nil {
+		return nil, err
+	}
+	if m.DeletedAt != nil {
+		return nil, domain.ErrMsgNotFound
+	}
+	if m.SenderID != actorID {
+		return nil, domain.ErrForbidden
+	}
+	if time.Since(m.CreatedAt) > editWindow {
+		return nil, domain.ErrForbidden
+	}
+	memberIDs, err := s.members.MemberIDs(ctx, m.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	return s.messages.Edit(ctx, msgID, newBody, memberIDs)
+}
+
+// === Reactions ===
+
+func (s *Service) AddReaction(ctx context.Context, actorID, msgID, emoji string) error {
+	if emoji == "" || len(emoji) > 16 {
+		return domain.ErrInvalidArg
+	}
+	m, err := s.messages.GetByID(ctx, msgID)
+	if err != nil {
+		return err
+	}
+	isMember, _, err := s.members.IsMember(ctx, m.ConversationID, actorID)
+	if err != nil {
+		return err
+	}
+	if !isMember {
+		return domain.ErrNotMember
+	}
+	added, err := s.reactions.Add(ctx, msgID, actorID, emoji)
+	if err != nil {
+		return err
+	}
+	if added {
+		s.publishMemberEvent(ctx, "reaction.added", m.ConversationID, map[string]any{
+			"event":          "reaction.added",
+			"messageId":      msgID,
+			"conversationId": m.ConversationID,
+			"userId":         actorID,
+			"emoji":          emoji,
+		})
+	}
+	return nil
+}
+
+func (s *Service) RemoveReaction(ctx context.Context, actorID, msgID, emoji string) error {
+	m, err := s.messages.GetByID(ctx, msgID)
+	if err != nil {
+		return err
+	}
+	isMember, _, err := s.members.IsMember(ctx, m.ConversationID, actorID)
+	if err != nil {
+		return err
+	}
+	if !isMember {
+		return domain.ErrNotMember
+	}
+	if err := s.reactions.Remove(ctx, msgID, actorID, emoji); err != nil {
+		return err
+	}
+	s.publishMemberEvent(ctx, "reaction.removed", m.ConversationID, map[string]any{
+		"event":          "reaction.removed",
+		"messageId":      msgID,
+		"conversationId": m.ConversationID,
+		"userId":         actorID,
+		"emoji":          emoji,
+	})
+	return nil
 }
 
 func (s *Service) MarkRead(ctx context.Context, actorID, convID, lastReadMessageID string) error {

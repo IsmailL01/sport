@@ -44,6 +44,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /conversations/{id}/messages", h.requireAuth(h.listMessages))
 	mux.HandleFunc("POST /conversations/{id}/read", h.requireAuth(h.markRead))
 	mux.HandleFunc("DELETE /messages/{id}", h.requireAuth(h.deleteMessage))
+	mux.HandleFunc("PATCH /messages/{id}", h.requireAuth(h.editMessage))
+	mux.HandleFunc("POST /messages/{id}/reactions", h.requireAuth(h.addReaction))
+	mux.HandleFunc("DELETE /messages/{id}/reactions/{emoji}", h.requireAuth(h.removeReaction))
 
 	return loggingMiddleware(h.log)(mux)
 }
@@ -106,16 +109,40 @@ type sendMessageRequest struct {
 }
 
 type messageDTO struct {
-	ID             string  `json:"id"`
-	ConversationID string  `json:"conversationId"`
-	SenderID       string  `json:"senderId"`
-	ClientMsgID    string  `json:"clientMsgId"`
-	Kind           string  `json:"kind"`
-	Body           *string `json:"body,omitempty"`
-	ReplyToID      *string `json:"replyToId,omitempty"`
-	EditedAt       *int64  `json:"editedAt,omitempty"`
-	DeletedAt      *int64  `json:"deletedAt,omitempty"`
-	CreatedAt      int64   `json:"createdAt"`
+	ID             string             `json:"id"`
+	ConversationID string             `json:"conversationId"`
+	SenderID       string             `json:"senderId"`
+	ClientMsgID    string             `json:"clientMsgId"`
+	Kind           string             `json:"kind"`
+	Body           *string            `json:"body,omitempty"`
+	ReplyToID      *string            `json:"replyToId,omitempty"`
+	ReplyPreview   *replyPreviewDTO   `json:"replyPreview,omitempty"`
+	Reactions      []reactionDTO      `json:"reactions,omitempty"`
+	EditedAt       *int64             `json:"editedAt,omitempty"`
+	DeletedAt      *int64             `json:"deletedAt,omitempty"`
+	CreatedAt      int64              `json:"createdAt"`
+}
+
+type reactionDTO struct {
+	UserID    string `json:"userId"`
+	Emoji     string `json:"emoji"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+type replyPreviewDTO struct {
+	MessageID string  `json:"messageId"`
+	SenderID  string  `json:"senderId"`
+	Body      *string `json:"body,omitempty"`
+	Kind      string  `json:"kind"`
+	Deleted   bool    `json:"deleted"`
+}
+
+type editMessageRequest struct {
+	Body string `json:"body"`
+}
+
+type addReactionRequest struct {
+	Emoji string `json:"emoji"`
 }
 
 type markReadRequest struct {
@@ -420,7 +447,75 @@ func messageToDTO(m *domain.Message) messageDTO {
 		t := m.DeletedAt.UnixMilli()
 		d.DeletedAt = &t
 	}
+	if m.ReplyPreview != nil {
+		d.ReplyPreview = &replyPreviewDTO{
+			MessageID: m.ReplyPreview.MessageID,
+			SenderID:  m.ReplyPreview.SenderID,
+			Body:      m.ReplyPreview.Body,
+			Kind:      m.ReplyPreview.Kind,
+			Deleted:   m.ReplyPreview.Deleted,
+		}
+	}
+	if len(m.Reactions) > 0 {
+		d.Reactions = make([]reactionDTO, len(m.Reactions))
+		for i, r := range m.Reactions {
+			d.Reactions[i] = reactionDTO{
+				UserID: r.UserID, Emoji: r.Emoji,
+				CreatedAt: r.CreatedAt.UnixMilli(),
+			}
+		}
+	}
 	return d
+}
+
+// === handlers: edit + reactions ===
+
+func (h *Handler) editMessage(w http.ResponseWriter, r *http.Request) {
+	actorID := userIDFromContext(r.Context())
+	msgID := r.PathValue("id")
+	var req editMessageRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	msg, err := h.svc.EditMessage(ctx, actorID, msgID, req.Body)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, messageToDTO(msg))
+}
+
+func (h *Handler) addReaction(w http.ResponseWriter, r *http.Request) {
+	actorID := userIDFromContext(r.Context())
+	msgID := r.PathValue("id")
+	var req addReactionRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	if err := h.svc.AddReaction(ctx, actorID, msgID, req.Emoji); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) removeReaction(w http.ResponseWriter, r *http.Request) {
+	actorID := userIDFromContext(r.Context())
+	msgID := r.PathValue("id")
+	emoji := r.PathValue("emoji")
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	if err := h.svc.RemoveReaction(ctx, actorID, msgID, emoji); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // === middleware ===
