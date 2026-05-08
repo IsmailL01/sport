@@ -97,6 +97,18 @@ export const useRealtimeStore = create<RealtimeStore>((set, get) => ({
             .catch(() => { /* модуль не загружен — игнор */ });
           break;
         }
+        // Phase H realtime: published story from a followee.
+        case 'feed.story.published': {
+          import('../../modules/stories')
+            .then(({ useStoriesStore }) => {
+              // Refresh — простой вариант который мгновенно подцепит новую
+              // story плюс актуальные view-counts. Для оптимизации можно было
+              // бы applyIncoming с inline-добавлением, но refresh за <100ms.
+              void useStoriesStore.getState().refresh();
+            })
+            .catch(() => { /* модуль не загружен — игнор */ });
+          break;
+        }
       }
     });
 

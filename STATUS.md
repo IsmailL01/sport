@@ -48,6 +48,12 @@ Pipeline теперь end-to-end: action → DB → NATS rt.user.{authorId} → 
 
 tsc clean, jest **268/268 passing** (+3 isAdminRole).
 
+**Phase 8 / H — Realtime для stories** ✅:
+- **Backend:** новый метод `StoryRepo.ListFollowerIDs(authorID, cap=1000)` — single-query SELECT из follows table (feed-сервис шарит Postgres с social-graph). `Service.PublishStory` после успешного INSERT публикует в `rt.user.{follower}` для каждого follower. Cap 1000 — celebrity-pull для крупных аккаунтов через refresh.
+- **notifications:** `HandleStoryEvent` распознаёт `feed.story.published`, persist-ит in-app row + Expo Push «📸 Новая история». Self-skip (хотя fanout не таргетит автора).
+- **Mobile:** RealtimeAdapter получил тип `feed.story.published`. useRealtimeStore-диспетчер → useStoriesStore.refresh() (lazy-import, simple full-pull даёт <100ms latency и актуальные view-counts).
+- **E2E smoke** (`scripts/smoke_realtime_stories.py`, 6 шагов): alice publishes → bob (follower) gets notification, alice (self) skipped, charlie (non-follower) gets nothing. Pass.
+
 ## Phase 1 progress
 
 | Подсекция | Статус | Что готово |

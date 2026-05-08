@@ -191,6 +191,55 @@ func (s *Service) HandleFeedEvent(ctx context.Context, recipientUserID string, p
 	return nil
 }
 
+// HandleStoryEvent — feed.story.published fanout. Recipient = follower.
+func (s *Service) HandleStoryEvent(ctx context.Context, recipientUserID string, payload []byte) error {
+	var ev struct {
+		Event    string `json:"event"`
+		StoryID  string `json:"storyId"`
+		AuthorID string `json:"authorId"`
+	}
+	if err := json.Unmarshal(payload, &ev); err != nil {
+		return err
+	}
+	if ev.Event != "feed.story.published" {
+		return nil
+	}
+	// Self-published — followers получают, author не нужно (он сам только что
+	// опубликовал). Но fanout уже не отправляет в rt.user.{author} — так что
+	// здесь это double-safety.
+	if ev.AuthorID == recipientUserID {
+		return nil
+	}
+	if err := s.notifications.Create(ctx, recipientUserID, "feed.story.published", payload); err != nil {
+		s.log.Warn("notification persist failed", "error", err)
+	}
+	prefs, err := s.prefs.Get(ctx, recipientUserID)
+	if err != nil {
+		return err
+	}
+	if !prefs.PushEnabled || !prefs.PushFollows {
+		return nil
+	}
+	tokens, err := s.devices.TokensForUser(ctx, recipientUserID)
+	if err != nil || len(tokens) == 0 {
+		return err
+	}
+	msgs := make([]expopush.Message, 0, len(tokens))
+	for _, t := range tokens {
+		msgs = append(msgs, expopush.Message{
+			To:    t,
+			Title: "📸 Новая история",
+			Body:  "Один из ваших подписок опубликовал историю",
+			Sound: "default",
+			Data: map[string]any{
+				"event":   "feed.story.published",
+				"storyId": ev.StoryID,
+			},
+		})
+	}
+	return s.sendAndCleanup(ctx, recipientUserID, tokens, msgs)
+}
+
 func (s *Service) deliverLikePush(
 	ctx context.Context, recipientUserID, postID, likerID string, payload []byte,
 ) error {

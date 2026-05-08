@@ -17,6 +17,10 @@ export type RealtimeEvent =
       postId: string; commentId: string;
       postAuthorId: string; commenterId: string;
       body?: string | null }
+  // Phase H realtime: новая story от подписки.
+  | { event: 'feed.story.published';
+      storyId: string; authorId: string; mediaId: string;
+      createdAt: string | number; expiresAt: string | number }
   | { event: string; [k: string]: unknown }; // catch-all для будущих типов
 
 export type RealtimeListener = (e: RealtimeEvent) => void;

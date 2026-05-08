@@ -45,7 +45,7 @@ func (s *Service) PublishStory(ctx context.Context, authorID, mediaID string, ov
 	if err != nil {
 		return nil, err
 	}
-	// Best-effort NATS event для notifications + future feed-fanout.
+	// Best-effort NATS event + targeted realtime fanout.
 	if s.nc != nil {
 		payload, _ := json.Marshal(map[string]any{
 			"event":     "feed.story.published",
@@ -55,7 +55,17 @@ func (s *Service) PublishStory(ctx context.Context, authorID, mediaID string, ov
 			"createdAt": story.CreatedAt,
 			"expiresAt": story.ExpiresAt,
 		})
+		// Generic broadcast (debug / future consumers).
 		_ = s.nc.Publish("feed.story.published.v1", payload)
+		// Targeted fanout: каждый follower получит instant WS-frame через
+		// realtime-gw (он уже subscribed на rt.user.{userID}). Capped 1000 —
+		// celebrity-pull на refresh для крупных аккаунтов.
+		followers, err := s.stories.ListFollowerIDs(ctx, authorID, 1000)
+		if err == nil {
+			for _, fid := range followers {
+				_ = s.nc.Publish("rt.user."+fid, payload)
+			}
+		}
 	}
 	return story, nil
 }

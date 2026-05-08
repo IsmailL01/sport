@@ -143,6 +143,32 @@ func (r *StoryRepo) SoftDelete(ctx context.Context, id string) error {
 	return err
 }
 
+// ListFollowerIDs — для realtime fanout. Возвращает userIDs которые
+// follow-ят author (т.е. кто увидит его новые stories в feed).
+// Cap = 1000 чтобы не штормить NATS если у автора 100k подписчиков —
+// celebrity-pull на refresh подтянет остальных.
+func (r *StoryRepo) ListFollowerIDs(ctx context.Context, authorID string, cap int) ([]string, error) {
+	if cap <= 0 || cap > 5000 {
+		cap = 1000
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT follower_id FROM follows WHERE followee_id = $1 LIMIT $2`,
+		authorID, cap)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]string, 0, 32)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // CleanupExpired — для cron job. Hard-delete с истёкшим expires_at.
 // Возвращает count удалённых.
 func (r *StoryRepo) CleanupExpired(ctx context.Context) (int64, error) {

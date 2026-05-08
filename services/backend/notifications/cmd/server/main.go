@@ -99,6 +99,9 @@ func run() error {
 			if err := svc.HandleFeedEvent(handlerCtx, userID, msg.Data); err != nil {
 				logger.Warn("handle feed event failed", "userId", userID, "error", err)
 			}
+			if err := svc.HandleStoryEvent(handlerCtx, userID, msg.Data); err != nil {
+				logger.Warn("handle story event failed", "userId", userID, "error", err)
+			}
 		}()
 	}); err != nil {
 		return fmt.Errorf("nats subscribe: %w", err)
