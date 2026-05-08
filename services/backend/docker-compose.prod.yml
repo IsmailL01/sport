@@ -27,6 +27,48 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # NATS JetStream — events bus для cross-service async communication
+  # (см. план Phase 8 / messenger). Persistent file storage, 7d retention.
+  nats:
+    image: nats:2.11-alpine
+    container_name: re_nats
+    command:
+      - "-js"
+      - "-sd"
+      - "/data"
+      - "-m"
+      - "8222"
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    mem_limit: 256m
+    restart: unless-stopped
+
+  # Redis — rate limiting, presence, timeline cache, hot conversation cache
+  redis:
+    image: redis:7-alpine
+    container_name: re_redis
+    command:
+      - "--maxmemory"
+      - "256mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+      - "--appendonly"
+      - "yes"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    mem_limit: 320m
+    restart: unless-stopped
+
   migrations:
     image: migrate/migrate:v4.18.1
     container_name: re_migrations
@@ -73,6 +115,30 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # social-graph — profiles, follows, blocks, search-by-username
+  # (см. план: Phase A1, Phase 8 / messenger).
+  social-graph:
+    build:
+      context: .
+      dockerfile: social-graph/Dockerfile
+    container_name: re_social_graph
+    environment:
+      SOCIAL_GRAPH_HTTP_ADDR: ":8084"
+      SOCIAL_GRAPH_DB_URL: "postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable"
+      IDENTITY_JWT_SECRET: "${JWT_SECRET:?need JWT_SECRET >=32 chars}"
+      NATS_URL: "nats://nats:4222"
+      REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   gateway:
     image: caddy:2.8-alpine
     container_name: re_gateway
@@ -88,9 +154,12 @@ services:
     depends_on:
       - identity
       - activity-sync
+      - social-graph
     restart: unless-stopped
 
 volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  nats_data:
+  redis_data:

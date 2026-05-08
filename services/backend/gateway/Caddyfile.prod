@@ -41,6 +41,23 @@
 		reverse_proxy activity-sync:8082
 	}
 
+	# Social-graph (Phase A: profiles + follows + blocks + search).
+	handle /profiles/* {
+		reverse_proxy social-graph:8084
+	}
+	handle /search/users {
+		reverse_proxy social-graph:8084
+	}
+	handle /relations/* {
+		reverse_proxy social-graph:8084
+	}
+	handle /follows/* {
+		reverse_proxy social-graph:8084
+	}
+	handle /blocks/* {
+		reverse_proxy social-graph:8084
+	}
+
 	log {
 		output stdout
 		format json

@@ -12,6 +12,7 @@ COPY go.work ./
 COPY pkg/go.mod pkg/go.sum ./pkg/
 COPY identity/go.mod identity/go.sum ./identity/
 COPY activity-sync/go.mod activity-sync/go.sum ./activity-sync/
+COPY social-graph/go.mod ./social-graph/
 
 RUN cd activity-sync && go mod download
 RUN cd pkg && go mod download

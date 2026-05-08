@@ -4,4 +4,5 @@ use (
 	./activity-sync
 	./identity
 	./pkg
+	./social-graph
 )
