@@ -299,12 +299,19 @@ func (s *Service) SendMessage(ctx context.Context, in SendMessageInput) (*domain
 		return nil, false, domain.ErrInvalidArg
 	}
 
-	isMember, _, err := s.members.IsMember(ctx, in.ConvID, in.SenderID)
+	// Phase L: load full member status (role + muted_until) для permission gate.
+	st, err := s.members.MemberStatus(ctx, in.ConvID, in.SenderID)
 	if err != nil {
 		return nil, false, err
 	}
-	if !isMember {
+	if !st.IsMember {
 		return nil, false, domain.ErrNotMember
+	}
+	if !permissions.CanSend(st.Role) {
+		return nil, false, domain.ErrForbidden
+	}
+	if st.MutedUntil != nil && st.MutedUntil.After(time.Now()) {
+		return nil, false, domain.ErrForbidden
 	}
 
 	memberIDs, err := s.members.MemberIDs(ctx, in.ConvID)

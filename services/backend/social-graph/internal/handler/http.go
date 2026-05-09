@@ -85,6 +85,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /reports/me", h.requireAuth(h.myReports))
 	mux.HandleFunc("GET /admin/reports", h.requireAuth(h.adminListReports))
 	mux.HandleFunc("POST /admin/reports/{id}/resolve", h.requireAuth(h.adminResolveReport))
+	mux.HandleFunc("GET /admin/audit", h.requireAuth(h.adminAuditLog))
 
 	return loggingMiddleware(h.log)(mux)
 }

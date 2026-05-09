@@ -271,6 +271,7 @@ services:
     container_name: re_gateway
     volumes:
       - ./gateway/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - ./gateway/admin:/srv/admin:ro
       - caddy_data:/data
       - caddy_config:/config
     ports:

@@ -110,6 +110,17 @@ tsc clean, jest **268/268 passing** (+3 isAdminRole).
 
 tsc clean, jest **297/297 passing** (+29 permissions). Go tests green (matrix unit tests).
 
+**Phase 8 / L — ABAC + muted + audit + web admin** ✅:
+- **ABAC**: `Subject.Attributes` + `ResourceContext.Attributes`. Example rules: `post.create kind=video` требует `is_premium`; `story.create overlay_length>100` требует premium. `PgLoader` derive-ит `is_premium` из `global_role` (premium/moderator/admin).
+- **muted_until enforcement**: новый `MemberRepo.MemberStatus(convID, userID) → (role, mutedUntil)`. `messaging::SendMessage` блокирует на `mutedUntil > now → 403`. Permission matrix включает muted check на `message.send` + `message.react`.
+- **`pkg/audit` shared library**: `Logger.Log(Entry{ActorID, Capability, Action, TargetKind, TargetID, Before, After, Metadata})`. Wired into feed `DeletePost / DeleteComment / Delete(story)` — все state-changing actions пишут в `audit_log` с capability ID в metadata.
+- **`/admin/audit` endpoint** — последние 50 audit entries; admin/moderator only.
+- **Web admin dashboard** — статический HTML/JS (`gateway/admin/index.html`) сервится через Caddy `/admin/`. Login → reports queue с табами по статусу + audit log table. Resolve buttons: delete/warn/ban/no_action. Vanilla JS + fetch API; без npm/build. Mounted в gateway container через volume.
+- **Mobile**: `modules/permissions` mirror — `Attributes` + `mutedUntil` в `ResourceContext` + те же ABAC rules. **8 новых mobile тестов** (mirror).
+- **E2E smoke** (`scripts/smoke_abac_muted.py`): muted-send 403, unmuted ok, `/admin/audit` returns capability в metadata, `/admin/` HTML 200. Pass.
+
+tsc clean, jest **305/305 passing** (+8). 8 smoke scripts. 13 коммитов под Phase 8 (A→L).
+
 ## Phase 1 progress
 
 | Подсекция | Статус | Что готово |

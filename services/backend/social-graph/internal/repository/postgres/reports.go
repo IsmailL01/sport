@@ -139,6 +139,34 @@ func (r *AuditRepo) Log(ctx context.Context, in AuditInput) error {
 	return err
 }
 
+// ListRecent — последние N audit entries для admin web UI / forensics.
+func (r *AuditRepo) ListRecent(ctx context.Context, limit int) ([]*domain.AuditEntry, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, actor_id, action, target_kind, target_id,
+		       before_data, after_data, metadata, created_at
+		FROM audit_log
+		ORDER BY created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*domain.AuditEntry, 0, limit)
+	for rows.Next() {
+		var e domain.AuditEntry
+		if err := rows.Scan(
+			&e.ID, &e.ActorID, &e.Action, &e.TargetKind, &e.TargetID,
+			&e.Before, &e.After, &e.Metadata, &e.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, &e)
+	}
+	return out, rows.Err()
+}
+
 func (r *AuditRepo) ListByActor(ctx context.Context, actorID string, limit int) ([]*domain.AuditEntry, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, actor_id, action, target_kind, target_id,

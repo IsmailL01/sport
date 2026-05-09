@@ -232,6 +232,112 @@ func TestStoryViewersListOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestABACVideoRequiresPremium(t *testing.T) {
+	now := time.Now()
+	subj := auth(GlobalUser)
+
+	// Video without premium → deny.
+	d := Check(subj, CapPostCreate, ResourceContext{
+		Attributes: Attributes{"kind": "video"}, Now: now,
+	})
+	if d.Allow {
+		t.Errorf("non-premium video should deny, got %s", d.Reason)
+	}
+	if d.Reason != "premium_required" {
+		t.Errorf("expected premium_required, got %s", d.Reason)
+	}
+	// Video with premium → allow.
+	premium := auth(GlobalUser)
+	premium.Attributes = Attributes{"is_premium": true}
+	d = Check(premium, CapPostCreate, ResourceContext{
+		Attributes: Attributes{"kind": "video"}, Now: now,
+	})
+	if !d.Allow {
+		t.Errorf("premium video should allow, got %s", d.Reason)
+	}
+	// Photo without premium → allow (other kinds unaffected).
+	d = Check(subj, CapPostCreate, ResourceContext{
+		Attributes: Attributes{"kind": "photo"}, Now: now,
+	})
+	if !d.Allow {
+		t.Errorf("non-premium photo should allow, got %s", d.Reason)
+	}
+}
+
+func TestABACLongOverlayRequiresPremium(t *testing.T) {
+	now := time.Now()
+	subj := auth(GlobalUser)
+	// Overlay > 100 chars + non-premium.
+	d := Check(subj, CapStoryCreate, ResourceContext{
+		Attributes: Attributes{"overlay_length": 150}, Now: now,
+	})
+	if d.Allow {
+		t.Errorf("non-premium long overlay should deny, got %s", d.Reason)
+	}
+	// Overlay <= 100 chars → fine.
+	d = Check(subj, CapStoryCreate, ResourceContext{
+		Attributes: Attributes{"overlay_length": 50}, Now: now,
+	})
+	if !d.Allow {
+		t.Errorf("short overlay should allow, got %s", d.Reason)
+	}
+}
+
+func TestMutedBlocksSend(t *testing.T) {
+	now := time.Now()
+	subj := auth(GlobalUser)
+	muteUntil := now.Add(time.Hour)
+	d := Check(subj, CapMessageSend, ResourceContext{
+		MyConvRole: ConvMember, MutedUntil: &muteUntil, Now: now,
+	})
+	if d.Allow {
+		t.Error("muted user should not send")
+	}
+	if d.Reason != "muted" {
+		t.Errorf("expected muted, got %s", d.Reason)
+	}
+	// Expired mute — allow.
+	expired := now.Add(-time.Hour)
+	d = Check(subj, CapMessageSend, ResourceContext{
+		MyConvRole: ConvMember, MutedUntil: &expired, Now: now,
+	})
+	if !d.Allow {
+		t.Errorf("expired mute should allow, got %s", d.Reason)
+	}
+}
+
+func TestMutedBlocksReact(t *testing.T) {
+	now := time.Now()
+	subj := auth(GlobalUser)
+	muteUntil := now.Add(time.Hour)
+	d := Check(subj, CapMessageReact, ResourceContext{
+		MyConvRole: ConvMember, MutedUntil: &muteUntil, Now: now,
+	})
+	if d.Allow {
+		t.Error("muted user should not react")
+	}
+}
+
+func TestAttributesHelpers(t *testing.T) {
+	a := Attributes{"is_premium": true, "kind": "video"}
+	if !a.GetBool("is_premium") {
+		t.Error("GetBool failed")
+	}
+	if a.GetBool("missing") {
+		t.Error("GetBool missing should be false")
+	}
+	if a.GetString("kind") != "video" {
+		t.Error("GetString failed")
+	}
+	if a.GetString("missing") != "" {
+		t.Error("GetString missing should be empty")
+	}
+	var nilAttrs Attributes
+	if nilAttrs.GetBool("any") {
+		t.Error("nil Attributes should not panic")
+	}
+}
+
 func TestRoleHierarchy(t *testing.T) {
 	if !IsModerator(GlobalAdmin) {
 		t.Error("admin should be moderator+")

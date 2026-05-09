@@ -3,6 +3,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/runningecosystem/backend/social-graph/internal/domain"
@@ -117,6 +118,43 @@ func (h *Handler) adminListReports(w http.ResponseWriter, r *http.Request) {
 	out := make([]reportDTO, len(reports))
 	for i, r := range reports {
 		out[i] = reportToDTO(r)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) adminAuditLog(w http.ResponseWriter, r *http.Request) {
+	actorID := userIDFromContext(r.Context())
+	limit := 50
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	entries, err := h.svc.AdminAuditLog(ctx, actorID, limit)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	type entryDTO struct {
+		ID         int64          `json:"id"`
+		ActorID    *string        `json:"actorId"`
+		Action     string         `json:"action"`
+		TargetKind string         `json:"targetKind"`
+		TargetID   string         `json:"targetId"`
+		Metadata   map[string]any `json:"metadata,omitempty"`
+		CreatedAt  int64          `json:"createdAt"`
+	}
+	out := make([]entryDTO, len(entries))
+	for i, e := range entries {
+		dto := entryDTO{
+			ID:         e.ID,
+			ActorID:    e.ActorID,
+			Action:     e.Action,
+			TargetKind: e.TargetKind,
+			TargetID:   e.TargetID,
+			CreatedAt:  e.CreatedAt.UnixMilli(),
+		}
+		if len(e.Metadata) > 0 {
+			_ = json.Unmarshal(e.Metadata, &dto.Metadata)
+		}
+		out[i] = dto
 	}
 	writeJSON(w, http.StatusOK, out)
 }

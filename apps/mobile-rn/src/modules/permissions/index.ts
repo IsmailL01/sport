@@ -84,6 +84,22 @@ export function convRoleAtLeast(actor: ConvRole | '' | undefined, min: ConvRole)
   return convRoleRank(actor) >= convRoleRank(min);
 }
 
+// === Attributes (ABAC) ===
+
+export type Attributes = Record<string, unknown>;
+
+export function attrBool(a: Attributes | undefined, key: string): boolean {
+  if (!a) return false;
+  const v = a[key];
+  return typeof v === 'boolean' && v;
+}
+
+export function attrString(a: Attributes | undefined, key: string): string {
+  if (!a) return '';
+  const v = a[key];
+  return typeof v === 'string' ? v : '';
+}
+
 // === Subject ===
 
 export type Subject = {
@@ -92,6 +108,8 @@ export type Subject = {
   /** ms epoch UTC; null если не забанен. */
   bannedUntil: number | null;
   isAuthenticated: boolean;
+  /** ABAC subject attributes (is_premium, country, etc). */
+  attributes?: Attributes;
 };
 
 export function isBanned(s: Subject, nowMs: number = Date.now()): boolean {
@@ -107,10 +125,14 @@ export type ResourceContext = {
   newConvRole?: ConvRole;
   ownerCount?: number;
   actorIsTarget?: boolean;
+  /** ms epoch UTC; null если не замьючен в conv. Phase L. */
+  mutedUntil?: number | null;
   /** ms epoch UTC */
   createdAt?: number;
   /** ms epoch UTC; default Date.now() */
   now?: number;
+  /** ABAC resource attributes (kind, visibility, overlay_length). */
+  attributes?: Attributes;
 };
 
 // === Decision ===
@@ -166,6 +188,19 @@ export function check(
     }
   }
 
+  // === Phase L: ABAC examples ===
+  if (cap === 'post.create') {
+    if (attrString(ctx.attributes, 'kind') === 'video' && !attrBool(subject.attributes, 'is_premium')) {
+      return deny('premium_required');
+    }
+  }
+  if (cap === 'story.create') {
+    const len = ctx.attributes?.['overlay_length'];
+    if (typeof len === 'number' && len > 100 && !attrBool(subject.attributes, 'is_premium')) {
+      return deny('premium_required');
+    }
+  }
+
   switch (cap) {
     // Ownership-required.
     case 'message.delete_own':
@@ -190,12 +225,14 @@ export function check(
     case 'message.send':
       if (!ctx.myConvRole) return deny('not_member');
       if (ctx.myConvRole === 'restricted') return deny('restricted');
+      if (ctx.mutedUntil != null && ctx.mutedUntil > now) return deny('muted');
       return ALLOW;
 
     case 'message.react':
       if (!ctx.myConvRole || ctx.myConvRole === 'restricted') {
         return deny('restricted_or_not_member');
       }
+      if (ctx.mutedUntil != null && ctx.mutedUntil > now) return deny('muted');
       return ALLOW;
 
     case 'message.delete_others':

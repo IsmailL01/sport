@@ -165,3 +165,47 @@ describe('permissions: hierarchy helpers', () => {
     expect(globalRoleRank('moderator')).toBeGreaterThan(globalRoleRank('user'));
   });
 });
+
+describe('permissions: ABAC video premium', () => {
+  it('non-premium video denied', () => {
+    const d = check(user(), 'post.create', { attributes: { kind: 'video' }, now: NOW });
+    expect(d.allow).toBe(false);
+    expect(d.reason).toBe('premium_required');
+  });
+  it('premium video allowed', () => {
+    const subj: Subject = { ...user(), attributes: { is_premium: true } };
+    expect(allow(subj, 'post.create', { attributes: { kind: 'video' }, now: NOW })).toBe(true);
+  });
+  it('non-premium photo allowed', () => {
+    expect(allow(user(), 'post.create', { attributes: { kind: 'photo' }, now: NOW })).toBe(true);
+  });
+});
+
+describe('permissions: ABAC story overlay length', () => {
+  it('non-premium long overlay denied', () => {
+    expect(allow(user(), 'story.create', { attributes: { overlay_length: 150 }, now: NOW })).toBe(false);
+  });
+  it('non-premium short overlay allowed', () => {
+    expect(allow(user(), 'story.create', { attributes: { overlay_length: 50 }, now: NOW })).toBe(true);
+  });
+});
+
+describe('permissions: muted_until enforcement', () => {
+  it('muted user cannot send', () => {
+    const d = check(user(), 'message.send', {
+      myConvRole: 'member', mutedUntil: NOW + 60_000, now: NOW,
+    });
+    expect(d.allow).toBe(false);
+    expect(d.reason).toBe('muted');
+  });
+  it('expired mute allowed', () => {
+    expect(allow(user(), 'message.send', {
+      myConvRole: 'member', mutedUntil: NOW - 60_000, now: NOW,
+    })).toBe(true);
+  });
+  it('muted user cannot react', () => {
+    expect(allow(user(), 'message.react', {
+      myConvRole: 'member', mutedUntil: NOW + 60_000, now: NOW,
+    })).toBe(false);
+  });
+});

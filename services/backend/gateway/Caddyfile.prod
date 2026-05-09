@@ -39,6 +39,26 @@ s3.148-253-214-156.sslip.io {
 		respond `{"status":"ok"}` 200
 	}
 
+	# Phase L: web admin dashboard (static HTML/JS).
+	# Сервит /admin/index.html на /admin (с trailing slash) и сам файл на /admin/.
+	# Внимание: handle /admin/* выше handle /admin/reports* — Caddy matches
+	# первый matching block, поэтому у нас отдельный block ДО reverse_proxy для
+	# /admin/* fallthrough к feed/social-graph (см. ниже).
+	handle /admin {
+		root * /srv/admin
+		try_files /index.html
+		file_server
+	}
+	handle /admin/ {
+		root * /srv/admin
+		try_files /index.html
+		file_server
+	}
+	handle /admin/index.html {
+		root * /srv/admin
+		file_server
+	}
+
 	# Identity service.
 	handle /auth/* {
 		reverse_proxy identity:8081

@@ -2,6 +2,32 @@ package permissions
 
 import "time"
 
+// Attributes — generic ABAC bag. Поля специфичны для домена.
+//
+// Examples:
+//   subject.Attributes["is_premium"] = true
+//   resource.Attributes["kind"] = "video"
+//   resource.Attributes["visibility"] = "followers"
+type Attributes map[string]any
+
+// GetBool — typed accessor. Default = false.
+func (a Attributes) GetBool(key string) bool {
+	if a == nil {
+		return false
+	}
+	v, ok := a[key].(bool)
+	return ok && v
+}
+
+// GetString — typed accessor. Default = "".
+func (a Attributes) GetString(key string) string {
+	if a == nil {
+		return ""
+	}
+	v, _ := a[key].(string)
+	return v
+}
+
 // Subject — actor performing the action. Loaded once per request.
 type Subject struct {
 	UserID      string
@@ -9,6 +35,8 @@ type Subject struct {
 	BannedUntil *time.Time
 	// IsAuthenticated — false для anon-checks (gating публичных ручек).
 	IsAuthenticated bool
+	// Attributes — ABAC subject-side. Premium, country, accountAge, etc.
+	Attributes Attributes
 }
 
 // IsBanned — check ban status against given clock.
@@ -34,11 +62,19 @@ type ResourceContext struct {
 	OwnerCount int
 	// ActorIsTarget — для self-actions (нельзя promote себя).
 	ActorIsTarget bool
+	// MutedUntil — Phase L: если actor замьючен в этой conv. Блокирует
+	// CapMessageSend / CapMessageReact пока now < MutedUntil.
+	MutedUntil *time.Time
 
 	// === Time-window policy ===
 
 	// CreatedAt — для CapMessageEditOwn: проверяем что в окне.
 	CreatedAt time.Time
+
+	// === ABAC ===
+
+	// Attributes — resource-side (kind, visibility, isExclusive, etc).
+	Attributes Attributes
 
 	// === Clock ===
 
@@ -96,6 +132,22 @@ func Check(subject Subject, cap Capability, ctx ResourceContext) Decision {
 		}
 	}
 
+	// === Phase L: ABAC examples (rules over attributes) ===
+	// Premium-only: видеопосты требуют premium account.
+	if cap == CapPostCreate {
+		if ctx.Attributes.GetString("kind") == "video" && !subject.Attributes.GetBool("is_premium") {
+			return deny("premium_required")
+		}
+	}
+	// Stories с overlay > 100 chars — premium feature.
+	if cap == CapStoryCreate {
+		if l, ok := ctx.Attributes["overlay_length"].(int); ok && l > 100 {
+			if !subject.Attributes.GetBool("is_premium") {
+				return deny("premium_required")
+			}
+		}
+	}
+
 	// === Per-capability policy ===
 	switch cap {
 
@@ -133,11 +185,19 @@ func Check(subject Subject, cap Capability, ctx ResourceContext) Decision {
 		if ctx.MyConvRole == ConvRestricted {
 			return deny("restricted")
 		}
+		// Phase L: muted_until check — owner/admin сами могут muted, проверяем
+		// независимо от роли.
+		if ctx.MutedUntil != nil && ctx.MutedUntil.After(now) {
+			return deny("muted")
+		}
 		return allow()
 
 	case CapMessageReact:
 		if ctx.MyConvRole == "" || ctx.MyConvRole == ConvRestricted {
 			return deny("restricted_or_not_member")
+		}
+		if ctx.MutedUntil != nil && ctx.MutedUntil.After(now) {
+			return deny("muted")
 		}
 		return allow()
 

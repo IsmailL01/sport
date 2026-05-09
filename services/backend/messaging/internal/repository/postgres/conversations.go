@@ -313,6 +313,31 @@ func (r *MemberRepo) IsMember(ctx context.Context, convID, userID string) (bool,
 	return true, role, nil
 }
 
+// MemberStatus — расширенный member-чек: role + muted_until для permission gating.
+// Single PK lookup; не дороже IsMember.
+type MemberStatus struct {
+	IsMember    bool
+	Role        domain.MemberRole
+	MutedUntil  *time.Time
+}
+
+func (r *MemberRepo) MemberStatus(ctx context.Context, convID, userID string) (MemberStatus, error) {
+	var role domain.MemberRole
+	var muted *time.Time
+	err := r.pool.QueryRow(ctx,
+		`SELECT role, muted_until FROM conversation_members
+		 WHERE conversation_id=$1 AND user_id=$2`,
+		convID, userID,
+	).Scan(&role, &muted)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MemberStatus{}, nil
+	}
+	if err != nil {
+		return MemberStatus{}, err
+	}
+	return MemberStatus{IsMember: true, Role: role, MutedUntil: muted}, nil
+}
+
 func (r *MemberRepo) MemberIDs(ctx context.Context, convID string) ([]string, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT user_id FROM conversation_members WHERE conversation_id=$1`,

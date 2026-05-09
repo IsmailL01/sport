@@ -80,6 +80,16 @@ func (s *Service) AdminListReports(
 	return s.reports.ListByStatus(ctx, status, defaultListLimit)
 }
 
+// AdminAuditLog — последние N audit entries. Admin / moderator only.
+func (s *Service) AdminAuditLog(
+	ctx context.Context, actorID string, limit int,
+) ([]*domain.AuditEntry, error) {
+	if err := s.requireAdmin(ctx, actorID); err != nil {
+		return nil, err
+	}
+	return s.audit.ListRecent(ctx, limit)
+}
+
 // AdminResolveReport — закрыть report решением. Forbidden если не admin.
 type ResolveInput struct {
 	Action domain.ResolutionAction

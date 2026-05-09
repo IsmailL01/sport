@@ -12,6 +12,7 @@ import (
 
 	"github.com/runningecosystem/backend/feed/internal/domain"
 	"github.com/runningecosystem/backend/feed/internal/repository/postgres"
+	"github.com/runningecosystem/backend/pkg/audit"
 	"github.com/runningecosystem/backend/pkg/permissions"
 )
 
@@ -133,7 +134,23 @@ func (s *Service) DeletePost(ctx context.Context, actorID, postID string) error 
 	}) {
 		return domain.ErrForbidden
 	}
-	return s.posts.SoftDelete(ctx, postID)
+	if err := s.posts.SoftDelete(ctx, postID); err != nil {
+		return err
+	}
+	if s.audit != nil {
+		s.audit.LogQuiet(ctx, audit.Entry{
+			ActorID:    &actorID,
+			Capability: cap,
+			Action:     "delete_post",
+			TargetKind: "post",
+			TargetID:   postID,
+			Metadata: map[string]any{
+				"author_id": post.AuthorID,
+				"kind":      string(post.Kind),
+			},
+		})
+	}
+	return nil
 }
 
 // HomeFeed — chronological. Cursor-pagination.
@@ -240,33 +257,57 @@ func (s *Service) DeleteComment(
 	}
 	subject := s.loadSubject(ctx, actorID)
 
+	var usedCap permissions.Capability
+	allowed := false
+
 	// Path 1: автор коммента — DeleteOwn capability.
 	if c.AuthorID == actorID {
 		if permissions.Allow(subject, permissions.CapCommentDeleteOwn,
 			permissions.ResourceContext{OwnerID: c.AuthorID}) {
-			return s.posts.SoftDeleteComment(ctx, commentID)
+			allowed = true
+			usedCap = permissions.CapCommentDeleteOwn
 		}
+	}
+
+	if !allowed {
+		// Path 2: post-owner — на свой пост может удалять чужие комменты.
+		post, err := s.posts.GetByID(ctx, postID)
+		if err != nil {
+			return err
+		}
+		if post.AuthorID == actorID && !subject.IsBanned(timeNow()) {
+			allowed = true
+			usedCap = permissions.CapCommentDeleteOthers // Treated as moderation by post-owner.
+		}
+	}
+
+	if !allowed {
+		// Path 3: global moderator / admin.
+		if permissions.Allow(subject, permissions.CapCommentDeleteOthers,
+			permissions.ResourceContext{OwnerID: c.AuthorID}) {
+			allowed = true
+			usedCap = permissions.CapCommentDeleteOthers
+		}
+	}
+
+	if !allowed {
 		return domain.ErrForbidden
 	}
-
-	// Path 2: post-owner — на свой пост может удалять чужие комменты.
-	post, err := s.posts.GetByID(ctx, postID)
-	if err != nil {
+	if err := s.posts.SoftDeleteComment(ctx, commentID); err != nil {
 		return err
 	}
-	if post.AuthorID == actorID {
-		// Здесь cap=DeleteOthers, но ownership хоста-поста — отдельный case.
-		// pkg/permissions не знает о post-ownership коммента, проверяем явно.
-		if subject.IsBanned(timeNow()) {
-			return domain.ErrForbidden
-		}
-		return s.posts.SoftDeleteComment(ctx, commentID)
+	if s.audit != nil {
+		s.audit.LogQuiet(ctx, audit.Entry{
+			ActorID:    &actorID,
+			Capability: usedCap,
+			Action:     "delete_comment",
+			TargetKind: "comment",
+			TargetID:   commentID,
+			Metadata: map[string]any{
+				"post_id":           postID,
+				"comment_author_id": c.AuthorID,
+			},
+		})
 	}
-
-	// Path 3: global moderator / admin.
-	if permissions.Allow(subject, permissions.CapCommentDeleteOthers,
-		permissions.ResourceContext{OwnerID: c.AuthorID}) {
-		return s.posts.SoftDeleteComment(ctx, commentID)
-	}
-	return domain.ErrForbidden
+	return nil
 }

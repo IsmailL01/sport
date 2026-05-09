@@ -55,14 +55,21 @@ func (l *PgLoader) LoadSubject(ctx context.Context, userID string) (Subject, err
 				UserID:          userID,
 				GlobalRole:      GlobalUser,
 				IsAuthenticated: true,
+				Attributes:      Attributes{"is_premium": false},
 			}, nil
 		}
 		return Subject{}, err
 	}
+	gr := GlobalRole(role)
 	return Subject{
 		UserID:          userID,
-		GlobalRole:      GlobalRole(role),
+		GlobalRole:      gr,
 		BannedUntil:     banned,
 		IsAuthenticated: true,
+		Attributes: Attributes{
+			// Phase L: is_premium derived from global_role; будущее — отдельная
+			// колонка subscription_until либо отдельная таблица subscriptions.
+			"is_premium": gr == GlobalPremium || gr == GlobalModerator || gr == GlobalAdmin,
+		},
 	}, nil
 }

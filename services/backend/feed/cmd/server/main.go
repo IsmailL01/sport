@@ -19,6 +19,7 @@ import (
 	"github.com/runningecosystem/backend/feed/internal/handler"
 	"github.com/runningecosystem/backend/feed/internal/repository/postgres"
 	"github.com/runningecosystem/backend/feed/internal/service"
+	"github.com/runningecosystem/backend/pkg/audit"
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/permissions"
 	"github.com/runningecosystem/backend/pkg/ratelimit"
@@ -73,7 +74,8 @@ func run() error {
 	storyRepo := postgres.NewStoryRepo(pool)
 	postRepo := postgres.NewPostRepo(pool)
 	permLoader := permissions.NewPgLoader(pool)
-	svc := service.New(storyRepo, postRepo, nc, permLoader)
+	auditLogger := audit.New(pool)
+	svc := service.New(storyRepo, postRepo, nc, permLoader, auditLogger)
 
 	limiter, err := ratelimit.New(redisURL)
 	if err != nil {

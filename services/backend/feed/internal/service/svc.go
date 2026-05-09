@@ -12,6 +12,7 @@ import (
 
 	"github.com/runningecosystem/backend/feed/internal/domain"
 	"github.com/runningecosystem/backend/feed/internal/repository/postgres"
+	"github.com/runningecosystem/backend/pkg/audit"
 	"github.com/runningecosystem/backend/pkg/permissions"
 )
 
@@ -24,6 +25,8 @@ type Service struct {
 	// permLoader — lookup global_role + banned_until per actor.
 	// nil → fallback на ownership-only checks (legacy behavior).
 	permLoader permissions.SubjectLoader
+	// audit — best-effort audit_log writer. nil → no logging.
+	audit *audit.Logger
 }
 
 func New(
@@ -31,8 +34,12 @@ func New(
 	posts *postgres.PostRepo,
 	nc *nats.Conn,
 	permLoader permissions.SubjectLoader,
+	auditLogger *audit.Logger,
 ) *Service {
-	return &Service{stories: stories, posts: posts, nc: nc, permLoader: permLoader}
+	return &Service{
+		stories: stories, posts: posts, nc: nc,
+		permLoader: permLoader, audit: auditLogger,
+	}
 }
 
 // loadSubject — best-effort. На loader-error → unauth Subject (deny всё).
@@ -161,7 +168,21 @@ func (s *Service) Delete(ctx context.Context, actorID, storyID string) error {
 	}) {
 		return domain.ErrForbidden
 	}
-	return s.stories.SoftDelete(ctx, storyID)
+	if err := s.stories.SoftDelete(ctx, storyID); err != nil {
+		return err
+	}
+	// Phase L: audit log с capability ID.
+	if s.audit != nil {
+		s.audit.LogQuiet(ctx, audit.Entry{
+			ActorID:    &actorID,
+			Capability: cap,
+			Action:     "delete_story",
+			TargetKind: "story",
+			TargetID:   storyID,
+			Metadata:   map[string]any{"author_id": story.AuthorID},
+		})
+	}
+	return nil
 }
 
 // CleanupExpired — вызывается из cron sidecar.

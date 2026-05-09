@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Running Ecosystem · Admin</title>
+  <style>
+    :root {
+      --border: #E5E7EB;
+      --border-strong: #D1D5DB;
+      --text: #111827;
+      --muted: #6B7280;
+      --bg: #FFFFFF;
+      --bg-subtle: #F9FAFB;
+      --accent: #111827;
+      --danger: #B91C1C;
+      --success: #059669;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0; color: var(--text); background: var(--bg-subtle);
+    }
+    header {
+      background: var(--bg); border-bottom: 1px solid var(--border);
+      padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { margin: 0; font-size: 18px; font-weight: 700; }
+    header .who { color: var(--muted); font-size: 13px; }
+    main { max-width: 980px; margin: 24px auto; padding: 0 24px; }
+    section {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 16px; margin-bottom: 16px;
+    }
+    section h2 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
+    button {
+      cursor: pointer; padding: 8px 14px; border-radius: 6px;
+      border: 1px solid var(--border-strong); background: var(--bg);
+      color: var(--text); font-weight: 500;
+    }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.danger  { color: var(--danger); border-color: #FCA5A5; }
+    input, select {
+      padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);
+      font: inherit; background: var(--bg);
+    }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .tabs button.active {
+      background: var(--accent); color: #fff; border-color: var(--accent);
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      padding: 8px 10px; text-align: left;
+      border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    code {
+      background: var(--bg-subtle); padding: 1px 4px; border-radius: 3px;
+      font-size: 12px;
+    }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; font-weight: 600;
+      border: 1px solid var(--border);
+    }
+    .badge.open       { background: #FEF3C7; border-color: #FDE68A; color: #92400E; }
+    .badge.review     { background: #DBEAFE; border-color: #BFDBFE; color: #1E40AF; }
+    .badge.resolved   { background: #D1FAE5; border-color: #A7F3D0; color: #065F46; }
+    .badge.rejected   { background: #FEE2E2; border-color: #FECACA; color: #991B1B; }
+    .empty { color: var(--muted); text-align: center; padding: 32px; }
+    .err { color: var(--danger); padding: 8px; background: #FEE2E2; border-radius: 6px; }
+    #login { max-width: 380px; margin: 64px auto; }
+    #login input { width: 100%; margin-bottom: 8px; }
+    .hidden { display: none; }
+    .meta {
+      color: var(--muted); font-size: 11px; font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+
+<div id="login" class="hidden">
+  <section>
+    <h2>Admin login</h2>
+    <input id="login-email"    type="email"    placeholder="email">
+    <input id="login-password" type="password" placeholder="password">
+    <div class="row">
+      <button id="login-btn" class="primary">Войти</button>
+      <span id="login-err" class="err hidden"></span>
+    </div>
+    <p class="meta" style="margin-top:12px">
+      Только moderator/admin global_role могут видеть admin-функции.
+      Для promote: <code>UPDATE profiles SET global_role='admin' WHERE user_id=...</code>
+    </p>
+  </section>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>🛡 Running Ecosystem · Admin</h1>
+    <div class="row">
+      <span class="who" id="who"></span>
+      <button id="logout-btn">Выйти</button>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Reports queue</h2>
+      <div class="tabs">
+        <button data-status="open" class="tab active">Open</button>
+        <button data-status="under_review" class="tab">In review</button>
+        <button data-status="resolved" class="tab">Resolved</button>
+        <button data-status="rejected" class="tab">Rejected</button>
+        <button id="refresh-reports" style="margin-left:auto">↻ Обновить</button>
+      </div>
+      <div id="reports-area"></div>
+    </section>
+
+    <section>
+      <h2>Audit log (recent 50)</h2>
+      <button id="refresh-audit">↻ Обновить</button>
+      <div id="audit-area" style="margin-top:12px"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const BASE = location.origin;
+const LS_TOKEN = "admin_access";
+
+let state = {
+  token: localStorage.getItem(LS_TOKEN),
+  user: null,
+  reportsStatus: "open",
+};
+
+function show(id) { document.getElementById(id).classList.remove("hidden"); }
+function hide(id) { document.getElementById(id).classList.add("hidden"); }
+
+async function api(method, path, body) {
+  const headers = { "Accept": "application/json" };
+  if (state.token) headers["Authorization"] = "Bearer " + state.token;
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const resp = await fetch(BASE + path, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (resp.status === 204) return null;
+  const text = await resp.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
+  if (!resp.ok) {
+    const err = new Error("HTTP " + resp.status);
+    err.status = resp.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+async function login(email, password) {
+  const data = await api("POST", "/auth/login", { email, password });
+  state.token = data.accessToken;
+  state.user = data.user;
+  localStorage.setItem(LS_TOKEN, state.token);
+}
+
+async function logout() {
+  state.token = null;
+  state.user = null;
+  localStorage.removeItem(LS_TOKEN);
+  hide("app");
+  show("login");
+}
+
+async function bootstrap() {
+  if (!state.token) {
+    show("login");
+    return;
+  }
+  // Validate by fetching /me.
+  try {
+    const me = await api("GET", "/me");
+    state.user = me;
+    // Check role (we'll see whether admin endpoints work below).
+    const profile = await api("GET", `/profiles/${me.id}`);
+    if (profile.globalRole !== "admin" && profile.globalRole !== "moderator") {
+      document.getElementById("who").textContent = profile.globalRole + " (no admin access)";
+    } else {
+      document.getElementById("who").textContent = me.email + " · " + profile.globalRole;
+    }
+    show("app");
+    await loadReports();
+    await loadAudit();
+  } catch (e) {
+    if (e.status === 401) { logout(); return; }
+    alert("Bootstrap failed: " + e.message);
+  }
+}
+
+async function loadReports() {
+  const area = document.getElementById("reports-area");
+  area.innerHTML = "<p class='empty'>Загрузка…</p>";
+  try {
+    const list = await api("GET", "/admin/reports?status=" + state.reportsStatus);
+    if (!list || list.length === 0) {
+      area.innerHTML = "<p class='empty'>Очередь пуста</p>";
+      return;
+    }
+    area.innerHTML = "";
+    const table = document.createElement("table");
+    table.innerHTML = `
+      <thead><tr>
+        <th>Type</th><th>Reason</th><th>Target</th><th>Reporter</th>
+        <th>Body</th><th>Status</th><th>Created</th><th></th>
+      </tr></thead>
+      <tbody></tbody>`;
+    const tbody = table.querySelector("tbody");
+    for (const r of list) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><code>${r.targetKind}</code></td>
+        <td>${r.reason}</td>
+        <td><code>${r.targetId.slice(0,8)}…</code></td>
+        <td><code>${r.reporterId.slice(0,8)}…</code></td>
+        <td>${(r.body || "").replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</td>
+        <td><span class="badge ${r.status === 'under_review' ? 'review' : r.status}">${r.status}</span></td>
+        <td class="meta">${new Date(r.createdAt).toLocaleString('ru-RU')}</td>
+        <td></td>`;
+      const td = tr.lastChild;
+      if (r.status === "open" || r.status === "under_review") {
+        for (const action of ["delete", "warn", "ban", "no_action"]) {
+          const btn = document.createElement("button");
+          btn.textContent = action;
+          btn.style.marginRight = "4px";
+          if (action === "delete" || action === "ban") btn.classList.add("danger");
+          btn.onclick = async () => {
+            if (!confirm(`${action} for report ${r.id}?`)) return;
+            try {
+              await api("POST", `/admin/reports/${r.id}/resolve`, { action });
+              await loadReports();
+              await loadAudit();
+            } catch (e) {
+              alert("Resolve failed: " + (e.data?.message || e.message));
+            }
+          };
+          td.appendChild(btn);
+        }
+      } else if (r.resolutionAction) {
+        td.textContent = "→ " + r.resolutionAction;
+      }
+      tbody.appendChild(tr);
+    }
+    area.appendChild(table);
+  } catch (e) {
+    if (e.status === 403) {
+      area.innerHTML = "<p class='err'>403: нужна global_role admin/moderator</p>";
+    } else {
+      area.innerHTML = "<p class='err'>" + (e.data?.message || e.message) + "</p>";
+    }
+  }
+}
+
+async function loadAudit() {
+  const area = document.getElementById("audit-area");
+  area.innerHTML = "<p class='empty'>Загрузка…</p>";
+  try {
+    const list = await api("GET", "/admin/audit");
+    if (!list || list.length === 0) {
+      area.innerHTML = "<p class='empty'>Лог пуст</p>";
+      return;
+    }
+    const table = document.createElement("table");
+    table.innerHTML = `
+      <thead><tr>
+        <th>When</th><th>Actor</th><th>Action</th><th>Capability</th>
+        <th>Target</th><th>Meta</th>
+      </tr></thead><tbody></tbody>`;
+    const tbody = table.querySelector("tbody");
+    for (const e of list) {
+      const meta = e.metadata || {};
+      const cap = meta.capability || "";
+      delete meta.capability;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="meta">${new Date(e.createdAt).toLocaleString('ru-RU')}</td>
+        <td><code>${(e.actorId || 'system').slice(0,8)}…</code></td>
+        <td>${e.action}</td>
+        <td><code>${cap}</code></td>
+        <td><code>${e.targetKind}/${(e.targetId || '').slice(0,8)}…</code></td>
+        <td class="meta">${JSON.stringify(meta)}</td>`;
+      tbody.appendChild(tr);
+    }
+    area.innerHTML = "";
+    area.appendChild(table);
+  } catch (e) {
+    if (e.status === 403) {
+      area.innerHTML = "<p class='err'>403: нужна global_role admin/moderator</p>";
+    } else {
+      area.innerHTML = "<p class='err'>" + (e.data?.message || e.message) + "</p>";
+    }
+  }
+}
+
+document.getElementById("login-btn").onclick = async () => {
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  const errEl = document.getElementById("login-err");
+  errEl.classList.add("hidden");
+  try {
+    await login(email, password);
+    hide("login");
+    show("app");
+    await bootstrap();
+  } catch (e) {
+    errEl.textContent = "Ошибка входа: " + (e.data?.message || e.message);
+    errEl.classList.remove("hidden");
+  }
+};
+document.getElementById("logout-btn").onclick = logout;
+document.getElementById("refresh-reports").onclick = loadReports;
+document.getElementById("refresh-audit").onclick = loadAudit;
+for (const btn of document.querySelectorAll(".tab")) {
+  btn.onclick = async () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.reportsStatus = btn.dataset.status;
+    await loadReports();
+  };
+}
+
+bootstrap();
+</script>
+</body>
+</html>
