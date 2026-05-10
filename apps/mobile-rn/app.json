@@ -32,6 +32,7 @@
     },
     "android": {
       "package": "com.runningecosystem.mobile",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F1419"
