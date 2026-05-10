@@ -8,7 +8,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { TabBar, type TabId } from '../design';
 
-import { FeedScreenStub } from './screens/feed/FeedScreenStub';
+// Feed stack — Phase M5 real screens.
+import { FeedScreen } from './screens/feed/FeedScreen';
+import { PostDetailScreen } from './screens/feed/PostDetailScreen';
+import { StoryViewerScreen } from './screens/feed/StoryViewerScreen';
+import { CreatePostScreen } from './screens/feed/CreatePostScreen';
+
+// Остальные tabs — stubs (Phase M6-M9).
 import { ChatsScreenStub } from './screens/chats/ChatsScreenStub';
 import { RecordScreenStub } from './screens/record/RecordScreenStub';
 import { JournalScreenStub } from './screens/journal/JournalScreenStub';
@@ -29,7 +35,18 @@ const FStack = createNativeStackNavigator<FeedStackParamList>();
 function FeedStackNav() {
   return (
     <FStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0A0A' } }}>
-      <FStack.Screen name="FeedHome" component={FeedScreenStub} />
+      <FStack.Screen name="FeedHome" component={FeedScreen} />
+      <FStack.Screen name="PostDetail" component={PostDetailScreen} />
+      <FStack.Screen
+        name="StoryViewer"
+        component={StoryViewerScreen}
+        options={{ presentation: 'modal', animation: 'fade' }}
+      />
+      <FStack.Screen
+        name="CreatePost"
+        component={CreatePostScreen}
+        options={{ presentation: 'modal' }}
+      />
     </FStack.Navigator>
   );
 }
