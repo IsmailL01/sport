@@ -42,6 +42,9 @@ func run() error {
 	addr := envOr("IDENTITY_HTTP_ADDR", ":8081")
 	dbURL := envOr("IDENTITY_DB_URL", "postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable")
 	jwtSecret := []byte(envOr("IDENTITY_JWT_SECRET", "dev-secret-must-be-at-least-32-bytes-long!!"))
+	// DevMode = выводить devCode в response /auth/request-code (для smoke,
+	// staging). В production выставить IDENTITY_DEV_MODE=false.
+	devMode := envOr("IDENTITY_DEV_MODE", "true") == "true"
 
 	signer, err := auth.NewSigner(jwtSecret)
 	if err != nil {
@@ -63,8 +66,11 @@ func run() error {
 
 	userRepo := postgres.NewUserRepo(pool)
 	tokenRepo := postgres.NewRefreshTokenRepo(pool)
+	otpRepo := postgres.NewOtpRepo(pool)
 	authSvc := service.NewAuthService(userRepo, tokenRepo, signer)
-	h := handler.NewAuthHandler(authSvc, signer, logger)
+	otpSvc := service.NewOtpService(otpRepo, userRepo, tokenRepo, authSvc)
+	h := handler.NewAuthHandler(authSvc, otpSvc, signer, logger, devMode)
+	logger.Info("identity ready", "devMode", devMode)
 
 	srv := &http.Server{
 		Addr:              addr,

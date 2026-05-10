@@ -29,6 +29,12 @@ type AuthStore = {
   logout: () => Promise<void>;
   /** Очистить error (после показа в UI). */
   clearError: () => void;
+
+  // Phase M4: passwordless OTP.
+  /** Запросить 6-digit код. На dev-сервере возвращает code (для UI debug). */
+  requestCode: (email: string) => Promise<{ devCode?: string } | null>;
+  /** Залогиниться по email + code. На success → state='authenticated'. */
+  loginWithCode: (email: string, code: string) => Promise<boolean>;
 };
 
 export const useAuthStore = create<AuthStore>((set) => ({
@@ -88,6 +94,73 @@ export const useAuthStore = create<AuthStore>((set) => ({
           'Не удалось связаться с сервером. Проверьте подключение и базовый URL API.',
       });
       console.warn('[auth] register failed', e);
+    }
+  },
+
+  requestCode: async (email) => {
+    set({ state: 'authenticating', error: null });
+    try {
+      const resp = await apiClient.identity('/auth/request-code', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '');
+        set({
+          state: 'unauthenticated',
+          error: 'Не удалось отправить код. Проверь email.',
+        });
+        console.warn('[auth] request-code failed', resp.status, body);
+        return null;
+      }
+      const data = (await resp.json()) as { devCode?: string };
+      // На request-code не меняем state на authenticated — это только запрос кода.
+      // Возвращаемся в unauthenticated; UI переходит на Code screen.
+      set({ state: 'unauthenticated', error: null });
+      return { devCode: data.devCode };
+    } catch (e) {
+      set({
+        state: 'unauthenticated',
+        error:
+          'Не удалось связаться с сервером. Проверь подключение и базовый URL API.',
+      });
+      console.warn('[auth] requestCode failed', e);
+      return null;
+    }
+  },
+
+  loginWithCode: async (email, code) => {
+    set({ state: 'authenticating', error: null });
+    try {
+      const resp = await apiClient.identity('/auth/login-with-code', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim().toLowerCase(), code: code.trim() }),
+      });
+      const body = (await resp.json()) as {
+        accessToken?: string;
+        refreshToken?: string;
+        user?: AuthUser;
+        error?: string;
+        message?: string;
+      };
+      if (!resp.ok || !body.accessToken || !body.refreshToken || !body.user) {
+        set({
+          state: 'unauthenticated',
+          error: body.message ?? 'Неверный код',
+        });
+        return false;
+      }
+      await apiClient.setTokens(body.accessToken, body.refreshToken);
+      set({ state: 'authenticated', user: body.user, error: null });
+      return true;
+    } catch (e) {
+      set({
+        state: 'unauthenticated',
+        error:
+          'Не удалось связаться с сервером. Проверь подключение и базовый URL API.',
+      });
+      console.warn('[auth] loginWithCode failed', e);
+      return false;
     }
   },
 

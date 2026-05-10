@@ -20,12 +20,17 @@ const requestTimeout = 10 * time.Second
 
 type AuthHandler struct {
 	svc    *service.AuthService
+	otp    *service.OtpService
 	signer *auth.Signer
 	log    *slog.Logger
+	// DevMode — если true, /auth/request-code возвращает code в response
+	// (для smoke-тестов и dev-окружения). В production — false (тогда
+	// единственный канал доставки — SMTP/stdout-log).
+	DevMode bool
 }
 
-func NewAuthHandler(svc *service.AuthService, signer *auth.Signer, log *slog.Logger) *AuthHandler {
-	return &AuthHandler{svc: svc, signer: signer, log: log}
+func NewAuthHandler(svc *service.AuthService, otp *service.OtpService, signer *auth.Signer, log *slog.Logger, devMode bool) *AuthHandler {
+	return &AuthHandler{svc: svc, otp: otp, signer: signer, log: log, DevMode: devMode}
 }
 
 // Routes возвращает router c всеми handler'ами identity-сервиса.
@@ -37,6 +42,9 @@ func (h *AuthHandler) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/login", h.login)
 	mux.HandleFunc("POST /auth/refresh", h.refresh)
 	mux.HandleFunc("POST /auth/logout", h.logout)
+	// Phase M4: passwordless OTP.
+	mux.HandleFunc("POST /auth/request-code", h.requestCode)
+	mux.HandleFunc("POST /auth/login-with-code", h.loginWithCode)
 	mux.HandleFunc("GET /me", h.requireAuth(h.me))
 	return loggingMiddleware(h.log)(mux)
 }
