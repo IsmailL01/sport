@@ -21,6 +21,10 @@ export type RealtimeEvent =
   | { event: 'feed.story.published';
       storyId: string; authorId: string; mediaId: string;
       createdAt: string | number; expiresAt: string | number }
+  // Phase M3: gamification — мой XP изменился (after session finalize).
+  | { event: 'user.xp.changed';
+      userId: string; sessionId: string; delta: number; total: number;
+      oldGrade: string; newGrade: string }
   | { event: string; [k: string]: unknown }; // catch-all для будущих типов
 
 export type RealtimeListener = (e: RealtimeEvent) => void;

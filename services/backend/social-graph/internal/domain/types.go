@@ -18,6 +18,10 @@ type Profile struct {
 	GlobalRole    string // user | premium | moderator | admin
 	BannedUntil   *time.Time
 	LastSeenAt    *time.Time
+	// Phase M3: gamification.
+	XPTotal       int    // cumulative xp; updated by activity-sync on finalize
+	Grade         string // cached grade letter (D / D+ / C / ... / S)
+	Verified      bool   // KYC / verified runner status (CTA gate)
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }

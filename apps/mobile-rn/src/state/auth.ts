@@ -145,6 +145,12 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } catch (e) {
       console.warn('[auth] moderation clearAll failed', e);
     }
+    try {
+      const { useXpStore } = await import('../modules/gamification');
+      useXpStore.getState().clearAll();
+    } catch (e) {
+      console.warn('[auth] xp clearAll failed', e);
+    }
     set({ state: 'unauthenticated', user: null, error: null });
   },
 

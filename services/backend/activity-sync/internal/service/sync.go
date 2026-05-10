@@ -4,24 +4,48 @@
 //   - Всё мульти-tenant: каждое чтение/запись фильтруется по userID из JWT.
 //   - Multi-device sync: upsert по (user_id, client_session_id) идемпотентен.
 //   - Append-only points: при конфликте (session_id, ts) — silent skip.
+//
+// Phase M3: на UpsertSession с finalized данными (endedAt + distance > 0)
+// выдаём XP в profile через XpRepo (idempotent через sessions.xp_awarded).
+// Publish NATS user.xp.changed.v1 для realtime UI updates.
 package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+
+	"github.com/nats-io/nats.go"
 
 	"github.com/runningecosystem/backend/activity-sync/internal/domain"
 	"github.com/runningecosystem/backend/activity-sync/internal/repository"
+	"github.com/runningecosystem/backend/pkg/gamification"
 )
 
 type SyncService struct {
 	sessions repository.SessionRepo
 	points   repository.PointRepo
+	// xp — optional, nil safe (legacy / tests without profile DB).
+	xp *repository.XpRepo
+	nc *nats.Conn
 }
 
-func NewSyncService(sessions repository.SessionRepo, points repository.PointRepo) *SyncService {
-	return &SyncService{sessions: sessions, points: points}
+type Option func(*SyncService)
+
+// WithXP — wire XP-аward pipeline. nil-safe (без вызовов профильных таблиц).
+func WithXP(xp *repository.XpRepo) Option { return func(s *SyncService) { s.xp = xp } }
+
+// WithNATS — wire publish NATS user.xp.changed.v1. Optional.
+func WithNATS(nc *nats.Conn) Option { return func(s *SyncService) { s.nc = nc } }
+
+func NewSyncService(sessions repository.SessionRepo, points repository.PointRepo, opts ...Option) *SyncService {
+	s := &SyncService{sessions: sessions, points: points}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // UpsertSession создаёт или обновляет сессию пользователя.
@@ -37,6 +61,42 @@ func (s *SyncService) UpsertSession(ctx context.Context, userID string, in *doma
 	}
 	if err := s.sessions.UpsertByClientID(ctx, in); err != nil {
 		return nil, fmt.Errorf("upsert session: %w", err)
+	}
+	// Phase M3: award XP только для финализированных сессий.
+	if s.xp != nil && in.EndedAt != nil && in.DistanceM != nil && *in.DistanceM > 0 {
+		var avgHr float64
+		if in.AvgHrBpm != nil {
+			avgHr = *in.AvgHrBpm
+		}
+		var maxHr float64
+		if in.MaxHrBpm != nil {
+			maxHr = *in.MaxHrBpm
+		}
+		xp := gamification.XPForSession(gamification.SessionInput{
+			DistanceM: *in.DistanceM,
+			DurationS: in.EndedAt.Sub(in.StartedAt).Seconds(),
+			AvgHrBpm:  avgHr,
+			MaxHrBpm:  maxHr,
+		})
+		if xp > 0 {
+			result, err := s.xp.AwardForSession(ctx, in.ID, in.UserID, xp)
+			if err != nil {
+				slog.WarnContext(ctx, "xp award failed", "session", in.ID, "error", err)
+			} else if result != nil && s.nc != nil {
+				// Publish realtime event + targeted rt.user.{id} для WS.
+				payload, _ := json.Marshal(map[string]any{
+					"event":     "user.xp.changed",
+					"userId":    in.UserID,
+					"sessionId": in.ID,
+					"delta":     result.XpAwarded,
+					"total":     result.XpTotal,
+					"oldGrade":  result.OldGrade,
+					"newGrade":  result.NewGrade,
+				})
+				_ = s.nc.Publish("user.xp.changed.v1", payload)
+				_ = s.nc.Publish("rt.user."+in.UserID, payload)
+			}
+		}
 	}
 	return in, nil
 }

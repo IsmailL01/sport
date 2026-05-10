@@ -115,6 +115,16 @@ export const useRealtimeStore = create<RealtimeStore>((set, get) => ({
             .catch(() => { /* модуль не загружен — игнор */ });
           break;
         }
+        // Phase M3: my XP changed (после finalize session).
+        case 'user.xp.changed': {
+          import('../../modules/gamification')
+            .then(({ useXpStore }) => {
+              const ev = e as Extract<RealtimeEvent, { event: 'user.xp.changed' }>;
+              useXpStore.getState().applyXpChanged(ev.delta, ev.total, ev.newGrade);
+            })
+            .catch(() => { /* модуль не загружен — игнор */ });
+          break;
+        }
       }
     });
 

@@ -21,7 +21,9 @@ func NewProfileRepo(pool *pgxpool.Pool) *ProfileRepo {
 }
 
 const profileCols = `user_id, username, display_name, bio, avatar_media_id,
-		privacy, global_role, banned_until, last_seen_at, created_at, updated_at`
+		privacy, global_role, banned_until, last_seen_at,
+		xp_total, grade, verified,
+		created_at, updated_at`
 
 // GetByID — найти профиль по user_id. ErrProfileNotFound если нет.
 func (r *ProfileRepo) GetByID(ctx context.Context, userID string) (*domain.Profile, error) {
@@ -142,6 +144,7 @@ func scanProfile(row scannable) (*domain.Profile, error) {
 	if err := row.Scan(
 		&p.UserID, &p.Username, &p.DisplayName, &p.Bio, &p.AvatarMediaID,
 		&p.Privacy, &p.GlobalRole, &bannedUntil, &lastSeenAt,
+		&p.XPTotal, &p.Grade, &p.Verified,
 		&p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

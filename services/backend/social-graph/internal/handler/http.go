@@ -106,6 +106,10 @@ type profileDTO struct {
 	GlobalRole     string  `json:"globalRole"`
 	FollowersCount int     `json:"followersCount"`
 	FollowingCount int     `json:"followingCount"`
+	// Phase M3: gamification.
+	XPTotal  int    `json:"xpTotal"`
+	Grade    string `json:"grade"`
+	Verified bool   `json:"verified"`
 }
 
 type patchProfileRequest struct {
@@ -331,6 +335,7 @@ func profileToDTO(p *domain.Profile, followers, following int) profileDTO {
 		Bio: p.Bio, AvatarMediaID: p.AvatarMediaID,
 		Privacy: p.Privacy, GlobalRole: p.GlobalRole,
 		FollowersCount: followers, FollowingCount: following,
+		XPTotal: p.XPTotal, Grade: p.Grade, Verified: p.Verified,
 	}
 }
 

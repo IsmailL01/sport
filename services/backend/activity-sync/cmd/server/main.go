@@ -18,8 +18,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go"
 
 	"github.com/runningecosystem/backend/activity-sync/internal/handler"
+	"github.com/runningecosystem/backend/activity-sync/internal/repository"
 	"github.com/runningecosystem/backend/activity-sync/internal/repository/postgres"
 	"github.com/runningecosystem/backend/activity-sync/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
@@ -39,6 +41,7 @@ func run() error {
 	addr := envOr("ACTIVITY_SYNC_HTTP_ADDR", ":8082")
 	dbURL := envOr("ACTIVITY_SYNC_DB_URL", "postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable")
 	jwtSecret := []byte(envOr("IDENTITY_JWT_SECRET", "dev-secret-must-be-at-least-32-bytes-long!!"))
+	natsURL := envOr("NATS_URL", "")
 
 	signer, err := auth.NewSigner(jwtSecret)
 	if err != nil {
@@ -60,7 +63,31 @@ func run() error {
 
 	sessRepo := postgres.NewSessionRepo(pool)
 	pointRepo := postgres.NewPointRepo(pool)
-	syncSvc := service.NewSyncService(sessRepo, pointRepo)
+	xpRepo := repository.NewXpRepo(pool)
+
+	// NATS optional: если не настроен, XP всё равно начисляется в БД, просто
+	// без realtime push в WS / notifications.
+	var nc *nats.Conn
+	if natsURL != "" {
+		var err error
+		nc, err = nats.Connect(natsURL,
+			nats.Name("activity-sync"),
+			nats.MaxReconnects(-1),
+			nats.ReconnectWait(time.Second))
+		if err != nil {
+			logger.Warn("nats connect failed; xp realtime disabled", "error", err)
+			nc = nil
+		} else {
+			defer nc.Drain()
+			logger.Info("nats connected", "url", natsURL)
+		}
+	}
+
+	opts := []service.Option{service.WithXP(xpRepo)}
+	if nc != nil {
+		opts = append(opts, service.WithNATS(nc))
+	}
+	syncSvc := service.NewSyncService(sessRepo, pointRepo, opts...)
 	h := handler.NewSyncHandler(syncSvc, signer, logger)
 
 	srv := &http.Server{
