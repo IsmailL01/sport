@@ -23,9 +23,15 @@ import { RunDetailsScreen } from './screens/record/RunDetailsScreen';
 import { JournalScreen } from './screens/journal/JournalScreen';
 import { SessionDetailScreen } from './screens/journal/SessionDetailScreen';
 
-// Остальные tabs — stubs (Phase M8-M9).
+// Me stack — Phase M8 real screens.
+import { MeScreen } from './screens/me/MeScreen';
+import { SettingsScreen } from './screens/me/SettingsScreen';
+import { ClubsScreen } from './screens/me/ClubsScreen';
+import { ClubScreen } from './screens/me/ClubScreen';
+import { CreateClubScreen } from './screens/me/CreateClubScreen';
+
+// Остальные tabs — stubs (Phase M9).
 import { ChatsScreenStub } from './screens/chats/ChatsScreenStub';
-import { MeScreenStub } from './screens/me/MeScreenStub';
 
 import type {
   AppTabParamList,
@@ -100,7 +106,11 @@ const MStack = createNativeStackNavigator<MeStackParamList>();
 function MeStackNav() {
   return (
     <MStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0A0A' } }}>
-      <MStack.Screen name="Profile" component={MeScreenStub} />
+      <MStack.Screen name="Profile" component={MeScreen} />
+      <MStack.Screen name="Settings" component={SettingsScreen} />
+      <MStack.Screen name="Clubs" component={ClubsScreen} />
+      <MStack.Screen name="Club" component={ClubScreen} />
+      <MStack.Screen name="CreateClub" component={CreateClubScreen} />
     </MStack.Navigator>
   );
 }
