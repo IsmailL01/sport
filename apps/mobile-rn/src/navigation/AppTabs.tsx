@@ -30,8 +30,10 @@ import { ClubsScreen } from './screens/me/ClubsScreen';
 import { ClubScreen } from './screens/me/ClubScreen';
 import { CreateClubScreen } from './screens/me/CreateClubScreen';
 
-// Остальные tabs — stubs (Phase M9).
-import { ChatsScreenStub } from './screens/chats/ChatsScreenStub';
+// Chats stack — Phase M9 real screens.
+import { ChatsListScreen } from './screens/chats/ChatsListScreen';
+import { ChatScreen } from './screens/chats/ChatScreen';
+import { CreateChatScreen } from './screens/chats/CreateChatScreen';
 
 import type {
   AppTabParamList,
@@ -68,7 +70,9 @@ const CStack = createNativeStackNavigator<ChatsStackParamList>();
 function ChatsStackNav() {
   return (
     <CStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0A0A' } }}>
-      <CStack.Screen name="ChatsList" component={ChatsScreenStub} />
+      <CStack.Screen name="ChatsList" component={ChatsListScreen} />
+      <CStack.Screen name="Chat" component={ChatScreen} />
+      <CStack.Screen name="CreateChat" component={CreateChatScreen} />
     </CStack.Navigator>
   );
 }
