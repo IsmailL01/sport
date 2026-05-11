@@ -14,9 +14,13 @@ import { PostDetailScreen } from './screens/feed/PostDetailScreen';
 import { StoryViewerScreen } from './screens/feed/StoryViewerScreen';
 import { CreatePostScreen } from './screens/feed/CreatePostScreen';
 
-// Остальные tabs — stubs (Phase M6-M9).
+// Record stack — Phase M6 real screens.
+import { TrackerStartScreen } from './screens/record/TrackerStartScreen';
+import { TrackerLiveScreen } from './screens/record/TrackerLiveScreen';
+import { RunDetailsScreen } from './screens/record/RunDetailsScreen';
+
+// Остальные tabs — stubs (Phase M7-M9).
 import { ChatsScreenStub } from './screens/chats/ChatsScreenStub';
-import { RecordScreenStub } from './screens/record/RecordScreenStub';
 import { JournalScreenStub } from './screens/journal/JournalScreenStub';
 import { MeScreenStub } from './screens/me/MeScreenStub';
 
@@ -64,7 +68,17 @@ const RStack = createNativeStackNavigator<RecordStackParamList>();
 function RecordStackNav() {
   return (
     <RStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0A0A' } }}>
-      <RStack.Screen name="TrackerStart" component={RecordScreenStub} />
+      <RStack.Screen name="TrackerStart" component={TrackerStartScreen} />
+      <RStack.Screen
+        name="TrackerLive"
+        component={TrackerLiveScreen}
+        options={{ gestureEnabled: false }}
+      />
+      <RStack.Screen
+        name="RunDetails"
+        component={RunDetailsScreen}
+        options={{ gestureEnabled: false }}
+      />
     </RStack.Navigator>
   );
 }
