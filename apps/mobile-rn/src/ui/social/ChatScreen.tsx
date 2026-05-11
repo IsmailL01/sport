@@ -25,9 +25,11 @@ type Props = {
   myUserId: string;
   onBack: () => void;
   onOpenSettings?: () => void;
+  /** M9.7: tap на DM header → ForeignProfile (для group — onOpenSettings). */
+  onPeerPress?: (peerUserId: string) => void;
 };
 
-export function ChatScreen({ chat, myUserId, onBack, onOpenSettings }: Props) {
+export function ChatScreen({ chat, myUserId, onBack, onOpenSettings, onPeerPress }: Props) {
   const messages = useChatStore((s) => s.messages);
   const open = useChatStore((s) => s.open);
   const close = useChatStore((s) => s.close);
@@ -181,8 +183,17 @@ export function ChatScreen({ chat, myUserId, onBack, onOpenSettings }: Props) {
         </Pressable>
         <Pressable
           style={styles.headerTitleBtn}
-          onPress={chat.type === 'group' && onOpenSettings ? onOpenSettings : undefined}
-          disabled={!(chat.type === 'group' && onOpenSettings)}
+          onPress={
+            chat.type === 'group' && onOpenSettings
+              ? onOpenSettings
+              : chat.type === 'dm' && chat.peerUserId !== null && onPeerPress
+                ? () => onPeerPress(chat.peerUserId as string)
+                : undefined
+          }
+          disabled={
+            !(chat.type === 'group' && onOpenSettings) &&
+            !(chat.type === 'dm' && chat.peerUserId !== null && onPeerPress)
+          }
         >
           <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
           {chat.type === 'group' && (

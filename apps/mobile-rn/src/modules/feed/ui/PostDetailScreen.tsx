@@ -23,9 +23,11 @@ type Props = {
   post: Post;
   myUserId: string;
   onBack: () => void;
+  /** M9.7: tap на author header → ForeignProfile modal. */
+  onAuthorPress?: (authorId: string) => void;
 };
 
-export function PostDetailScreen({ post, myUserId, onBack }: Props) {
+export function PostDetailScreen({ post, myUserId, onBack, onAuthorPress }: Props) {
   const comments = useFeedStore((s) => s.commentsByPost[post.id] ?? []);
   const loadComments = useFeedStore((s) => s.loadComments);
   const commentAction = useFeedStore((s) => s.comment);
@@ -70,7 +72,7 @@ export function PostDetailScreen({ post, myUserId, onBack }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView style={{ flex: 1 }}>
-          <PostCard post={post} myUserId={myUserId} expanded />
+          <PostCard post={post} myUserId={myUserId} expanded onAuthorPress={onAuthorPress} />
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>

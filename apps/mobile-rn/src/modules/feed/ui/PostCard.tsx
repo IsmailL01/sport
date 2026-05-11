@@ -14,11 +14,13 @@ type Props = {
   post: Post;
   myUserId: string;
   onPress?: () => void;
+  /** Tap на header (avatar + name) → открыть ForeignProfile. M9.7. */
+  onAuthorPress?: (authorId: string) => void;
   /** Если true — текст body не урезается (для PostDetailScreen). */
   expanded?: boolean;
 };
 
-export function PostCard({ post, myUserId, onPress, expanded }: Props) {
+export function PostCard({ post, myUserId, onPress, onAuthorPress, expanded }: Props) {
   const author = useUsersStore((s) => s.byId[post.authorId]);
   const getOrFetch = useUsersStore((s) => s.getOrFetch);
   const toggleLike = useFeedStore((s) => s.toggleLike);
@@ -71,7 +73,11 @@ export function PostCard({ post, myUserId, onPress, expanded }: Props) {
       disabled={!onPress}
       style={styles.card}
     >
-      <View style={styles.header}>
+      <Pressable
+        style={styles.header}
+        onPress={onAuthorPress && !isMine ? () => onAuthorPress(post.authorId) : undefined}
+        hitSlop={4}
+      >
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{authorName[0]?.toUpperCase()}</Text>
         </View>
@@ -90,7 +96,7 @@ export function PostCard({ post, myUserId, onPress, expanded }: Props) {
             <Text style={styles.deleteText}>×</Text>
           </Pressable>
         )}
-      </View>
+      </Pressable>
 
       {post.kind === 'photo' && mediaUrl ? (
         <Image source={{ uri: mediaUrl }} style={styles.image} resizeMode="cover" />

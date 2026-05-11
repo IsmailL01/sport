@@ -6,15 +6,21 @@ import { useEffect } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { CompositeNavigationProp } from '@react-navigation/native';
 
 import { ScreenErrorBoundary, useTheme } from '../../../design';
 import { PostDetailScreen as PostDetailLegacy, useFeedStore } from '../../../modules/feed';
 import { useAuthStore } from '../../../state/auth';
-import type { FeedStackParamList } from '../../types';
+import type { FeedStackParamList, RootStackParamList } from '../../types';
+
+type DetailNav = CompositeNavigationProp<
+  NativeStackNavigationProp<FeedStackParamList>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 export function PostDetailScreen() {
   const t = useTheme();
-  const nav = useNavigation<NativeStackNavigationProp<FeedStackParamList>>();
+  const nav = useNavigation<DetailNav>();
   const route = useRoute<RouteProp<FeedStackParamList, 'PostDetail'>>();
   const postId = route.params.postId;
   const myUserId = useAuthStore((s) => s.user?.id ?? '');
@@ -39,7 +45,12 @@ export function PostDetailScreen() {
       fallbackTitle="Не удалось открыть пост"
       onBack={() => nav.goBack()}
     >
-      <PostDetailLegacy post={post} myUserId={myUserId} onBack={() => nav.goBack()} />
+      <PostDetailLegacy
+        post={post}
+        myUserId={myUserId}
+        onBack={() => nav.goBack()}
+        onAuthorPress={(authorId) => nav.navigate('ForeignProfile', { userId: authorId })}
+      />
     </ScreenErrorBoundary>
   );
 }

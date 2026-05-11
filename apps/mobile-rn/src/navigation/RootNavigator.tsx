@@ -22,6 +22,7 @@ import { getNotificationsAdapter } from '../notifications';
 import { AppTabs } from './AppTabs';
 import { AuthStack } from './AuthStack';
 import { OnboardingStack } from './OnboardingStack';
+import { ForeignProfileScreen } from './screens/ForeignProfileScreen';
 import type { RootStackParamList } from './types';
 
 /** Global navigation ref — used for push deep-link routing from outside React. */
@@ -148,7 +149,17 @@ export function RootNavigator() {
             needsOnboarding ? (
               <Stack.Screen name="Onboarding" component={OnboardingStack} />
             ) : (
-              <Stack.Screen name="App" component={AppTabs} />
+              <>
+                <Stack.Screen name="App" component={AppTabs} />
+                <Stack.Screen
+                  name="ForeignProfile"
+                  component={ForeignProfileScreen}
+                  options={{
+                    presentation: 'modal',
+                    animation: 'slide_from_bottom',
+                  }}
+                />
+              </>
             )
           ) : (
             <Stack.Screen name="Auth" component={AuthStack} />

@@ -11,14 +11,18 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { CompositeNavigationProp } from '@react-navigation/native';
 
 import { useTheme } from '../../../design';
 import { useAuthStore } from '../../../state/auth';
 import { useChatsStore } from '../../../state/social/useChatsStore';
 import { ChatScreen as LegacyChatScreen } from '../../../ui/social/ChatScreen';
-import type { ChatsStackParamList } from '../../types';
+import type { ChatsStackParamList, RootStackParamList } from '../../types';
 
-type Nav = NativeStackNavigationProp<ChatsStackParamList, 'Chat'>;
+type Nav = CompositeNavigationProp<
+  NativeStackNavigationProp<ChatsStackParamList, 'Chat'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 type RouteP = RouteProp<ChatsStackParamList, 'Chat'>;
 
 export function ChatScreen() {
@@ -65,6 +69,9 @@ export function ChatScreen() {
       chat={chat}
       myUserId={user.id}
       onBack={() => nav.goBack()}
+      onPeerPress={(peerUserId) =>
+        nav.navigate('ForeignProfile', { userId: peerUserId })
+      }
     />
   );
 }

@@ -36,7 +36,12 @@ func (r *StoryRepo) GetByID(ctx context.Context, id string) (*domain.Story, erro
 	return scan(row)
 }
 
-// FeedForUser — все активные stories авторов из follows + сам пользователь.
+// FeedForUser — все активные stories авторов-«друзей» + сам пользователь.
+//
+// «Друг» = mutual follow (А подписан на B И B подписан на A). Это закрытая
+// модель privacy: stories видны только тем, с кем взаимная подписка.
+// Phase M9.7.
+//
 // Возвращает с view-count и iViewed флагом.
 func (r *StoryRepo) FeedForUser(ctx context.Context, userID string) ([]*domain.StoryWithStats, error) {
 	const sql = `
@@ -47,7 +52,12 @@ func (r *StoryRepo) FeedForUser(ctx context.Context, userID string) ([]*domain.S
 		WHERE s.deleted_at IS NULL AND s.expires_at > now()
 		AND (
 		  s.author_id = $1
-		  OR s.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $1)
+		  OR s.author_id IN (
+		    SELECT a.followee_id
+		    FROM follows a
+		    JOIN follows b ON a.followee_id = b.follower_id AND a.follower_id = b.followee_id
+		    WHERE a.follower_id = $1
+		  )
 		)
 		ORDER BY s.author_id, s.created_at DESC`
 	rows, err := r.pool.Query(ctx, sql, userID)

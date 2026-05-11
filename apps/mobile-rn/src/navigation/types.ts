@@ -18,6 +18,8 @@ export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   /** Authenticated + isNew=true: wizard (имя / дата рождения / permissions). */
   Onboarding: NavigatorScreenParams<OnboardingStackParamList>;
+  /** Modal-style чужой профиль с кнопкой «Подписаться» — Phase M9.7. */
+  ForeignProfile: { userId: string };
 };
 
 // === Onboarding stack (post-signup wizard) ===

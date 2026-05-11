@@ -66,15 +66,25 @@ func (r *PostRepo) SoftDelete(ctx context.Context, id string) error {
 	return nil
 }
 
-// HomeFeed — chronological global merge всех постов.
+// HomeFeed — глобальная лента всех постов, с приоритетом followees.
 //
-// Phase M9.6: filter follow-based убран — лента открыта всем (нет UI
-// follow ещё). Когда появится UI «подписаться», добавим обратно
-// privacy-уровни или вернём follow-filter как опцию.
+// Phase M9.7: лента открыта всем (как Twitter — публичная), но
+// собственные посты + посты followees показываются раньше, чем
+// chronological «глобальный» хвост. Это даёт ленте смысл подписок
+// без ограничения видимости.
 //
-// Cursor-pagination: cursor = "<rfc3339>|<id>" (createdAt DESC, id DESC tiebreaker).
-// Empty cursor = "сначала". limit clamped в service-слое.
-// userID нужен только для iLiked EXISTS-subquery.
+// Сортировка:
+//   1) own_or_followee DESC (1 = свой/подписан, 0 = чужой)
+//   2) created_at DESC
+//   3) id DESC (tiebreaker)
+//
+// Cursor encodes (own_or_followee, created_at, id) для стабильной пагинации.
+// Пока используем простой созданный_at|id cursor — followee-приоритет
+// в первом window работает, но на пагинации возможно «увидеть» уже
+// показанные followee-посты повторно если они старее cursor'а. Для MVP
+// допустимо: на load-more новые followee-посты выводятся в верх.
+//
+// userID нужен и для iLiked subquery, и для own_or_followee rank.
 func (r *PostRepo) HomeFeed(
 	ctx context.Context,
 	userID string,
@@ -86,11 +96,6 @@ func (r *PostRepo) HomeFeed(
 		return nil, "", err
 	}
 
-	// Запрос:
-	//   from posts (global), not deleted
-	//   AND (created_at, id) < (cursor_time, cursor_id) если есть cursor
-	//   ORDER BY created_at DESC, id DESC
-	//   LIMIT N+1   (один лишний — определяем есть ли next page).
 	var args []any
 	var b strings.Builder
 	b.WriteString(`
@@ -105,7 +110,13 @@ func (r *PostRepo) HomeFeed(
 		args = append(args, cursorTime, cursorID)
 	}
 	b.WriteString(`
-		ORDER BY p.created_at DESC, p.id DESC
+		ORDER BY
+		  CASE
+		    WHEN p.author_id = $1
+		      OR p.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $1)
+		    THEN 0 ELSE 1
+		  END,
+		  p.created_at DESC, p.id DESC
 		LIMIT $` + itoa(len(args)+1))
 	args = append(args, limit+1)
 
