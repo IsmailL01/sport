@@ -66,10 +66,15 @@ func (r *PostRepo) SoftDelete(ctx context.Context, id string) error {
 	return nil
 }
 
-// HomeFeed — chronological merge постов self + followees.
+// HomeFeed — chronological global merge всех постов.
+//
+// Phase M9.6: filter follow-based убран — лента открыта всем (нет UI
+// follow ещё). Когда появится UI «подписаться», добавим обратно
+// privacy-уровни или вернём follow-filter как опцию.
 //
 // Cursor-pagination: cursor = "<rfc3339>|<id>" (createdAt DESC, id DESC tiebreaker).
 // Empty cursor = "сначала". limit clamped в service-слое.
+// userID нужен только для iLiked EXISTS-subquery.
 func (r *PostRepo) HomeFeed(
 	ctx context.Context,
 	userID string,
@@ -82,7 +87,7 @@ func (r *PostRepo) HomeFeed(
 	}
 
 	// Запрос:
-	//   from posts where author in (self + followees), not deleted
+	//   from posts (global), not deleted
 	//   AND (created_at, id) < (cursor_time, cursor_id) если есть cursor
 	//   ORDER BY created_at DESC, id DESC
 	//   LIMIT N+1   (один лишний — определяем есть ли next page).
@@ -92,11 +97,7 @@ func (r *PostRepo) HomeFeed(
 		SELECT ` + postCols + `,
 		  EXISTS (SELECT 1 FROM post_likes WHERE post_id = p.id AND user_id = $1)
 		FROM posts p
-		WHERE p.deleted_at IS NULL
-		  AND (
-		    p.author_id = $1
-		    OR p.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $1)
-		  )`)
+		WHERE p.deleted_at IS NULL`)
 	args = append(args, userID)
 
 	if !cursorTime.IsZero() {

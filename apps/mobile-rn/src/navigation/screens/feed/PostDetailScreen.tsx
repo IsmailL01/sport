@@ -7,7 +7,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme } from '../../../design';
+import { ScreenErrorBoundary, useTheme } from '../../../design';
 import { PostDetailScreen as PostDetailLegacy, useFeedStore } from '../../../modules/feed';
 import { useAuthStore } from '../../../state/auth';
 import type { FeedStackParamList } from '../../types';
@@ -34,5 +34,12 @@ export function PostDetailScreen() {
       </View>
     );
   }
-  return <PostDetailLegacy post={post} myUserId={myUserId} onBack={() => nav.goBack()} />;
+  return (
+    <ScreenErrorBoundary
+      fallbackTitle="Не удалось открыть пост"
+      onBack={() => nav.goBack()}
+    >
+      <PostDetailLegacy post={post} myUserId={myUserId} onBack={() => nav.goBack()} />
+    </ScreenErrorBoundary>
+  );
 }

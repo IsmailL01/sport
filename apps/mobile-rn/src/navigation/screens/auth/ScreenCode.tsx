@@ -15,7 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { Icon, useTheme } from '../../../design';
 import { useAuthStore } from '../../../state/auth';
-import type { AuthStackParamList } from '../../types';
+import type { AuthMode, AuthStackParamList } from '../../types';
 
 const CELL_COUNT = 6;
 
@@ -24,6 +24,7 @@ export function ScreenCode() {
   const nav = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const route = useRoute<RouteProp<AuthStackParamList, 'Code'>>();
   const email = route.params?.email ?? '';
+  const mode: AuthMode = route.params?.mode ?? 'signup';
 
   const loginWithCode = useAuthStore((s) => s.loginWithCode);
   const requestCode = useAuthStore((s) => s.requestCode);
@@ -108,7 +109,7 @@ export function ScreenCode() {
 
       <View style={{ marginTop: 28 }}>
         <Text style={{ fontSize: 32 * t.fontScale, fontWeight: '800', letterSpacing: -1, color: t.text, fontFamily: t.font }}>
-          Введи код
+          {mode === 'signin' ? 'Введи код' : 'Подтверди аккаунт'}
         </Text>
         <Text style={{ fontSize: 15 * t.fontScale, color: t.text2, lineHeight: 22, marginTop: 12, fontFamily: t.font }}>
           Мы отправили 6-значный код на <Text style={{ color: t.text }}>{email}</Text>

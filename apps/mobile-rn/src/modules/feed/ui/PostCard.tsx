@@ -2,7 +2,7 @@
 // Нейтральный дизайн. Phase E: long-press → ActionSheet с «Пожаловаться».
 
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { Post } from '../domain/types';
 import { useFeedStore } from '../state/useFeedStore';
@@ -185,8 +185,12 @@ const styles = StyleSheet.create({
     width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
   },
   deleteText: { fontSize: 22, color: '#9CA3AF', marginTop: -4 },
+  // M9.6 fix: aspectRatio inside ScrollView (PostDetailScreen) могло
+  // резолвиться в height: Infinity → crash «Infinity». Используем fixed
+  // height = window.width (квадрат) — то же визуально, но безопасно.
   image: {
-    width: '100%', aspectRatio: 1,
+    width: '100%',
+    height: Dimensions.get('window').width,
     marginTop: 8, marginBottom: 4,
     backgroundColor: '#F3F4F6',
   },

@@ -30,11 +30,15 @@ export type OnboardingStackParamList = {
 
 // === Auth stack ===
 
+/** Auth mode прокидывается из Intro в Email и Code только для UX-labels.
+ *  Backend всё равно сам решит signup vs signin по isNew flag. */
+export type AuthMode = 'signup' | 'signin';
+
 export type AuthStackParamList = {
   Splash: undefined;
   Intro: undefined;
-  Email: undefined;
-  Code: { email: string };
+  Email: { mode?: AuthMode } | undefined;
+  Code: { email: string; mode?: AuthMode };
   // Name / Birthday / Permissions перенесены в OnboardingStackParamList —
   // открываются для нового user'а после login-with-code (isNew=true).
 };

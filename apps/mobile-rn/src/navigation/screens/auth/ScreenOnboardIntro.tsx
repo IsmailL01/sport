@@ -1,7 +1,8 @@
-// Auth: onboarding intro stub. Hero photo + headline + Войти.
-// M2 — visual placeholder; M4 — full интерактивный flow.
+// Auth: onboarding intro. Hero photo + headline + dual CTA.
+// M9.6: «Войти» single button заменён на «Создать аккаунт» (primary) +
+// «Войти» (secondary link) — без двух CTA пользователь не видит signup.
 
-import { ImageBackground, Text, View } from 'react-native';
+import { ImageBackground, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -65,20 +66,31 @@ export function ScreenOnboardIntro() {
         </Text>
       </View>
 
-      <Button variant="primary" size="lg" full onPress={() => nav.navigate('Email')}>
-        Войти
-      </Button>
-      <Text
-        style={{
-          textAlign: 'center',
-          fontSize: 14 * t.fontScale,
-          color: t.text2,
-          marginTop: 16,
-          fontFamily: t.font,
-        }}
+      <Button
+        variant="primary"
+        size="lg"
+        full
+        onPress={() => nav.navigate('Email', { mode: 'signup' })}
       >
-        Уже с нами? <Text style={{ color: t.text, fontWeight: '600' }}>Восстановить аккаунт</Text>
-      </Text>
+        Создать аккаунт
+      </Button>
+      <Pressable
+        onPress={() => nav.navigate('Email', { mode: 'signin' })}
+        style={{ marginTop: 14, alignItems: 'center', paddingVertical: 4 }}
+        hitSlop={6}
+      >
+        <Text
+          style={{
+            textAlign: 'center',
+            fontSize: 14 * t.fontScale,
+            color: t.text2,
+            fontFamily: t.font,
+          }}
+        >
+          Уже есть аккаунт?{' '}
+          <Text style={{ color: t.text, fontWeight: '700' }}>Войти</Text>
+        </Text>
+      </Pressable>
     </View>
   );
 }

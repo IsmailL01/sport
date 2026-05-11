@@ -1,12 +1,21 @@
-// RootNavigator — auth gate + push deep-link routing.
-// Phase 8 / M2 (skeleton); deep-link richer payloads — M5-M10.
+// RootNavigator — auth gate + push deep-link routing + auth-side-effects.
+// Phase 8 / M2 (skeleton); M5-M10 wires modules; M9.6 restores realtime/push/sync
+// lifecycle that lived in App.legacy.tsx Inner() useEffect and got dropped on M2.
 
+import 'react-native-get-random-values';
 import { useEffect, useRef } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View } from 'react-native';
+import { v4 as uuid } from 'uuid';
 
+import { apiClient } from '../auth/apiClient';
 import { useAuthStore } from '../state/auth';
+import { useSettingsStore } from '../state/settings';
+import { useSyncStore } from '../state/sync';
+import { useNotificationsStore } from '../state/social/useNotificationsStore';
+import { useRealtimeStore } from '../state/social/useRealtimeStore';
+import { useModerationStore } from '../modules/moderation';
 import { useTheme } from '../design';
 import { getNotificationsAdapter } from '../notifications';
 
@@ -41,6 +50,47 @@ export function RootNavigator() {
     hydrated.current = true;
     void hydrate();
   }, [hydrate]);
+
+  // M9.6: connect realtime + register push + pull sessions + fetch role
+  // on authentication; disconnect realtime on logout. Без этого вся
+  // realtime-доставка (chat messages, feed events, stories, xp updates)
+  // не работает — App.legacy.tsx делал это в Inner() useEffect.
+  useEffect(() => {
+    if (authState === 'unauthenticated') {
+      useRealtimeStore.getState().disconnect();
+      return;
+    }
+    if (authState !== 'authenticated') return;
+
+    const user = useAuthStore.getState().user;
+    if (user === null) return;
+
+    // Best-effort sessions pull.
+    useSyncStore.getState().pullDown().catch((e) => {
+      console.warn('[RootNavigator] pullDown failed', e);
+    });
+
+    // Admin role fetch (gate Admin UI).
+    void useModerationStore.getState().fetchMyRole(user.id);
+
+    // Realtime WebSocket + push token registration.
+    const accessToken = apiClient.getAccessToken();
+    if (accessToken !== null) {
+      let deviceID = useSettingsStore.getState().deviceId;
+      if (deviceID === null) {
+        deviceID = uuid();
+        useSettingsStore.getState().setDeviceId(deviceID);
+      }
+      useRealtimeStore
+        .getState()
+        .connect(user.id, accessToken, deviceID)
+        .catch((e) => console.warn('[RootNavigator] realtime connect failed', e));
+      useNotificationsStore
+        .getState()
+        .requestAndRegister()
+        .catch((e) => console.warn('[RootNavigator] push register failed', e));
+    }
+  }, [authState]);
 
   // Phase J: push deep-link → route to relevant tab.
   // navRef доступен после mount NavigationContainer.

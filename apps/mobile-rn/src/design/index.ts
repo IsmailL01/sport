@@ -36,6 +36,8 @@ export type { IconName, IconProps } from './icons';
 export { Avatar } from './components/Avatar';
 export type { AvatarProps } from './components/Avatar';
 
+export { ScreenErrorBoundary } from './components/ScreenErrorBoundary';
+
 export { Button } from './components/Button';
 export type { ButtonProps, ButtonVariant, ButtonSize } from './components/Button';
 
