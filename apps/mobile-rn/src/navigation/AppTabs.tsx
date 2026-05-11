@@ -19,9 +19,12 @@ import { TrackerStartScreen } from './screens/record/TrackerStartScreen';
 import { TrackerLiveScreen } from './screens/record/TrackerLiveScreen';
 import { RunDetailsScreen } from './screens/record/RunDetailsScreen';
 
-// Остальные tabs — stubs (Phase M7-M9).
+// Journal stack — Phase M7 real screens.
+import { JournalScreen } from './screens/journal/JournalScreen';
+import { SessionDetailScreen } from './screens/journal/SessionDetailScreen';
+
+// Остальные tabs — stubs (Phase M8-M9).
 import { ChatsScreenStub } from './screens/chats/ChatsScreenStub';
-import { JournalScreenStub } from './screens/journal/JournalScreenStub';
 import { MeScreenStub } from './screens/me/MeScreenStub';
 
 import type {
@@ -87,7 +90,8 @@ const JStack = createNativeStackNavigator<JournalStackParamList>();
 function JournalStackNav() {
   return (
     <JStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0A0A' } }}>
-      <JStack.Screen name="JournalList" component={JournalScreenStub} />
+      <JStack.Screen name="JournalList" component={JournalScreen} />
+      <JStack.Screen name="SessionDetail" component={SessionDetailScreen} />
     </JStack.Navigator>
   );
 }

@@ -64,6 +64,7 @@ export type RecordStackParamList = {
 
 export type JournalStackParamList = {
   JournalList: undefined;
+  SessionDetail: { sessionId: string };
 };
 
 export type MeStackParamList = {
