@@ -78,49 +78,75 @@ func (s *OtpService) RequestCode(ctx context.Context, email string, devMode bool
 }
 
 // LoginWithCode — verify code и issue token pair. Создаёт user если не было.
+//
+// devMode:
+//   - false (production): strict — code must match active OTP, attempts < 5
+//   - true: ANY 6-digit code → pass (smoke / APK distribution / mobile QA).
+//     Анти-bruteforce + email enumeration защита сохраняются (TTL/used_at
+//     всё ещё проверяются если active row найден — но не fail если нет).
+//
+// Возвращает isNew=true если был создан новый user (для onboarding flow).
 func (s *OtpService) LoginWithCode(
-	ctx context.Context, email, code, userAgent string,
-) (*domain.User, *TokenPair, error) {
+	ctx context.Context, email, code, userAgent string, devMode bool,
+) (*domain.User, *TokenPair, bool, error) {
 	email = normalizeEmail(email)
 	if err := validateEmail(email); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	if len(code) != 6 {
-		return nil, nil, domain.ErrInvalidCredentials
+		return nil, nil, false, domain.ErrInvalidCredentials
+	}
+	if !isAllDigits(code) {
+		return nil, nil, false, domain.ErrInvalidCredentials
 	}
 
 	otp, err := s.otps.GetActive(ctx, email)
 	if err != nil {
 		if errors.Is(err, postgres.ErrOtpNotFound) {
-			return nil, nil, domain.ErrInvalidCredentials
+			if devMode {
+				// Dev-bypass: no active OTP row → accept anyway. Smoke
+				// и mobile-tester smogut логиниться даже не нажав
+				// «отправить код».
+				slog.WarnContext(ctx, "otp dev-bypass: no active code, accepting", "email", email)
+			} else {
+				return nil, nil, false, domain.ErrInvalidCredentials
+			}
+		} else {
+			return nil, nil, false, err
 		}
-		return nil, nil, err
 	}
 
-	// Constant-time compare.
-	if subtle.ConstantTimeCompare([]byte(otp.Code), []byte(code)) != 1 {
-		attempts, _ := s.otps.BumpAttempts(ctx, otp.ID)
-		if attempts >= MaxOtpAttempts {
-			// Mark used → no further attempts; user requests new code.
-			_ = s.otps.MarkUsed(ctx, otp.ID)
+	// Strict-mode compare (production OR dev with real OTP row).
+	if otp != nil {
+		if subtle.ConstantTimeCompare([]byte(otp.Code), []byte(code)) != 1 {
+			if devMode {
+				slog.WarnContext(ctx, "otp dev-bypass: wrong code accepted", "email", email)
+				// Не bump attempts в DevMode (чтобы не запирать тестера).
+			} else {
+				attempts, _ := s.otps.BumpAttempts(ctx, otp.ID)
+				if attempts >= MaxOtpAttempts {
+					// Mark used → no further attempts; user requests new code.
+					_ = s.otps.MarkUsed(ctx, otp.ID)
+				}
+				return nil, nil, false, domain.ErrInvalidCredentials
+			}
 		}
-		return nil, nil, domain.ErrInvalidCredentials
-	}
-
-	// Code matched — mark used (idempotent).
-	if err := s.otps.MarkUsed(ctx, otp.ID); err != nil {
-		return nil, nil, err
+		// Code matched (или dev-bypass) — mark used (idempotent).
+		if err := s.otps.MarkUsed(ctx, otp.ID); err != nil {
+			return nil, nil, false, err
+		}
 	}
 
 	// Find or create user. Password-less пользователи имеют пустой
 	// password_hash; могут позже установить через separate endpoint.
 	user, err := s.users.GetByEmail(ctx, email)
+	isNew := false
 	if err != nil {
 		if !errors.Is(err, domain.ErrUserNotFound) {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		// Create stub user. display_name = email prefix; настраивается
-		// в post-auth wizard (Phase M4 mobile).
+		// в onboarding wizard (Phase M9.5 mobile).
 		user = &domain.User{
 			Email:        email,
 			PasswordHash: "", // passwordless
@@ -129,15 +155,25 @@ func (s *OtpService) LoginWithCode(
 			Timezone:     "Europe/Moscow",
 		}
 		if err := s.users.Create(ctx, user); err != nil {
-			return nil, nil, fmt.Errorf("create user: %w", err)
+			return nil, nil, false, fmt.Errorf("create user: %w", err)
 		}
+		isNew = true
 	}
 
 	pair, err := s.auth.issuePair(ctx, user.ID, userAgent)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	return user, pair, nil
+	return user, pair, isNew, nil
+}
+
+func isAllDigits(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func generate6Digits() (string, error) {

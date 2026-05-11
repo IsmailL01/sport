@@ -20,7 +20,9 @@ func newTestServer(t *testing.T) (*httptest.Server, *service.AuthService) {
 	t.Helper()
 	signer, _ := auth.NewSigner([]byte("test-secret-must-be-at-least-32-bytes-long-for-hs256"))
 	svc := service.NewAuthService(memory.NewUserRepo(), memory.NewRefreshTokenRepo(), signer)
-	h := handler.NewAuthHandler(svc, signer, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// OTP tests live in postgres-backed integration suite; pass nil here —
+	// existing handler_test cases не hits /auth/request-code или login-with-code.
+	h := handler.NewAuthHandler(svc, nil, signer, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 	srv := httptest.NewServer(h.Routes())
 	t.Cleanup(srv.Close)
 	return srv, svc

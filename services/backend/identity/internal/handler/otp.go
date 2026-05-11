@@ -58,7 +58,7 @@ func (h *AuthHandler) loginWithCode(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
-	user, pair, err := h.otp.LoginWithCode(ctx, req.Email, req.Code, r.UserAgent())
+	user, pair, isNew, err := h.otp.LoginWithCode(ctx, req.Email, req.Code, r.UserAgent(), h.DevMode)
 	if err != nil {
 		// Single bucket для всех auth-related ошибок (avoid enumeration).
 		if errors.Is(err, domain.ErrInvalidCredentials) {
@@ -73,5 +73,6 @@ func (h *AuthHandler) loginWithCode(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: pair.RefreshToken,
 		ExpiresIn:    pair.ExpiresIn,
 		User:         toUserResp(user),
+		IsNew:        isNew,
 	})
 }

@@ -75,6 +75,9 @@ type tokenPairResponse struct {
 	RefreshToken string `json:"refreshToken"`
 	ExpiresIn    int64  `json:"expiresIn"`
 	User         *userResponse `json:"user,omitempty"`
+	// IsNew = true если user был создан в этом запросе (для mobile
+	// onboarding-wizard: имя, дата рождения, permissions).
+	IsNew        bool   `json:"isNew,omitempty"`
 }
 
 type userResponse struct {

@@ -12,6 +12,7 @@ import { getNotificationsAdapter } from '../notifications';
 
 import { AppTabs } from './AppTabs';
 import { AuthStack } from './AuthStack';
+import { OnboardingStack } from './OnboardingStack';
 import type { RootStackParamList } from './types';
 
 /** Global navigation ref — used for push deep-link routing from outside React. */
@@ -30,6 +31,7 @@ function LoadingGate() {
 
 export function RootNavigator() {
   const authState = useAuthStore((s) => s.state);
+  const needsOnboarding = useAuthStore((s) => s.needsOnboarding);
   const hydrate = useAuthStore((s) => s.hydrate);
   const hydrated = useRef(false);
 
@@ -93,7 +95,11 @@ export function RootNavigator() {
           screenOptions={{ headerShown: false, animation: 'fade' }}
         >
           {authState === 'authenticated' ? (
-            <Stack.Screen name="App" component={AppTabs} />
+            needsOnboarding ? (
+              <Stack.Screen name="Onboarding" component={OnboardingStack} />
+            ) : (
+              <Stack.Screen name="App" component={AppTabs} />
+            )
           ) : (
             <Stack.Screen name="Auth" component={AuthStack} />
           )}

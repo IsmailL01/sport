@@ -16,6 +16,16 @@ export type RootStackParamList = {
   App: NavigatorScreenParams<AppTabParamList>;
   /** Unauthenticated: onboarding + auth stack. */
   Auth: NavigatorScreenParams<AuthStackParamList>;
+  /** Authenticated + isNew=true: wizard (имя / дата рождения / permissions). */
+  Onboarding: NavigatorScreenParams<OnboardingStackParamList>;
+};
+
+// === Onboarding stack (post-signup wizard) ===
+
+export type OnboardingStackParamList = {
+  Name: undefined;
+  Birthday: undefined;
+  Permissions: undefined;
 };
 
 // === Auth stack ===
@@ -25,9 +35,8 @@ export type AuthStackParamList = {
   Intro: undefined;
   Email: undefined;
   Code: { email: string };
-  Name: undefined;
-  Birthday: undefined;
-  Permissions: undefined;
+  // Name / Birthday / Permissions перенесены в OnboardingStackParamList —
+  // открываются для нового user'а после login-with-code (isNew=true).
 };
 
 // === Main app tabs ===

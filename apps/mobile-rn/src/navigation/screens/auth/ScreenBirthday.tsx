@@ -1,24 +1,28 @@
-// Auth: birthday picker stub (visual only).
-// M4 — real wheel picker (e.g. @react-native-picker/picker или DateTimePicker).
+// Auth: birthday entry. Phase 8 / M9.5.
+//
+// 3 простых TextInput для дня/месяца/года + валидация → ISO YYYY-MM-DD.
+// Wheel-picker не используем (требует expo-modules / native-picker — heavy).
+// onContinue(iso | null): null если пользователь нажал «Пропустить».
 
-import { Pressable, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { Button, Icon, useTheme } from '../../../design';
 
 export function ScreenBirthday({
-  onBack, onContinue,
+  onBack,
+  onContinue,
 }: {
   onBack?: () => void;
-  onContinue?: () => void;
+  onContinue?: (iso: string | null) => void;
 }) {
   const t = useTheme();
+  const [day, setDay] = useState('');
+  const [month, setMonth] = useState('');
+  const [year, setYear] = useState('');
 
-  // Stub values — design-accurate placeholder rows.
-  const cols: ReadonlyArray<ReadonlyArray<readonly [string, string]>> = [
-    [['13', t.text3], ['14', t.text], ['15', t.text3]],
-    [['апр.', t.text3], ['май', t.text], ['июн.', t.text3]],
-    [['2005', t.text3], ['2006', t.text], ['2007', t.text3]],
-  ];
+  const parsed = parseDate(day, month, year);
+  const valid = parsed !== null;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg, padding: 24, paddingTop: 60 }}>
@@ -43,47 +47,100 @@ export function ScreenBirthday({
         Поможет рассчитать пульсовые зоны и план тренировок
       </Text>
 
-      <View style={{ flex: 1 }} />
-
-      <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
-        {cols.map((rows, i) => (
-          <View key={i} style={{ alignItems: 'center', gap: 18 }}>
-            {rows.map(([txt, c], j) => (
-              <View key={j} style={{ position: 'relative', paddingHorizontal: 6 }}>
-                <Text
-                  style={{
-                    fontSize: 32 * t.fontScale,
-                    fontWeight: '600',
-                    color: c,
-                    fontFamily: t.font,
-                  }}
-                >
-                  {txt}
-                </Text>
-                {j === 1 && (
-                  <View
-                    style={{
-                      position: 'absolute',
-                      bottom: -8,
-                      left: 0,
-                      right: 0,
-                      height: 2,
-                      backgroundColor: t.lime,
-                      borderRadius: 1,
-                    }}
-                  />
-                )}
-              </View>
-            ))}
-          </View>
-        ))}
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 32 }}>
+        <Cell label="День" placeholder="14" value={day} setValue={setDay} maxLen={2} t={t} />
+        <Cell label="Месяц" placeholder="05" value={month} setValue={setMonth} maxLen={2} t={t} />
+        <Cell label="Год" placeholder="2006" value={year} setValue={setYear} maxLen={4} t={t} flex={2} />
       </View>
 
+      {!valid && (day !== '' || month !== '' || year !== '') ? (
+        <Text style={{ marginTop: 12, fontSize: 13 * t.fontScale, color: t.warn, fontFamily: t.font }}>
+          Введи реальную дату (например, 14.05.2006)
+        </Text>
+      ) : null}
+
       <View style={{ flex: 1 }} />
 
-      <Button variant="primary" size="lg" full onPress={onContinue}>
+      <Pressable onPress={() => onContinue?.(null)} style={{ alignSelf: 'center', paddingVertical: 12, marginBottom: 8 }} hitSlop={6}>
+        <Text style={{ color: t.text3, fontSize: 14 * t.fontScale, fontFamily: t.font }}>Пропустить</Text>
+      </Pressable>
+
+      <Button
+        variant="primary"
+        size="lg"
+        full
+        disabled={!valid}
+        onPress={() => onContinue?.(parsed)}
+      >
         Продолжить
       </Button>
     </View>
   );
+}
+
+function Cell({
+  label,
+  placeholder,
+  value,
+  setValue,
+  maxLen,
+  flex = 1,
+  t,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  setValue: (v: string) => void;
+  maxLen: number;
+  flex?: number;
+  t: ReturnType<typeof useTheme>;
+}) {
+  return (
+    <View style={{ flex, backgroundColor: t.surface, borderRadius: t.r.md, padding: 14 }}>
+      <Text style={{ fontSize: 11 * t.fontScale, color: t.text3, letterSpacing: 0.5, fontFamily: t.font }}>
+        {label.toUpperCase()}
+      </Text>
+      <TextInput
+        value={value}
+        onChangeText={(v) => setValue(v.replace(/\D/g, '').slice(0, maxLen))}
+        placeholder={placeholder}
+        placeholderTextColor={t.text3}
+        keyboardType="number-pad"
+        maxLength={maxLen}
+        style={{
+          marginTop: 4,
+          fontSize: 24 * t.fontScale,
+          fontWeight: '700',
+          color: t.text,
+          fontFamily: t.fontDisplay,
+          padding: 0,
+        }}
+      />
+    </View>
+  );
+}
+
+function parseDate(d: string, m: string, y: string): string | null {
+  if (d.length < 1 || m.length < 1 || y.length !== 4) return null;
+  const di = parseInt(d, 10);
+  const mi = parseInt(m, 10);
+  const yi = parseInt(y, 10);
+  if (!Number.isFinite(di) || !Number.isFinite(mi) || !Number.isFinite(yi)) return null;
+  if (mi < 1 || mi > 12) return null;
+  if (di < 1 || di > 31) return null;
+  const currentYear = new Date().getFullYear();
+  if (yi < 1900 || yi > currentYear) return null;
+  // Validate via Date (catches Feb 30 etc).
+  const dt = new Date(yi, mi - 1, di);
+  if (
+    dt.getFullYear() !== yi ||
+    dt.getMonth() !== mi - 1 ||
+    dt.getDate() !== di
+  ) {
+    return null;
+  }
+  // Lower bound: должен быть хоть какой-то возраст (>=8 лет — sanity).
+  const age = currentYear - yi;
+  if (age < 8 || age > 120) return null;
+  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }

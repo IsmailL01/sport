@@ -182,6 +182,11 @@ export function ScreenCode() {
 
       <View style={{ flex: 1 }} />
 
+      {__DEV__ ? (
+        <Text style={{ textAlign: 'center', color: t.warn, fontSize: 12 * t.fontScale, marginBottom: 6, fontFamily: t.font }}>
+          DEV: введи любые 6 цифр — пропустит
+        </Text>
+      ) : null}
       <Text style={{ textAlign: 'center', color: t.text3, fontSize: 13 * t.fontScale, marginBottom: 16, fontFamily: t.font }}>
         код придёт на почту в течение минуты
       </Text>

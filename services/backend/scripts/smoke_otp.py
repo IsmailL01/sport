@@ -22,6 +22,10 @@ import urllib.request
 import uuid
 
 BASE = os.environ.get("BASE_URL", "https://148-253-214-156.sslip.io")
+# Phase M9.5: identity service в IDENTITY_DEV_MODE=true принимает ЛЮБОЙ
+# 6-значный код (для тестов с APK без email). Smoke в этом режиме
+# пропускает шаги, проверяющие strict-OTP (reuse-401, wrong-401).
+DEV_MODE = os.environ.get("SMOKE_DEV_MODE", "true") == "true"
 
 
 def req(method, path, *, token=None, body=None):
@@ -81,30 +85,38 @@ def main():
     print(f"   user_id = {user_id}")
     print(f"   displayName = {b['user']['displayName']}")
 
-    print("\n=== 3. Reuse used code → 401 ===")
-    s, b = req("POST", "/auth/login-with-code", body={"email": email, "code": code1})
-    if s != 401:
-        print(f"❌ expected 401, got {s}: {b}")
-        sys.exit(1)
-    print(f"✓ reused code → 401")
-
-    print("\n=== 4. Wrong code on fresh request → 401, attempts++ ===")
-    s, b = req("POST", "/auth/request-code", body={"email": email})
-    must(s, 202, "second request-code", b)
-    code2 = b["devCode"]
-    print(f"   new devCode = {code2}")
-
-    # Try 3 wrong codes.
-    for i in range(3):
-        s, _ = req("POST", "/auth/login-with-code", body={"email": email, "code": "000000"})
+    if DEV_MODE:
+        print("\n=== 3-5. SKIP в dev-mode (любой 6-значный код пропускается) ===")
+        # Ensure non-digit ALL still rejected even в DevMode:
+        s, _ = req("POST", "/auth/login-with-code", body={"email": email, "code": "abcdef"})
         if s != 401:
-            print(f"❌ attempt {i+1}: expected 401, got {s}")
+            print(f"❌ non-digit code: expected 401, got {s}")
             sys.exit(1)
-    print(f"✓ 3 wrong attempts → 401")
+        print(f"✓ non-digit code still → 401 (regardless of DevMode)")
+    else:
+        print("\n=== 3. Reuse used code → 401 ===")
+        s, b = req("POST", "/auth/login-with-code", body={"email": email, "code": code1})
+        if s != 401:
+            print(f"❌ expected 401, got {s}: {b}")
+            sys.exit(1)
+        print(f"✓ reused code → 401")
 
-    print("\n=== 5. Right code still works (attempts < 5) ===")
-    s, b = req("POST", "/auth/login-with-code", body={"email": email, "code": code2})
-    must(s, 200, "right code after 3 wrong", b)
+        print("\n=== 4. Wrong code on fresh request → 401, attempts++ ===")
+        s, b = req("POST", "/auth/request-code", body={"email": email})
+        must(s, 202, "second request-code", b)
+        code2 = b["devCode"]
+        print(f"   new devCode = {code2}")
+
+        for i in range(3):
+            s, _ = req("POST", "/auth/login-with-code", body={"email": email, "code": "000000"})
+            if s != 401:
+                print(f"❌ attempt {i+1}: expected 401, got {s}")
+                sys.exit(1)
+        print(f"✓ 3 wrong attempts → 401")
+
+        print("\n=== 5. Right code still works (attempts < 5) ===")
+        s, b = req("POST", "/auth/login-with-code", body={"email": email, "code": code2})
+        must(s, 200, "right code after 3 wrong", b)
 
     print("\n=== 6. /me with access token ===")
     s, me = req("GET", "/me", token=access)

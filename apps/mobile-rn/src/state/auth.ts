@@ -21,6 +21,12 @@ type AuthStore = {
   state: AuthState;
   user: AuthUser | null;
   error: string | null;
+  /**
+   * Phase M9.5: user впервые создан (isNew=true в response /auth/login-with-code).
+   * Mobile показывает onboarding-wizard (Name → Birthday → Permissions)
+   * прежде чем разрешить AppTabs. Сбрасывается в finishOnboarding().
+   */
+  needsOnboarding: boolean;
 
   /** На старте app — загрузить tokens, проверить через /me. */
   hydrate: () => Promise<void>;
@@ -29,6 +35,10 @@ type AuthStore = {
   logout: () => Promise<void>;
   /** Очистить error (после показа в UI). */
   clearError: () => void;
+  /** Завершить onboarding → пускает на AppTabs. */
+  finishOnboarding: () => void;
+  /** Обновить displayName локально (после успешного PATCH /profiles/me). */
+  setDisplayName: (name: string) => void;
 
   // Phase M4: passwordless OTP.
   /** Запросить 6-digit код. На dev-сервере возвращает code (для UI debug). */
@@ -41,6 +51,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
   state: 'idle',
   user: null,
   error: null,
+  needsOnboarding: false,
 
   hydrate: async () => {
     set({ state: 'hydrating', error: null });
@@ -140,6 +151,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         accessToken?: string;
         refreshToken?: string;
         user?: AuthUser;
+        isNew?: boolean;
         error?: string;
         message?: string;
       };
@@ -151,7 +163,12 @@ export const useAuthStore = create<AuthStore>((set) => ({
         return false;
       }
       await apiClient.setTokens(body.accessToken, body.refreshToken);
-      set({ state: 'authenticated', user: body.user, error: null });
+      set({
+        state: 'authenticated',
+        user: body.user,
+        error: null,
+        needsOnboarding: body.isNew === true,
+      });
       return true;
     } catch (e) {
       set({
@@ -224,8 +241,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } catch (e) {
       console.warn('[auth] xp clearAll failed', e);
     }
-    set({ state: 'unauthenticated', user: null, error: null });
+    set({ state: 'unauthenticated', user: null, error: null, needsOnboarding: false });
   },
 
   clearError: () => set({ error: null }),
+  finishOnboarding: () => set({ needsOnboarding: false }),
+  setDisplayName: (name) =>
+    set((s) => (s.user === null ? s : { user: { ...s.user, displayName: name } })),
 }));
