@@ -8,11 +8,12 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { TabBar, type TabId } from '../design';
 
-// Feed stack — Phase M5 real screens.
+// Feed stack — Phase M5 real screens + M9.8 people search.
 import { FeedScreen } from './screens/feed/FeedScreen';
 import { PostDetailScreen } from './screens/feed/PostDetailScreen';
 import { StoryViewerScreen } from './screens/feed/StoryViewerScreen';
 import { CreatePostScreen } from './screens/feed/CreatePostScreen';
+import { PeopleSearchScreen } from './screens/feed/PeopleSearchScreen';
 
 // Record stack — Phase M6 real screens.
 import { TrackerStartScreen } from './screens/record/TrackerStartScreen';
@@ -60,6 +61,11 @@ function FeedStackNav() {
       <FStack.Screen
         name="CreatePost"
         component={CreatePostScreen}
+        options={{ presentation: 'modal' }}
+      />
+      <FStack.Screen
+        name="PeopleSearch"
+        component={PeopleSearchScreen}
         options={{ presentation: 'modal' }}
       />
     </FStack.Navigator>

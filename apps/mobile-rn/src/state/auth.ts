@@ -241,6 +241,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } catch (e) {
       console.warn('[auth] xp clearAll failed', e);
     }
+    // M9.8: drop social_relations cache (другой viewer на устройстве после logout).
+    try {
+      const { clearAllRelations } = await import('../storage/relationsRepository');
+      clearAllRelations();
+    } catch (e) {
+      console.warn('[auth] relations clearAll failed', e);
+    }
     set({ state: 'unauthenticated', user: null, error: null, needsOnboarding: false });
   },
 

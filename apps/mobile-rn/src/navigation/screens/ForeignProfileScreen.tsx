@@ -18,6 +18,12 @@ import { apiClient } from '../../auth/apiClient';
 import { Avatar, Button, Card, GradeBadge, Icon, useTheme } from '../../design';
 import { useAuthStore } from '../../state/auth';
 import { useChatsStore } from '../../state/social/useChatsStore';
+import {
+  getRelation,
+  isFresh,
+  patchIsFollowing,
+  upsertRelation,
+} from '../../storage/relationsRepository';
 import type { RootStackParamList } from '../types';
 
 type ForeignProfileNav = NativeStackNavigationProp<RootStackParamList, 'ForeignProfile'>;
@@ -59,9 +65,28 @@ export function ForeignProfileScreen() {
   const [opening, setOpening] = useState(false);
 
   const isMe = me?.id === userId;
+  const myId = me?.id ?? null;
+
+  // M9.8: instant render из SQLite cache, потом fresh fetch в фоне.
+  useEffect(() => {
+    if (isMe || myId === null) return;
+    const cached = getRelation(myId, userId);
+    if (cached !== null) {
+      setRel({
+        isFollowing: cached.isFollowing,
+        isFollower: cached.isFollower,
+        isBlocked: cached.isBlocked,
+        isBlockedBy: cached.isBlockedBy,
+        canDm: cached.canDm,
+      });
+      // Fresh row → можно даже не показывать загрузку.
+      if (isFresh(cached)) {
+        setLoading(false);
+      }
+    }
+  }, [userId, isMe, myId]);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [pResp, rResp] = await Promise.all([
         apiClient.api(`/profiles/${userId}`),
@@ -71,42 +96,49 @@ export function ForeignProfileScreen() {
         setProfile((await pResp.json()) as ProfileDTO);
       }
       if (rResp !== null && rResp.ok) {
-        setRel((await rResp.json()) as RelationDTO);
+        const fresh = (await rResp.json()) as RelationDTO;
+        setRel(fresh);
+        if (myId !== null) {
+          upsertRelation(myId, userId, fresh);
+        }
       }
     } catch (e) {
       console.warn('[ForeignProfile] load failed', e);
     } finally {
       setLoading(false);
     }
-  }, [userId, isMe]);
+  }, [userId, isMe, myId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const onToggleFollow = async () => {
-    if (rel === null || toggling) return;
+    if (rel === null || toggling || myId === null) return;
     setToggling(true);
     const prev = rel.isFollowing;
-    // Optimistic.
+    // Optimistic memory + persistent cache.
     setRel({ ...rel, isFollowing: !prev });
     setProfile((p) =>
       p === null ? p : { ...p, followersCount: p.followersCount + (prev ? -1 : 1) },
     );
+    patchIsFollowing(myId, userId, !prev);
     try {
       const resp = await apiClient.api(`/follows/${userId}`, {
         method: prev ? 'DELETE' : 'POST',
       });
       if (!resp.ok && resp.status !== 204) {
-        // Rollback.
+        // Rollback in-memory + cache.
         setRel({ ...rel, isFollowing: prev });
         setProfile((p) =>
           p === null ? p : { ...p, followersCount: p.followersCount + (prev ? 1 : -1) },
         );
+        patchIsFollowing(myId, userId, prev);
       }
     } catch (e) {
       console.warn('[ForeignProfile] toggle follow failed', e);
       setRel({ ...rel, isFollowing: prev });
+      patchIsFollowing(myId, userId, prev);
     } finally {
       setToggling(false);
     }

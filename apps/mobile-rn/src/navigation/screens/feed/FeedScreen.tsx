@@ -69,7 +69,7 @@ export function FeedScreen() {
         brand="cursona"
         trailing={
           <View style={{ flexDirection: 'row', gap: 16 }}>
-            <Pressable hitSlop={8}>
+            <Pressable hitSlop={8} onPress={() => nav.navigate('PeopleSearch')}>
               <Icon name="search" size={22} color={t.text} />
             </Pressable>
             <Pressable hitSlop={8} style={{ position: 'relative' }}>
@@ -118,6 +118,12 @@ export function FeedScreen() {
                 void toggleLike(item.id);
               }}
               onComment={() => nav.navigate('PostDetail', { postId: item.id })}
+              onAuthorPress={() => {
+                if (item.authorId && item.authorId !== myUserId) {
+                  // ForeignProfile живёт в RootStack как modal — open via parent nav.
+                  nav.getParent()?.navigate('ForeignProfile', { userId: item.authorId });
+                }
+              }}
             />
           </View>
         )}
@@ -270,12 +276,14 @@ function PostCardAdapter({
   onPress,
   onLike,
   onComment,
+  onAuthorPress,
 }: {
   post: Post;
   myUserId: string;
   onPress: () => void;
   onLike: () => void;
   onComment: () => void;
+  onAuthorPress?: () => void;
 }) {
   const t = useTheme();
   const author = useUsersStore((s) => s.byId[post.authorId]);
@@ -313,13 +321,18 @@ function PostCardAdapter({
       onPress,
       onLike,
       onComment,
+      onAuthorPress,
     };
-  }, [post, author, onPress, onLike, onComment]);
+  }, [post, author, onPress, onLike, onComment, onAuthorPress]);
 
   if (post.kind === 'text') {
     return (
       <Card>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+        <Pressable
+          style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}
+          onPress={onAuthorPress}
+          disabled={!onAuthorPress}
+        >
           <Avatar src={null} size={40} name={author?.displayName ?? post.authorId} />
           <View style={{ marginLeft: 10, flex: 1 }}>
             <Text style={{ color: t.text, fontSize: 15, fontWeight: '600', fontFamily: t.font }} numberOfLines={1}>
@@ -330,7 +343,7 @@ function PostCardAdapter({
             </Text>
           </View>
           {author?.globalRole === 'admin' && <GradeBadge grade="S" size={20} />}
-        </View>
+        </Pressable>
         <Pressable onPress={onPress}>
           <Text style={{ color: t.text, fontSize: 15, lineHeight: 22, fontFamily: t.font }}>
             {post.body}

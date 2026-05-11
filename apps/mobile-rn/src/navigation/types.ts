@@ -63,6 +63,8 @@ export type FeedStackParamList = {
   PostDetail: { postId: string };
   StoryViewer: { storyId: string; authorId?: string };
   CreatePost: undefined;
+  /** M9.8: «Найти людей» — открыт из header FeedScreen, для подписок. */
+  PeopleSearch: undefined;
 };
 
 export type ChatsStackParamList = {

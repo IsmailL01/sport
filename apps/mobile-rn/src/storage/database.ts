@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 12;
+const TARGET_VERSION = 13;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -327,6 +327,30 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       `CREATE INDEX IF NOT EXISTS idx_feed_comments_post ON feed_comments (post_id, created_at DESC);`,
     );
     current = 12;
+  }
+
+  if (current < 13) {
+    // Phase 8 / M9.8: SQLite cache для социальных relations (used by
+    // ForeignProfileScreen). Позволяет render instantly из cache,
+    // потом refresh в background. TTL контролируется application
+    // logic'ом (5 мин — see relationsRepository).
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS social_relations (
+        viewer_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        is_following INTEGER NOT NULL DEFAULT 0,
+        is_follower INTEGER NOT NULL DEFAULT 0,
+        is_blocked INTEGER NOT NULL DEFAULT 0,
+        is_blocked_by INTEGER NOT NULL DEFAULT 0,
+        can_dm INTEGER NOT NULL DEFAULT 1,
+        cached_at INTEGER NOT NULL,
+        PRIMARY KEY (viewer_id, target_id)
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_social_relations_cached_at ON social_relations (cached_at);`,
+    );
+    current = 13;
   }
 
   if (current !== TARGET_VERSION) {

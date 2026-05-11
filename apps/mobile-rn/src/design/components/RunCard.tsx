@@ -59,6 +59,12 @@ export type RunCardProps = {
   onShare?: () => void;
   onMore?: () => void;
   onPress?: () => void;
+  /**
+   * Tap на header (avatar + name + when/location). Phase M9.8.
+   * Если задан — header становится отдельной Pressable-зоной и не
+   * триггерит общий `onPress` (карточка → детали поста).
+   */
+  onAuthorPress?: () => void;
 
   style?: StyleProp<ViewStyle>;
 };
@@ -85,6 +91,7 @@ export function RunCard({
   onShare,
   onMore,
   onPress,
+  onAuthorPress,
   style,
 }: RunCardProps) {
   const t = useTheme();
@@ -101,15 +108,19 @@ export function RunCard({
         style,
       ]}
     >
-      {/* Header */}
-      <View
-        style={{
+      {/* Header — отдельная Pressable если onAuthorPress задан, чтобы tap
+          на author не триггерил общий onPress (тот ведёт в детали поста). */}
+      <Pressable
+        onPress={onAuthorPress}
+        disabled={!onAuthorPress}
+        style={({ pressed }) => ({
           flexDirection: 'row',
           alignItems: 'center',
           paddingHorizontal: 14,
           paddingTop: 14,
           paddingBottom: 12,
-        }}
+          opacity: onAuthorPress && pressed ? 0.6 : 1,
+        })}
       >
         <View style={{ position: 'relative', marginRight: 12 }}>
           <Avatar src={author.avatar ?? null} size={44} name={author.name} />
@@ -134,7 +145,7 @@ export function RunCard({
             <Icon name="more" size={20} color={t.text2} />
           </Pressable>
         )}
-      </View>
+      </Pressable>
 
       {/* Photo */}
       {photo ? (
