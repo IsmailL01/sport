@@ -38,6 +38,9 @@ export type { AvatarProps } from './components/Avatar';
 
 export { ScreenErrorBoundary } from './components/ScreenErrorBoundary';
 
+export { HeatmapCalendar } from './components/HeatmapCalendar';
+export type { HeatmapCalendarProps } from './components/HeatmapCalendar';
+
 export { Button } from './components/Button';
 export type { ButtonProps, ButtonVariant, ButtonSize } from './components/Button';
 

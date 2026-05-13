@@ -30,6 +30,8 @@ import { SettingsScreen } from './screens/me/SettingsScreen';
 import { ClubsScreen } from './screens/me/ClubsScreen';
 import { ClubScreen } from './screens/me/ClubScreen';
 import { CreateClubScreen } from './screens/me/CreateClubScreen';
+import { RecordsScreen } from './screens/me/RecordsScreen';
+import { StatsScreen } from './screens/me/StatsScreen';
 
 // Chats stack — Phase M9 real screens.
 import { ChatsListScreen } from './screens/chats/ChatsListScreen';
@@ -121,6 +123,8 @@ function MeStackNav() {
       <MStack.Screen name="Clubs" component={ClubsScreen} />
       <MStack.Screen name="Club" component={ClubScreen} />
       <MStack.Screen name="CreateClub" component={CreateClubScreen} />
+      <MStack.Screen name="Records" component={RecordsScreen} />
+      <MStack.Screen name="Stats" component={StatsScreen} />
     </MStack.Navigator>
   );
 }

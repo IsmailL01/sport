@@ -90,6 +90,10 @@ export type MeStackParamList = {
   Clubs: undefined;
   Club: { clubId: string };
   CreateClub: undefined;
+  /** M10.1: Личные рекорды (дистанция / pace / duration / calories). */
+  Records: undefined;
+  /** M10.3: Подробная статистика с графиками. */
+  Stats: undefined;
 };
 
 // === Screen props helpers ===

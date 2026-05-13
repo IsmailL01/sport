@@ -10,7 +10,7 @@
 //   - Tap row → nav SessionDetail
 //   - Long-press row → Alert «Удалить?»
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,6 +19,7 @@ import { Card, Icon, useTheme } from '../../../design';
 import { useHistoryStore } from '../../../state/history';
 import { formatArea, formatDistance, formatDuration, formatPace } from '../../../ui/format';
 import type { Session } from '../../../domain/types';
+import { aggregateSessions, type StatsPeriod } from '../../../domain/stats';
 import type { JournalStackParamList } from '../../types';
 
 type Nav = NativeStackNavigationProp<JournalStackParamList, 'JournalList'>;
@@ -35,26 +36,9 @@ export function JournalScreen() {
     refresh();
   }, [refresh]);
 
-  // Current ISO week summary (Mon-Sun)
-  const weekSummary = useMemo(() => {
-    const now = Date.now();
-    const dt = new Date(now);
-    const dow = (dt.getDay() + 6) % 7; // Mon=0 .. Sun=6
-    const monday = new Date(dt);
-    monday.setHours(0, 0, 0, 0);
-    monday.setDate(dt.getDate() - dow);
-    const startMs = monday.getTime();
-    const endMs = startMs + 7 * 24 * 3600 * 1000;
-    let km = 0;
-    let count = 0;
-    for (const s of sessions) {
-      if (s.startedAt >= startMs && s.startedAt < endMs && s.distanceM !== null) {
-        km += s.distanceM / 1000;
-        count += 1;
-      }
-    }
-    return { km, count };
-  }, [sessions]);
+  // M10.3: period toggle Week/Month.
+  const [period, setPeriod] = useState<StatsPeriod>('week');
+  const summary = useMemo(() => aggregateSessions(sessions, period), [sessions, period]);
 
   const handleDelete = (s: Session) => {
     Alert.alert(
@@ -102,7 +86,7 @@ export function JournalScreen() {
           />
         }
         ListHeaderComponent={
-          <WeekSummary km={weekSummary.km} count={weekSummary.count} t={t} />
+          <PeriodSummary period={period} setPeriod={setPeriod} summary={summary} t={t} />
         }
         ListEmptyComponent={
           !loading ? (
@@ -131,21 +115,60 @@ export function JournalScreen() {
   );
 }
 
-function WeekSummary({
-  km,
-  count,
+function PeriodSummary({
+  period,
+  setPeriod,
+  summary,
   t,
 }: {
-  km: number;
-  count: number;
+  period: StatsPeriod;
+  setPeriod: (p: StatsPeriod) => void;
+  summary: ReturnType<typeof aggregateSessions>;
   t: ReturnType<typeof useTheme>;
 }) {
+  const km = summary.totalDistanceM / 1000;
+  const durMin = Math.round(summary.totalDurationS / 60);
   return (
     <Card style={{ marginBottom: 14, padding: 16 }}>
-      <Text style={{ color: t.text3, fontSize: 11 * t.fontScale, letterSpacing: 0.5, fontFamily: t.font }}>
-        ЭТА НЕДЕЛЯ
-      </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 6 }}>
+      {/* Toggle Week/Month */}
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: 6,
+          padding: 3,
+          backgroundColor: t.surface2,
+          borderRadius: 999,
+          alignSelf: 'flex-start',
+          marginBottom: 12,
+        }}
+      >
+        {(['week', 'month'] as const).map((p) => (
+          <Pressable
+            key={p}
+            onPress={() => setPeriod(p)}
+            style={({ pressed }) => ({
+              paddingHorizontal: 14,
+              paddingVertical: 6,
+              borderRadius: 999,
+              backgroundColor: period === p ? t.lime : 'transparent',
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Text
+              style={{
+                color: period === p ? '#000' : t.text2,
+                fontSize: 12 * t.fontScale,
+                fontWeight: '700',
+                fontFamily: t.font,
+              }}
+            >
+              {p === 'week' ? 'Неделя' : 'Месяц'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <Text
           style={{
             color: t.text,
@@ -159,9 +182,18 @@ function WeekSummary({
           {km.toFixed(2)} км
         </Text>
         <Text style={{ color: t.text2, fontSize: 13 * t.fontScale, fontFamily: t.font }}>
-          {count} {pluralize(count, 'пробежка', 'пробежки', 'пробежек')}
+          {summary.totalSessions} {pluralize(summary.totalSessions, 'пробежка', 'пробежки', 'пробежек')}
         </Text>
       </View>
+
+      {summary.totalSessions > 0 ? (
+        <View style={{ flexDirection: 'row', gap: 18, marginTop: 12 }}>
+          <MiniMetric label="ВРЕМЯ" value={`${durMin} мин`} t={t} />
+          {summary.averagePaceMinKm !== null ? (
+            <MiniMetric label="СР. ТЕМП" value={`${formatPace(summary.averagePaceMinKm)} /км`} t={t} />
+          ) : null}
+        </View>
+      ) : null}
     </Card>
   );
 }

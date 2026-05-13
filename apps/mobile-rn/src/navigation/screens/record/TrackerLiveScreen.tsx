@@ -34,6 +34,7 @@ import { useSensorsStore } from '../../../state/sensors';
 import { useSyncStore } from '../../../state/sync';
 import { writeSessionToHealth } from '../../../health/sync';
 import { currentPace, currentSpeed } from '../../../domain/metrics';
+import { bestPaceForDistance } from '../../../domain/records';
 import { totalDistance } from '../../../util/geo';
 import { formatDistance, formatDuration, formatPace } from '../../../ui/format';
 import type { RecordStackParamList } from '../../types';
@@ -66,6 +67,14 @@ export function TrackerLiveScreen() {
   const speedMs = useMemo(() => currentSpeed(points), [points]);
   const paceMinKm = currentPace(speedMs);
   const durationS = startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
+  // M10.4: avg + best 1km pace на лету (cheap при <1000 точек).
+  const avgPaceMinKm = (distanceM > 0 && durationS > 0)
+    ? durationS / 60 / (distanceM / 1000)
+    : null;
+  const bestPace1KmMinKm = useMemo(
+    () => bestPaceForDistance(points, 1000),
+    [points],
+  );
 
   // Guard: если кто-то занавиговал сюда не имея recording — kick обратно.
   const stateRef = useRef(useActivityStore.getState().state);
@@ -178,6 +187,23 @@ export function TrackerLiveScreen() {
             sub={liveHr === null ? '' : 'уд/мин'}
             t={t}
           />
+        </View>
+
+        {/* M10.4: Avg + Best 1km pace */}
+        <View style={{ flexDirection: 'row', marginTop: 10, gap: 16 }}>
+          <SubMetric
+            label="СР. ТЕМП"
+            value={avgPaceMinKm !== null ? formatPace(avgPaceMinKm) : '—'}
+            sub={avgPaceMinKm !== null ? '/км' : ''}
+            t={t}
+          />
+          <SubMetric
+            label="BEST 1K"
+            value={bestPace1KmMinKm !== null ? formatPace(bestPace1KmMinKm) : '—'}
+            sub={bestPace1KmMinKm !== null ? '/км' : ''}
+            t={t}
+          />
+          <View style={{ flex: 1 }} />
         </View>
 
         {isPaused ? (

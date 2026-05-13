@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 13;
+const TARGET_VERSION = 14;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -351,6 +351,25 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       `CREATE INDEX IF NOT EXISTS idx_social_relations_cached_at ON social_relations (cached_at);`,
     );
     current = 13;
+  }
+
+  if (current < 14) {
+    // Phase 8 / M10.1: личные рекорды.
+    // По одной строке на каждый kind (UNIQUE) — храним только текущий
+    // best. Историю рекордов восстанавливаем из сессий при необходимости.
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS personal_records (
+        kind TEXT PRIMARY KEY,            -- longest_distance / longest_duration / best_pace_1km / ...
+        value REAL NOT NULL,              -- meters / seconds / minPerKm / kcal / kmh
+        session_id INTEGER NOT NULL,
+        achieved_at INTEGER NOT NULL,
+        prev_value REAL                   -- previous best, для UI дельты
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_personal_records_session ON personal_records(session_id);`,
+    );
+    current = 14;
   }
 
   if (current !== TARGET_VERSION) {

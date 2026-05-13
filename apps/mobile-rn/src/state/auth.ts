@@ -248,6 +248,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } catch (e) {
       console.warn('[auth] relations clearAll failed', e);
     }
+    // M10.1: drop personal records (per-user data).
+    try {
+      const { clearAllRecords } = await import('../storage/recordsRepository');
+      clearAllRecords();
+    } catch (e) {
+      console.warn('[auth] records clearAll failed', e);
+    }
     set({ state: 'unauthenticated', user: null, error: null, needsOnboarding: false });
   },
 

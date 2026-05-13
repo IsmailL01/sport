@@ -21,6 +21,8 @@ import {
 import { aggregateHrForSession } from '../storage/sensorRepository';
 import { isClosed, totalDistance } from '../util/geo';
 import { estimateCaloriesRun } from '../domain/calories';
+import { detectNewRecords, type PersonalRecord } from '../domain/records';
+import { getCurrentValuesByKind, upsertRecord } from '../storage/recordsRepository';
 import { useSettingsStore } from './settings';
 
 const FLUSH_THRESHOLD = 10;
@@ -49,6 +51,9 @@ type ActivityStore = {
   /** Площадь и предупреждения от AreaCalculator (актуальны если isClosedNow). */
   areaM2: number | null;
   areaWarnings: AreaWarning[];
+  /** M10.1: новые личные рекорды, выставленные последней finalize-сессией.
+   *  RunDetailsScreen считывает + сразу очищает (acknowledgement). */
+  lastNewRecords: PersonalRecord[];
 
   start: () => void;
   stop: () => void;
@@ -62,6 +67,8 @@ type ActivityStore = {
   setClosureFired: () => void;
   setArea: (areaM2: number | null, warnings: AreaWarning[]) => void;
   noteRaw: (accuracy: number | null) => void;
+  /** RunDetailsScreen вызывает после показа prompt'а. */
+  acknowledgeNewRecords: () => void;
 };
 
 let buffer: Point[] = [];
@@ -160,6 +167,7 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   closureFired: false,
   areaM2: null,
   areaWarnings: [],
+  lastNewRecords: [],
 
   start: () => {
     const sessionId = Date.now();
@@ -236,6 +244,35 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       } catch (e) {
         console.error('[activity] finalizeSession failed', e);
       }
+
+      // M10.1: detect и persist новые личные рекорды.
+      let newRecords: PersonalRecord[] = [];
+      try {
+        if (startedAt !== null && distance > 0 && durationS > 0) {
+          const current = getCurrentValuesByKind();
+          const detected = detectNewRecords(
+            {
+              sessionId, startedAt, endedAt,
+              distanceM: distance, durationS, caloriesKcal,
+            },
+            points,
+            current,
+          );
+          newRecords = detected.map((d) => ({
+            kind: d.kind,
+            value: d.value,
+            sessionId,
+            achievedAt: endedAt,
+            prevValue: d.prevValue,
+          }));
+          for (const rec of newRecords) {
+            upsertRecord(rec);
+          }
+        }
+      } catch (e) {
+        console.warn('[activity] detectNewRecords failed', e);
+      }
+
       set({
         state: 'stopped',
         endedAt,
@@ -243,6 +280,7 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
         isPaused: false,
         areaM2: areaResult.areaM2,
         areaWarnings: areaResult.warnings,
+        lastNewRecords: newRecords,
       });
     } else {
       set({
@@ -301,6 +339,7 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       closureFired: false,
       areaM2: null,
       areaWarnings: [],
+      lastNewRecords: [],
     });
   },
 
@@ -349,4 +388,5 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   setArea: (areaM2, areaWarnings) => set({ areaM2, areaWarnings }),
   noteRaw: (accuracy) =>
     set((s) => ({ rawCount: s.rawCount + 1, lastRawAccuracy: accuracy })),
+  acknowledgeNewRecords: () => set({ lastNewRecords: [] }),
 }));

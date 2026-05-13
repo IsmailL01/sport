@@ -17,7 +17,7 @@ import { Alert, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { Button, Icon, useTheme } from '../../../design';
+import { Button, Card, Icon, useTheme } from '../../../design';
 import {
   HistoryTerritoryLayer,
   LocationPuckLayer,
@@ -39,6 +39,8 @@ import {
   formatPace,
 } from '../../../ui/format';
 import type { Point } from '../../../domain/types';
+import { RECORD_LABELS, type PersonalRecord } from '../../../domain/records';
+import { formatRecordValue } from '../../../domain/recordsFormat';
 import type { RecordStackParamList } from '../../types';
 
 type Nav = NativeStackNavigationProp<RecordStackParamList, 'RunDetails'>;
@@ -57,26 +59,33 @@ export function RunDetailsScreen() {
   );
   const closedSessionsPoints = useHistoryStore((s) => s.closedSessionsPoints);
   const resetActivity = useActivityStore((s) => s.reset);
+  const acknowledgeNewRecords = useActivityStore((s) => s.acknowledgeNewRecords);
   const myUser = useAuthStore((s) => s.user);
 
-  // Snapshot points/area из activity (пока ещё в state='stopped'), чтобы
-  // потом reset не стёр данные на экране.
-  const snapshot = useRef<{ points: Point[]; areaM2: number | null; closureFired: boolean } | null>(null);
+  // Snapshot points/area + newRecords из activity (пока ещё state='stopped').
+  const snapshot = useRef<{
+    points: Point[];
+    areaM2: number | null;
+    closureFired: boolean;
+    newRecords: PersonalRecord[];
+  } | null>(null);
   if (snapshot.current === null) {
     const a = useActivityStore.getState();
     snapshot.current = {
       points: a.points,
       areaM2: a.areaM2,
       closureFired: a.closureFired,
+      newRecords: a.lastNewRecords,
     };
   }
-  const { points, areaM2, closureFired } = snapshot.current;
+  const { points, areaM2, closureFired, newRecords } = snapshot.current;
 
-  // Refresh + reset activity один раз.
+  // Refresh + reset activity один раз. acknowledge → next visit чистый.
   useEffect(() => {
     refreshHistory();
+    acknowledgeNewRecords();
     resetActivity();
-  }, [refreshHistory, resetActivity]);
+  }, [refreshHistory, resetActivity, acknowledgeNewRecords]);
 
   const distanceM = useMemo(() => totalDistance(points), [points]);
   const durationS =
@@ -207,6 +216,62 @@ export function RunDetailsScreen() {
           ) : null}
         </View>
       </View>
+
+      {/* M10.1: новый личный рекорд */}
+      {newRecords.length > 0 ? (
+        <Card
+          style={{
+            marginHorizontal: 20,
+            marginTop: 20,
+            padding: 16,
+            backgroundColor: 'rgba(198,245,96,0.12)',
+            borderColor: 'rgba(198,245,96,0.32)',
+            borderWidth: 1,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Icon name="trophy" size={20} color={t.lime} />
+            <Text
+              style={{
+                color: t.text,
+                fontSize: 16 * t.fontScale,
+                fontWeight: '800',
+                fontFamily: t.font,
+                letterSpacing: -0.3,
+              }}
+            >
+              {newRecords.length === 1 ? 'Новый личный рекорд!' : `${newRecords.length} новых рекорда!`}
+            </Text>
+          </View>
+          {newRecords.map((rec) => (
+            <View
+              key={rec.kind}
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                paddingVertical: 4,
+              }}
+            >
+              <Text style={{ color: t.text2, fontSize: 13 * t.fontScale, fontFamily: t.font, flex: 1 }}>
+                {RECORD_LABELS[rec.kind]}
+              </Text>
+              <Text
+                style={{
+                  color: t.text,
+                  fontSize: 15 * t.fontScale,
+                  fontWeight: '700',
+                  fontFamily: t.fontDisplay,
+                  fontStyle: 'italic',
+                  marginLeft: 12,
+                }}
+              >
+                {formatRecordValue(rec.kind, rec.value)}
+              </Text>
+            </View>
+          ))}
+        </Card>
+      ) : null}
 
       {/* Map preview */}
       <View

@@ -17,7 +17,8 @@ import { Alert, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { Avatar, Card, GradeBadge, Icon, useTheme } from '../../../design';
+import { Avatar, Card, GradeBadge, HeatmapCalendar, Icon, useTheme } from '../../../design';
+import { computeStreak } from '../../../domain/streak';
 import { useAuthStore } from '../../../state/auth';
 import { useHistoryStore } from '../../../state/history';
 import { useXpStore } from '../../../modules/gamification';
@@ -189,6 +190,9 @@ export function MeScreen() {
           </Text>
         </Card>
 
+        {/* M10.2: Streak + Heatmap */}
+        <StreakCard sessions={sessions} t={t} />
+
         {/* Action list */}
         <View style={{ marginTop: 18, gap: 8 }}>
           <ActionRow
@@ -203,6 +207,20 @@ export function MeScreen() {
             label="Датчики"
             sub="HR / BLE сенсоры"
             onPress={() => Alert.alert('Датчики', 'Скоро вернём — Phase M10.')}
+            t={t}
+          />
+          <ActionRow
+            icon="trophy"
+            label="Личные рекорды"
+            sub="лучшая дистанция, темп, длительность"
+            onPress={() => nav.navigate('Records')}
+            t={t}
+          />
+          <ActionRow
+            icon="chart"
+            label="Статистика"
+            sub="графики и агрегаты по периодам"
+            onPress={() => nav.navigate('Stats')}
             t={t}
           />
           <ActionRow
@@ -235,6 +253,70 @@ export function MeScreen() {
       </View>
     </ScrollView>
   );
+}
+
+function StreakCard({
+  sessions,
+  t,
+}: {
+  sessions: ReadonlyArray<{ startedAt: number; distanceM: number | null }>;
+  t: ReturnType<typeof useTheme>;
+}) {
+  const streak = computeStreak(sessions);
+  return (
+    <Card style={{ marginTop: 12, padding: 16 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+        <View>
+          <Text style={{ fontSize: 11 * t.fontScale, color: t.text3, letterSpacing: 0.3, fontFamily: t.font }}>
+            СТРИК
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+            <Text
+              style={{
+                fontSize: 28 * t.fontScale,
+                fontWeight: '800',
+                color: t.text,
+                fontFamily: t.fontDisplay,
+                fontStyle: 'italic',
+                letterSpacing: -0.5,
+              }}
+            >
+              {streak.current}
+            </Text>
+            <Text style={{ color: t.text2, fontSize: 13 * t.fontScale, fontFamily: t.font }}>
+              {pluralizeDays(streak.current)} подряд
+            </Text>
+          </View>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={{ fontSize: 11 * t.fontScale, color: t.text3, letterSpacing: 0.3, fontFamily: t.font }}>
+            ЛУЧШИЙ
+          </Text>
+          <Text
+            style={{
+              fontSize: 18 * t.fontScale,
+              fontWeight: '700',
+              color: t.text2,
+              fontFamily: t.fontDisplay,
+              fontStyle: 'italic',
+              marginTop: 2,
+            }}
+          >
+            {streak.longest}
+          </Text>
+        </View>
+      </View>
+      <HeatmapCalendar sessions={sessions} title="последние 12 недель" />
+    </Card>
+  );
+}
+
+function pluralizeDays(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'день';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня';
+  return 'дней';
 }
 
 function StatCell({
