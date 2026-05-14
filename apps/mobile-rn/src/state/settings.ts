@@ -10,6 +10,7 @@ import type { AthleteProfile, Sex } from '../domain/athlete';
 
 export type Units = 'metric' | 'imperial';
 export type Theme = 'light' | 'dark' | 'auto';
+export type MapStyle = 'streets' | 'outdoors' | 'satellite';
 export type WeekStartDay = 'monday' | 'sunday';
 
 export type Goals = {
@@ -22,6 +23,8 @@ export type Goals = {
 type SettingsStore = {
   units: Units;
   theme: Theme;
+  /** Стиль карты (Mapbox style URI dispatcher). */
+  mapStyle: MapStyle;
   /** weightKg на корне сохранён для backward-compat. Канонический источник теперь — athlete.weightKg. */
   weightKg: number;
   athlete: AthleteProfile;
@@ -31,9 +34,12 @@ type SettingsStore = {
   goals: Goals;
   /** Стабильный deviceId этого устройства (для real-time WebSocket). Phase 8 / A5. */
   deviceId: string | null;
+  /** Номер телефона E.164 (для будущего поиска чатов; пока хранится локально). */
+  phoneE164: string | null;
 
   setUnits: (units: Units) => void;
   setTheme: (theme: Theme) => void;
+  setMapStyle: (style: MapStyle) => void;
   setWeight: (weightKg: number) => void;
   setHomeLocation: (loc: { latitude: number; longitude: number } | null) => void;
   markBatteryHintShown: () => void;
@@ -41,6 +47,7 @@ type SettingsStore = {
   setGoals: (patch: Partial<Goals>) => void;
   setWeekStartDay: (d: WeekStartDay) => void;
   setDeviceId: (id: string) => void;
+  setPhoneE164: (phone: string | null) => void;
 };
 
 const DEFAULT_ATHLETE: AthleteProfile = {
@@ -77,6 +84,7 @@ export const useSettingsStore = create<SettingsStore>()(
     (set) => ({
       units: 'metric',
       theme: 'auto',
+      mapStyle: 'outdoors',
       weightKg: 70,
       athlete: DEFAULT_ATHLETE,
       homeLocation: null,
@@ -84,9 +92,11 @@ export const useSettingsStore = create<SettingsStore>()(
       weekStartDay: 'monday',
       goals: DEFAULT_GOALS,
       deviceId: null,
+      phoneE164: null,
 
       setUnits: (units) => set({ units }),
       setTheme: (theme) => set({ theme }),
+      setMapStyle: (mapStyle) => set({ mapStyle }),
       setWeight: (weightKg) =>
         set((s) => ({ weightKg, athlete: { ...s.athlete, weightKg } })),
       setHomeLocation: (homeLocation) => set({ homeLocation }),
@@ -99,13 +109,16 @@ export const useSettingsStore = create<SettingsStore>()(
       setGoals: (patch) => set((s) => ({ goals: { ...s.goals, ...patch } })),
       setWeekStartDay: (weekStartDay) => set({ weekStartDay }),
       setDeviceId: (deviceId) => set({ deviceId }),
+      setPhoneE164: (phoneE164) => set({ phoneE164: normalizePhoneE164(phoneE164) }),
     }),
     {
       name: 'running-ecosystem-settings',
       storage: createJSONStorage(() => mmkvStorage),
-      version: 3,
+      version: 5,
       // v1 → v2: добавились athlete/goals/weekStartDay. Старые поля сохраняются.
       // v2 → v3: добавился deviceId (Phase 8 / A5).
+      // v3 → v4: добавился mapStyle.
+      // v4 → v5: добавился phoneE164 (локальный, для будущего поиска чатов).
       migrate: (persisted, fromVersion) => {
         let p = (persisted ?? {}) as Partial<SettingsStore>;
         if (fromVersion < 2) {
@@ -121,6 +134,12 @@ export const useSettingsStore = create<SettingsStore>()(
         if (fromVersion < 3) {
           p = { ...p, deviceId: null };
         }
+        if (fromVersion < 4) {
+          p = { ...p, mapStyle: 'outdoors' };
+        }
+        if (fromVersion < 5) {
+          p = { ...p, phoneE164: null };
+        }
         return p as SettingsStore;
       },
     },
@@ -128,3 +147,19 @@ export const useSettingsStore = create<SettingsStore>()(
 );
 
 export type { AthleteProfile, Sex };
+
+/**
+ * Нормализация телефона в E.164-подобный формат: оставляем только цифры,
+ * добавляем `+` если строка непустая.
+ *
+ * Это НЕ полная E.164-валидация — лишь грубая защита от мусора в storage.
+ * Реальная валидация (libphonenumber) — задача backend'а в Round 4+.
+ */
+export function normalizePhoneE164(input: string | null): string | null {
+  if (input === null) return null;
+  const trimmed = input.trim();
+  if (trimmed === '') return null;
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length < 6 || digits.length > 15) return null;
+  return `+${digits}`;
+}

@@ -14,7 +14,12 @@
 //     react-native-health (iOS) и react-native-health-connect (Android)
 //     или Expo equivalent
 
-export type HealthPlatform = 'apple-health' | 'health-connect' | 'mock';
+export type HealthPlatform =
+  | 'apple-health'
+  | 'health-connect'
+  | 'strava'
+  | 'garmin'
+  | 'mock';
 
 /**
  * Что мы экспортируем в платформу. Соответствует workout-у в HealthKit /
@@ -74,4 +79,13 @@ export interface HealthAdapter {
    * Используется при первичной синхронизации после connect.
    */
   readWorkouts(sinceMs: number): Promise<ImportedWorkout[]>;
+
+  /**
+   * Incremental pull — workouts с момента `sinceMs`, либо все если null.
+   * Возвращает их в порядке возрастания startedAt.
+   *
+   * Контракт дедупа: caller проверяет уникальность по
+   * (platform, sourceUuid) перед записью в sessions. См. docs/INTEGRATIONS.md.
+   */
+  pullSince(sinceMs: number | null): Promise<ImportedWorkout[]>;
 }

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { calculateArea, type AreaWarning } from '../domain/AreaCalculator';
 import { ClosureDetector } from '../domain/ClosureDetector';
-import type { ActivityState, Point } from '../domain/types';
+import type { ActivityState, ActivityType, Point } from '../domain/types';
 import {
   createDefaultPipeline,
   PauseDetector,
@@ -19,11 +19,15 @@ import {
   findActiveSession,
 } from '../storage/sessionRepository';
 import { aggregateHrForSession } from '../storage/sensorRepository';
+import { appendLapsForSession } from '../storage/lapRepository';
 import { isClosed, totalDistance } from '../util/geo';
-import { estimateCaloriesRun } from '../domain/calories';
+import { estimateCaloriesBest } from '../domain/calories';
+import { lapFromRange, type Lap } from '../domain/lap';
 import { detectNewRecords, type PersonalRecord } from '../domain/records';
 import { getCurrentValuesByKind, upsertRecord } from '../storage/recordsRepository';
 import { useSettingsStore } from './settings';
+import { useAuthStore } from './auth';
+import { useWalletStore } from './wallet';
 
 const FLUSH_THRESHOLD = 10;
 
@@ -54,9 +58,17 @@ type ActivityStore = {
   /** M10.1: новые личные рекорды, выставленные последней finalize-сессией.
    *  RunDetailsScreen считывает + сразу очищает (acknowledgement). */
   lastNewRecords: PersonalRecord[];
+  /** Тип активности текущей сессии (выбирается на TrackerStart). */
+  activityType: ActivityType;
+  /** Manual lap-marks за сессию (см. domain/lap.ts). */
+  laps: Lap[];
+  /** Индекс точки в `points`, с которой начинается текущий lap. */
+  lapStartIdx: number;
 
-  start: () => void;
+  start: (activityType?: ActivityType) => void;
   stop: () => void;
+  /** Зафиксировать текущий lap и начать новый. */
+  markLap: () => void;
   /** Внутренний — вызывается из LocationAdapter после pipeline. */
   acceptPoint: (point: Point) => void;
   reset: () => void;
@@ -168,8 +180,11 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   areaM2: null,
   areaWarnings: [],
   lastNewRecords: [],
+  activityType: 'run',
+  laps: [],
+  lapStartIdx: 0,
 
-  start: () => {
+  start: (activityType = 'run') => {
     const sessionId = Date.now();
     buffer = [];
     pipeline.reset();
@@ -177,7 +192,7 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     closureDetector.reset();
     lastAreaRecompute = 0;
     try {
-      createSession({ id: sessionId, startedAt: sessionId });
+      createSession({ id: sessionId, startedAt: sessionId, activityType });
     } catch (e) {
       console.error('[activity] createSession failed', e);
     }
@@ -196,6 +211,9 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       closureFired: false,
       areaM2: null,
       areaWarnings: [],
+      activityType,
+      laps: [],
+      lapStartIdx: 0,
     });
   },
 
@@ -221,12 +239,15 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       } catch (e) {
         console.warn('[activity] aggregateHrForSession failed', e);
       }
-      // Оценка калорий через MET (если задан вес атлета).
+      // Оценка калорий: HR-based если есть полная биометрия и HR, иначе MET.
       const startedAt = get().startedAt;
       const durationS = startedAt !== null ? (endedAt - startedAt) / 1000 : 0;
       const athlete = useSettingsStore.getState().athlete;
-      const caloriesKcal = estimateCaloriesRun(
-        athlete.weightKg ?? null,
+      const activityType = get().activityType;
+      const caloriesKcal = estimateCaloriesBest(
+        activityType,
+        athlete,
+        avgHrBpm,
         durationS,
         distance,
       );
@@ -243,6 +264,41 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
         });
       } catch (e) {
         console.error('[activity] finalizeSession failed', e);
+      }
+
+      // Currency: начислить монеты за сессию (если есть user + kcal). См. domain/currency.ts.
+      try {
+        const userId = useAuthStore.getState().user?.id ?? null;
+        if (userId !== null && caloriesKcal !== null && durationS > 0) {
+          useWalletStore.getState().awardForSession({
+            userId,
+            sessionId,
+            activity: activityType,
+            kcal: caloriesKcal,
+            durationS,
+            distanceM: distance,
+            avgHrBpm,
+          });
+        }
+      } catch (e) {
+        console.warn('[activity] awardForSession failed', e);
+      }
+
+      // Финализируем последний lap (между последним lap-mark и финишем).
+      try {
+        const lapStart = get().lapStartIdx;
+        const existingLaps = get().laps;
+        const allLaps = [...existingLaps];
+        if (points.length - lapStart >= 2) {
+          const tail = lapFromRange(points, lapStart, existingLaps.length + 1);
+          if (tail !== null) allLaps.push(tail);
+        }
+        if (allLaps.length > 0) {
+          appendLapsForSession(sessionId, allLaps);
+          set({ laps: allLaps });
+        }
+      } catch (e) {
+        console.warn('[activity] persist laps failed', e);
       }
 
       // M10.1: detect и persist новые личные рекорды.
@@ -340,6 +396,9 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       areaM2: null,
       areaWarnings: [],
       lastNewRecords: [],
+      activityType: 'run',
+      laps: [],
+      lapStartIdx: 0,
     });
   },
 
@@ -378,6 +437,21 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
       areaM2: recoveredArea,
       areaWarnings:
         session.calcMethod === 'shoelace_with_warning' ? ['self-intersection'] : [],
+    });
+  },
+
+  markLap: () => {
+    // Functional set: гарантирует, что мы читаем актуальный points даже если
+    // между вычислением и записью пришла новая точка через acceptPoint.
+    set((s) => {
+      if (s.state !== 'recording') return s;
+      if (s.points.length - s.lapStartIdx < 2) return s; // нужны ≥2 точки
+      const lap = lapFromRange(s.points, s.lapStartIdx, s.laps.length + 1);
+      if (lap === null) return s;
+      return {
+        laps: [...s.laps, lap],
+        lapStartIdx: s.points.length - 1,
+      };
     });
   },
 

@@ -52,6 +52,8 @@ export function TrackerLiveScreen() {
   const setPaused = useActivityStore((s) => s.setPaused);
   const stopActivity = useActivityStore((s) => s.stop);
   const resetActivity = useActivityStore((s) => s.reset);
+  const markLap = useActivityStore((s) => s.markLap);
+  const laps = useActivityStore((s) => s.laps);
   const closedSessionsPoints = useHistoryStore((s) => s.closedSessionsPoints);
   const triggerSync = useSyncStore((s) => s.trigger);
   const liveHr = useSensorsStore((s) => s.liveHrBpm);
@@ -146,6 +148,21 @@ export function TrackerLiveScreen() {
         {closureFired && <ZoneLayer points={points} />}
       </MapboxView>
 
+      {/* Тусклая карта на паузе — overlay поверх MapboxView. */}
+      {isPaused ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+          }}
+        />
+      ) : null}
+
       {/* Top overlay: метрики */}
       <View
         pointerEvents="none"
@@ -221,9 +238,39 @@ export function TrackerLiveScreen() {
           left: 16,
           right: 16,
           flexDirection: 'row',
-          gap: 12,
+          gap: 10,
         }}
       >
+        <Pressable
+          onPress={markLap}
+          disabled={isPaused || points.length < 2}
+          style={({ pressed }) => ({
+            width: 64,
+            height: 64,
+            borderRadius: 32,
+            backgroundColor: t.surface,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: pressed ? 0.85 : isPaused || points.length < 2 ? 0.4 : 1,
+          })}
+        >
+          <Icon name="stopwatch" size={22} color={t.text} />
+          {laps.length > 0 ? (
+            <Text
+              style={{
+                position: 'absolute',
+                bottom: 6,
+                color: t.lime,
+                fontSize: 10,
+                fontWeight: '800',
+                fontFamily: t.font,
+              }}
+            >
+              {laps.length}
+            </Text>
+          ) : null}
+        </Pressable>
+
         <Pressable
           onPress={handlePause}
           style={({ pressed }) => ({

@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 14;
+const TARGET_VERSION = 19;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -19,8 +19,22 @@ let _db: SQLite.SQLiteDatabase | null = null;
  * - v8: + таблицы `social_users` (cache profiles) и `chats` (Phase 8 / A5).
  * - v9: + таблица `messages` с outbox-полями (Phase 8 / A5).
  * - v10: + media_id + media_mime в messages (Phase 8 / B3 image attachments).
- * - v11: + таблицы `stories` + `story_views` (Phase 8 / C — модуль `modules/stories`).
- * - v12: + таблицы `feed_posts` + `feed_comments` (Phase 8 / D — модуль `modules/feed`).
+ * - v11: + таблицы `stories` + `story_views` (deprecated: feed/stories убраны из UI;
+ *   таблицы остаются для rollback-safety, не используются на чтение/запись).
+ * - v12: + таблицы `feed_posts` + `feed_comments` (deprecated: см. v11).
+ * - v13: + таблица `social_relations` (cache для ForeignProfile).
+ * - v14: + таблица `personal_records` (best-of каждого RecordKind).
+ * - v15: + таблицы `wallet_balance` + `wallet_transactions` (внутренняя валюта,
+ *   калории → монеты, см. docs/CURRENCY.md).
+ * - v16: + колонки `source` и `external_uuid` в sessions (импорт активностей
+ *   из часов/HealthKit/Health Connect; дедуп по (source, external_uuid)).
+ * - v17: + колонка `activity_type` в sessions (run / trail / walk / cycle /
+ *   treadmill / generic_cardio). Маршрутизирует MET-таблицу и multiplier
+ *   валюты (см. domain/calories.ts и domain/currency.ts).
+ * - v18: + таблица `laps` (manual lap-marks во время записи). Per-session
+ *   с lap_number, distance, duration, pace, avg_hr.
+ * - v19: CHECK (coins >= 0) на wallet_balance. SQLite не поддерживает
+ *   ADD CONSTRAINT на ALTER TABLE — пересоздаём таблицу с миграцией данных.
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
@@ -370,6 +384,115 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       `CREATE INDEX IF NOT EXISTS idx_personal_records_session ON personal_records(session_id);`,
     );
     current = 14;
+  }
+
+  if (current < 15) {
+    // Внутренняя валюта приложения. См. docs/CURRENCY.md.
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS wallet_balance (
+        user_id TEXT PRIMARY KEY,
+        coins INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS wallet_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        kind TEXT NOT NULL,                -- earn | spend | adjust
+        amount INTEGER NOT NULL,           -- always positive; sign из kind
+        source TEXT NOT NULL,              -- session | admin | refund | promo
+        source_session_id INTEGER,         -- nullable; FK на sessions.id
+        ts INTEGER NOT NULL,
+        meta TEXT                          -- JSON: { activityType, kcal, paceMinKm, ... }
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_wallet_tx_user_ts ON wallet_transactions (user_id, ts DESC);`,
+    );
+    db.execSync(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_tx_session_unique
+       ON wallet_transactions (user_id, source_session_id)
+       WHERE source_session_id IS NOT NULL;`,
+    );
+    current = 15;
+  }
+
+  if (current < 16) {
+    // Integrations: помечаем источник сессии и внешний uuid для дедупа.
+    const sessCols = db.getAllSync<{ name: string }>(
+      `PRAGMA table_info(sessions);`,
+    );
+    if (!sessCols.some((c) => c.name === 'source')) {
+      db.execSync(
+        `ALTER TABLE sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'gps';`,
+      );
+    }
+    if (!sessCols.some((c) => c.name === 'external_uuid')) {
+      db.execSync(`ALTER TABLE sessions ADD COLUMN external_uuid TEXT;`);
+    }
+    // Дедуп: один внешний uuid + источник = одна сессия.
+    db.execSync(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_source_external
+       ON sessions (source, external_uuid)
+       WHERE external_uuid IS NOT NULL;`,
+    );
+    current = 16;
+  }
+
+  if (current < 17) {
+    const sessCols = db.getAllSync<{ name: string }>(
+      `PRAGMA table_info(sessions);`,
+    );
+    if (!sessCols.some((c) => c.name === 'activity_type')) {
+      db.execSync(
+        `ALTER TABLE sessions ADD COLUMN activity_type TEXT NOT NULL DEFAULT 'run';`,
+      );
+    }
+    current = 17;
+  }
+
+  if (current < 18) {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS laps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        lap_number INTEGER NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER NOT NULL,
+        distance_m REAL NOT NULL,
+        duration_s INTEGER NOT NULL,
+        pace_min_km REAL,
+        avg_hr_bpm REAL
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_laps_session ON laps (session_id, lap_number);`,
+    );
+    current = 18;
+  }
+
+  if (current < 19) {
+    // wallet_balance.coins должен быть >= 0. SQLite не позволяет добавить
+    // CHECK через ALTER TABLE → пересоздаём таблицу.
+    db.withTransactionSync(() => {
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS wallet_balance_new (
+          user_id TEXT PRIMARY KEY,
+          coins INTEGER NOT NULL DEFAULT 0 CHECK (coins >= 0),
+          updated_at INTEGER NOT NULL
+        );
+      `);
+      // Перенос данных. Если у кого-то уже отрицательный баланс (баг до фикса)
+      // — clamp к 0 чтобы не уронить CHECK.
+      db.execSync(`
+        INSERT INTO wallet_balance_new (user_id, coins, updated_at)
+        SELECT user_id, MAX(coins, 0), updated_at FROM wallet_balance;
+      `);
+      db.execSync(`DROP TABLE wallet_balance;`);
+      db.execSync(`ALTER TABLE wallet_balance_new RENAME TO wallet_balance;`);
+    });
+    current = 19;
   }
 
   if (current !== TARGET_VERSION) {

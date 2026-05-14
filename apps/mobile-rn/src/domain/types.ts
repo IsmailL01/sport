@@ -66,7 +66,18 @@ export type Session = {
   maxHrBpm: number | null;
   /** Сожжённые калории (MET estimate), null если вес атлета не задан. */
   caloriesKcal: number | null;
+  /** Тип активности — определяет MET-таблицу и multiplier валюты. */
+  activityType: ActivityType;
 };
+
+/** Тип активности — должно совпадать с ActivityType из domain/currency.ts. */
+export type ActivityType =
+  | 'run'
+  | 'trail'
+  | 'walk'
+  | 'cycle'
+  | 'treadmill'
+  | 'generic_cardio';
 
 /**
  * Геометрия трека — для кода удобнее работать со списком точек, а в БД они

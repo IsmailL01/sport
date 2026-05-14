@@ -20,11 +20,12 @@ import {
   TrackLayer,
   ZoneLayer,
 } from '../../../map';
-import { useAuthStore } from '../../../state/auth';
 import { useHistoryStore } from '../../../state/history';
-import { useFeedStore } from '../../../modules/feed';
 import { serializeToGpx } from '../../../domain/gpx';
 import { loadPointsForSession } from '../../../storage/pointRepository';
+import { computeSplits, fastestAndSlowestKm, type Split } from '../../../domain/splits';
+import { fastestAndSlowestLap, type Lap } from '../../../domain/lap';
+import { listLapsForSession } from '../../../storage/lapRepository';
 import {
   formatArea,
   formatCalories,
@@ -47,7 +48,6 @@ export function SessionDetailScreen() {
   const session = useHistoryStore((s) => s.sessions.find((x) => x.id === sessionId));
   const closedSessionsPoints = useHistoryStore((s) => s.closedSessionsPoints);
   const deleteSession = useHistoryStore((s) => s.delete);
-  const myUser = useAuthStore((s) => s.user);
 
   // Точки сессии: сначала проверим in-memory cache, потом lazy load.
   const [points, setPoints] = useState<Point[] | null>(null);
@@ -77,23 +77,23 @@ export function SessionDetailScreen() {
     return durationS / 60 / (distanceM / 1000);
   }, [distanceM, durationS]);
 
-  const [sharedToFeed, setSharedToFeed] = useState(false);
+  const splits = useMemo<Split[]>(() => {
+    if (points === null || points.length < 2) return [];
+    return computeSplits(points);
+  }, [points]);
+  const splitHighlights = useMemo(() => fastestAndSlowestKm(splits), [splits]);
 
-  const handleShare = async () => {
-    if (myUser === null || session === undefined) return;
-    const km = distanceM / 1000;
-    const minutes = Math.round(durationS / 60);
-    const caption = `🏃 Пробежка: ${km.toFixed(2)} км · ${minutes} мин`;
+  const [laps, setLaps] = useState<Lap[]>([]);
+  useEffect(() => {
+    if (session === undefined) return;
     try {
-      await useFeedStore
-        .getState()
-        .composeSession(myUser.id, String(session.id), caption);
-      setSharedToFeed(true);
-      Alert.alert('Опубликовано в ленте', caption);
+      setLaps(listLapsForSession(sessionId));
     } catch (e) {
-      Alert.alert('Не получилось опубликовать', String(e));
+      console.warn('[SessionDetail] listLaps failed', e);
+      setLaps([]);
     }
-  };
+  }, [session, sessionId]);
+  const lapHighlights = useMemo(() => fastestAndSlowestLap(laps), [laps]);
 
   const handleExport = async () => {
     if (session === undefined || points === null || points.length === 0) {
@@ -227,24 +227,194 @@ export function SessionDetailScreen() {
         )}
       </View>
 
+      {/* Laps (manual) */}
+      {laps.length > 0 ? (
+        <View style={{ paddingHorizontal: 20, marginTop: 24 }}>
+          <Text
+            style={{
+              color: t.text3,
+              fontSize: 11 * t.fontScale,
+              letterSpacing: 0.6,
+              textTransform: 'uppercase',
+              fontFamily: t.font,
+              marginBottom: 10,
+            }}
+          >
+            Круги
+          </Text>
+          <View
+            style={{
+              backgroundColor: t.surface,
+              borderRadius: 16,
+              paddingVertical: 4,
+              paddingHorizontal: 14,
+            }}
+          >
+            {laps.map((lp, idx) => {
+              const fastest = lapHighlights.fastest === lp.lapNumber;
+              const slowest = lapHighlights.slowest === lp.lapNumber;
+              const accent = fastest ? t.lime : slowest ? t.warn : t.text;
+              return (
+                <View
+                  key={lp.lapNumber}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 10,
+                    borderBottomWidth: idx < laps.length - 1 ? 1 : 0,
+                    borderBottomColor: t.divider,
+                  }}
+                >
+                  <Text
+                    style={{
+                      width: 36,
+                      color: t.text2,
+                      fontSize: 13 * t.fontScale,
+                      fontFamily: t.font,
+                      fontWeight: '700',
+                    }}
+                  >
+                    {lp.lapNumber}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: t.text,
+                      fontSize: 14 * t.fontScale,
+                      fontFamily: t.fontDisplay,
+                      fontStyle: 'italic',
+                      fontWeight: '700',
+                    }}
+                  >
+                    {formatDuration(lp.durationS)}
+                  </Text>
+                  <Text
+                    style={{
+                      color: t.text2,
+                      fontSize: 12 * t.fontScale,
+                      marginRight: 12,
+                      fontFamily: t.font,
+                    }}
+                  >
+                    {formatDistance(lp.distanceM)}
+                  </Text>
+                  <Text
+                    style={{
+                      color: accent,
+                      fontSize: 14 * t.fontScale,
+                      fontFamily: t.fontDisplay,
+                      fontStyle: 'italic',
+                      fontWeight: '700',
+                    }}
+                  >
+                    {lp.paceMinKm !== null ? `${formatPace(lp.paceMinKm)}/км` : '—'}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {/* Splits per km */}
+      {splits.length > 0 ? (
+        <View style={{ paddingHorizontal: 20, marginTop: 24 }}>
+          <Text
+            style={{
+              color: t.text3,
+              fontSize: 11 * t.fontScale,
+              letterSpacing: 0.6,
+              textTransform: 'uppercase',
+              fontFamily: t.font,
+              marginBottom: 10,
+            }}
+          >
+            Сплиты по км
+          </Text>
+          <View
+            style={{
+              backgroundColor: t.surface,
+              borderRadius: 16,
+              paddingVertical: 4,
+              paddingHorizontal: 14,
+            }}
+          >
+            {splits.map((sp, idx) => {
+              const fastest = splitHighlights.fastestKm === sp.km;
+              const slowest = splitHighlights.slowestKm === sp.km;
+              const accent = fastest ? t.lime : slowest ? t.warn : t.text;
+              return (
+                <View
+                  key={sp.km}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 10,
+                    borderBottomWidth: idx < splits.length - 1 ? 1 : 0,
+                    borderBottomColor: t.divider,
+                  }}
+                >
+                  <Text
+                    style={{
+                      width: 36,
+                      color: t.text2,
+                      fontSize: 13 * t.fontScale,
+                      fontFamily: t.font,
+                      fontWeight: '700',
+                    }}
+                  >
+                    {sp.km}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: t.text,
+                      fontSize: 14 * t.fontScale,
+                      fontFamily: t.fontDisplay,
+                      fontStyle: 'italic',
+                      fontWeight: '700',
+                    }}
+                  >
+                    {formatDuration(Math.round(sp.durationS))}
+                  </Text>
+                  <Text
+                    style={{
+                      color: accent,
+                      fontSize: 14 * t.fontScale,
+                      fontFamily: t.fontDisplay,
+                      fontStyle: 'italic',
+                      fontWeight: '700',
+                    }}
+                  >
+                    {formatPace(sp.paceMinKm)}/км
+                  </Text>
+                  {sp.avgHrBpm !== null ? (
+                    <Text
+                      style={{
+                        marginLeft: 10,
+                        color: t.text3,
+                        fontSize: 12 * t.fontScale,
+                        fontFamily: t.font,
+                      }}
+                    >
+                      {Math.round(sp.avgHrBpm)} уд
+                    </Text>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
       {/* Actions */}
       <View style={{ paddingHorizontal: 20, marginTop: 24, gap: 10 }}>
         <Button
           variant="primary"
           size="lg"
           full
-          disabled={sharedToFeed || myUser === null}
-          onPress={handleShare}
-          icon={<Icon name="share" size={20} color="#000" />}
-        >
-          {sharedToFeed ? 'Опубликовано' : 'Поделиться в ленте'}
-        </Button>
-        <Button
-          variant="secondary"
-          size="md"
-          full
           onPress={handleExport}
-          icon={<Icon name="download" size={18} color={t.text} />}
+          icon={<Icon name="download" size={20} color="#000" />}
         >
           Экспорт GPX
         </Button>

@@ -11,16 +11,6 @@ export type RealtimeEvent =
   | { event: 'message.deleted'; messageId: string; conversationId: string; deletedBy: string }
   | { event: 'message.edited'; messageId: string; body: string; editedAt: string }
   | { event: 'read.updated'; chatId: string; userId: string; lastReadMessageId: string }
-  // Phase D realtime: лайки/комменты к моим постам.
-  | { event: 'feed.post.liked'; postId: string; authorId: string; userId: string }
-  | { event: 'feed.post.commented';
-      postId: string; commentId: string;
-      postAuthorId: string; commenterId: string;
-      body?: string | null }
-  // Phase H realtime: новая story от подписки.
-  | { event: 'feed.story.published';
-      storyId: string; authorId: string; mediaId: string;
-      createdAt: string | number; expiresAt: string | number }
   // Phase M3: gamification — мой XP изменился (after session finalize).
   | { event: 'user.xp.changed';
       userId: string; sessionId: string; delta: number; total: number;

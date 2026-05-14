@@ -77,44 +77,6 @@ export const useRealtimeStore = create<RealtimeStore>((set, get) => ({
           );
           break;
         }
-        // Phase D realtime: лайки/комменты к моим постам.
-        case 'feed.post.liked': {
-          // Lazy-import чтобы не создавать импортный цикл с modules/feed.
-          import('../../modules/feed')
-            .then(({ useFeedStore }) => {
-              const ev = e as Extract<RealtimeEvent, { event: 'feed.post.liked' }>;
-              useFeedStore.getState().applyLikeIncoming(ev.postId, ev.userId);
-            })
-            .catch(() => { /* модуль не загружен — игнор */ });
-          break;
-        }
-        case 'feed.post.commented': {
-          import('../../modules/feed')
-            .then(({ useFeedStore }) => {
-              const ev = e as Extract<RealtimeEvent, { event: 'feed.post.commented' }>;
-              useFeedStore.getState().applyCommentIncoming(ev.postId);
-            })
-            .catch(() => { /* модуль не загружен — игнор */ });
-          break;
-        }
-        // Phase H realtime: published story from a followee.
-        case 'feed.story.published': {
-          import('../../modules/stories')
-            .then(({ useStoriesStore }) => {
-              const ev = e as Extract<RealtimeEvent, { event: 'feed.story.published' }>;
-              // Phase J: inline-prepend без full refresh — instant UX,
-              // zero network. SQLite cache обновляется внутри.
-              useStoriesStore.getState().applyIncomingStory({
-                storyId: ev.storyId,
-                authorId: ev.authorId,
-                mediaId: ev.mediaId,
-                createdAt: ev.createdAt,
-                expiresAt: ev.expiresAt,
-              });
-            })
-            .catch(() => { /* модуль не загружен — игнор */ });
-          break;
-        }
         // Phase M3: my XP changed (после finalize session).
         case 'user.xp.changed': {
           import('../../modules/gamification')

@@ -78,12 +78,5 @@ export type { XPBadgeProps } from './components/XPBadge';
 export { Metric } from './components/Metric';
 export type { MetricProps, MetricSize } from './components/Metric';
 
-// === Compound ===
-export { StoryRing } from './components/StoryRing';
-export type { StoryRingProps } from './components/StoryRing';
-
-export { RunCard } from './components/RunCard';
-export type { RunCardProps, RunCardAuthor } from './components/RunCard';
-
 // === Dev only — visual sanity check ===
 export { DevPreviewScreen } from './DevPreviewScreen';

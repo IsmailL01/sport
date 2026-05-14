@@ -1,27 +1,38 @@
-// Tab: Я / Settings — Phase 8 / M8.
+// Tab: Я / Settings.
 //
 // Sections:
 //   - Аккаунт: email + Logout + Удалить аккаунт (stub Alert)
-//   - Дисплей (dev-only — __DEV__): theme dark/light + font/density/radius
+//   - Отображение: theme dark/light/auto + units km/mi
+//   - Уведомления (placeholder)
+//   - Дисплей (DEV): font/density/radius tweaks
 //   - О приложении: версия
 
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { Card, Icon, useTheme, useThemeStore, useTweak } from '../../../design';
 import { useAuthStore } from '../../../state/auth';
+import { useSettingsStore } from '../../../state/settings';
 import type { MeStackParamList } from '../../types';
 
 type Nav = NativeStackNavigationProp<MeStackParamList, 'Settings'>;
 
-const APP_VERSION = '0.8 (M8)';
+const APP_VERSION = '0.9';
 
 export function SettingsScreen() {
   const t = useTheme();
   const nav = useNavigation<Nav>();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const units = useSettingsStore((s) => s.units);
+  const setUnits = useSettingsStore((s) => s.setUnits);
+  const mapStyle = useSettingsStore((s) => s.mapStyle);
+  const setMapStyle = useSettingsStore((s) => s.setMapStyle);
+  const phoneE164 = useSettingsStore((s) => s.phoneE164);
+  const setPhoneE164 = useSettingsStore((s) => s.setPhoneE164);
+  const [phoneDraft, setPhoneDraft] = useState<string>(phoneE164 ?? '');
 
   const [theme, setThemeTweak] = useTweak('theme');
   const [fontSize, setFontSize] = useTweak('fontSize');
@@ -80,6 +91,32 @@ export function SettingsScreen() {
       <Section title="Аккаунт" t={t}>
         <Row label="Email" value={user?.email ?? '—'} t={t} />
         <Row label="ID" value={user?.id ?? '—'} t={t} mono />
+        <View style={{ paddingVertical: 10 }}>
+          <Text style={{ color: t.text2, fontSize: 13 * t.fontScale, fontFamily: t.font, marginBottom: 6 }}>
+            Телефон
+          </Text>
+          <TextInput
+            value={phoneDraft}
+            onChangeText={setPhoneDraft}
+            onEndEditing={() => setPhoneE164(phoneDraft)}
+            placeholder="+7 999 1234567"
+            placeholderTextColor={t.text3}
+            keyboardType="phone-pad"
+            autoCorrect={false}
+            style={{
+              backgroundColor: t.surface2,
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              color: t.text,
+              fontSize: 14 * t.fontScale,
+              fontFamily: t.font,
+            }}
+          />
+          <Text style={{ color: t.text3, fontSize: 11 * t.fontScale, fontFamily: t.font, marginTop: 6 }}>
+            Хранится только на этом устройстве. Поиск чатов по номеру появится в следующих версиях.
+          </Text>
+        </View>
         <Pressable onPress={handleLogout}>
           {({ pressed }) => (
             <View style={{ paddingVertical: 14, opacity: pressed ? 0.6 : 1 }}>
@@ -100,6 +137,41 @@ export function SettingsScreen() {
         </Pressable>
       </Section>
 
+      {/* Отображение — user-facing */}
+      <Section title="Отображение" t={t}>
+        <ToggleRow
+          label="Тема"
+          options={[
+            { id: 'dark', label: 'Тёмная' },
+            { id: 'light', label: 'Светлая' },
+          ]}
+          value={theme}
+          onChange={setThemeTweak}
+          t={t}
+        />
+        <ToggleRow
+          label="Единицы"
+          options={[
+            { id: 'metric', label: 'Километры' },
+            { id: 'imperial', label: 'Мили' },
+          ]}
+          value={units}
+          onChange={setUnits}
+          t={t}
+        />
+        <ToggleRow
+          label="Карта"
+          options={[
+            { id: 'outdoors', label: 'Спорт' },
+            { id: 'streets', label: 'Улицы' },
+            { id: 'satellite', label: 'Спутник' },
+          ]}
+          value={mapStyle}
+          onChange={setMapStyle}
+          t={t}
+        />
+      </Section>
+
       {/* Уведомления (placeholder) */}
       <Section title="Уведомления" t={t}>
         <Row label="Push-уведомления" value="включены" t={t} />
@@ -112,16 +184,6 @@ export function SettingsScreen() {
       {/* Display tweaks — DEV ONLY */}
       {__DEV__ ? (
         <Section title="Дисплей (DEV)" t={t}>
-          <ToggleRow
-            label="Тема"
-            options={[
-              { id: 'dark', label: 'Тёмная' },
-              { id: 'light', label: 'Светлая' },
-            ]}
-            value={theme}
-            onChange={setThemeTweak}
-            t={t}
-          />
           <SliderRow
             label="Размер шрифта"
             value={fontSize}

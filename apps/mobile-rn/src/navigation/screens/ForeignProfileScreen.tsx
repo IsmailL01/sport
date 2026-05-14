@@ -279,13 +279,13 @@ export function ForeignProfileScreen() {
         </View>
       ) : null}
 
-      {/* Hint about stories */}
+      {/* Hint про взаимную подписку */}
       {!isMe && rel?.isFollowing && rel?.isFollower ? (
         <Card style={{ marginTop: 24, marginHorizontal: 20, padding: 14, backgroundColor: 'rgba(198,245,96,0.08)' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Icon name="check" size={16} color={t.lime} />
             <Text style={{ color: t.text2, fontSize: 13 * t.fontScale, fontFamily: t.font, flex: 1 }}>
-              Взаимная подписка — вы видите stories друг друга
+              Взаимная подписка — вы видите забеги друг друга
             </Text>
           </View>
         </Card>

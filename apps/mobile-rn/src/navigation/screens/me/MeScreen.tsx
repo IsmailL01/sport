@@ -22,13 +22,14 @@ import { computeStreak } from '../../../domain/streak';
 import { useAuthStore } from '../../../state/auth';
 import { useHistoryStore } from '../../../state/history';
 import { useXpStore } from '../../../modules/gamification';
+import { useWalletStore } from '../../../state/wallet';
 import { aggregateSessions } from '../../../domain/stats';
 import { formatDistance, formatDuration } from '../../../ui/format';
 import type { MeStackParamList } from '../../types';
 
 type Nav = NativeStackNavigationProp<MeStackParamList, 'Profile'>;
 
-const APP_VERSION = '0.8 (M8)';
+const APP_VERSION = '0.9';
 
 export function MeScreen() {
   const t = useTheme();
@@ -42,6 +43,7 @@ export function MeScreen() {
   const verified = useXpStore((s) => s.verified);
   const xpRefresh = useXpStore((s) => s.refresh);
   const xpToNext = useXpStore((s) => s.xpToNextGrade);
+  const walletBalance = useWalletStore((s) => s.balance);
 
   useEffect(() => {
     refreshHistory();
@@ -214,6 +216,13 @@ export function MeScreen() {
             label="Личные рекорды"
             sub="лучшая дистанция, темп, длительность"
             onPress={() => nav.navigate('Records')}
+            t={t}
+          />
+          <ActionRow
+            icon="bolt"
+            label="Кошелёк"
+            sub={`${walletBalance.toLocaleString('ru-RU')} монет`}
+            onPress={() => nav.navigate('Wallet')}
             t={t}
           />
           <ActionRow

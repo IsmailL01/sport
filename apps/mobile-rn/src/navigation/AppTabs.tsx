@@ -1,19 +1,12 @@
-// 5-tab bottom-tabs shell. Phase 8 / M2.
+// 4-tab bottom-tabs shell.
 //
-// Каждая вкладка — отдельный native-stack (заглушки сейчас).
+// Tabs: Record (default) / Journal / Chats / Me.
 // Custom tab bar — `<TabBar>` из design-system.
 
 import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { TabBar, type TabId } from '../design';
-
-// Feed stack — Phase M5 real screens + M9.8 people search.
-import { FeedScreen } from './screens/feed/FeedScreen';
-import { PostDetailScreen } from './screens/feed/PostDetailScreen';
-import { StoryViewerScreen } from './screens/feed/StoryViewerScreen';
-import { CreatePostScreen } from './screens/feed/CreatePostScreen';
-import { PeopleSearchScreen } from './screens/feed/PeopleSearchScreen';
 
 // Record stack — Phase M6 real screens.
 import { TrackerStartScreen } from './screens/record/TrackerStartScreen';
@@ -32,47 +25,24 @@ import { ClubScreen } from './screens/me/ClubScreen';
 import { CreateClubScreen } from './screens/me/CreateClubScreen';
 import { RecordsScreen } from './screens/me/RecordsScreen';
 import { StatsScreen } from './screens/me/StatsScreen';
+import { WalletScreen } from './screens/me/WalletScreen';
+import { ShopScreen } from './screens/me/ShopScreen';
 
 // Chats stack — Phase M9 real screens.
 import { ChatsListScreen } from './screens/chats/ChatsListScreen';
 import { ChatScreen } from './screens/chats/ChatScreen';
 import { CreateChatScreen } from './screens/chats/CreateChatScreen';
+import { PeopleSearchScreen } from './screens/chats/PeopleSearchScreen';
 
 import type {
   AppTabParamList,
   ChatsStackParamList,
-  FeedStackParamList,
   JournalStackParamList,
   MeStackParamList,
   RecordStackParamList,
 } from './types';
 
 // === Per-tab nested stacks ===
-
-const FStack = createNativeStackNavigator<FeedStackParamList>();
-function FeedStackNav() {
-  return (
-    <FStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0A0A' } }}>
-      <FStack.Screen name="FeedHome" component={FeedScreen} />
-      <FStack.Screen name="PostDetail" component={PostDetailScreen} />
-      <FStack.Screen
-        name="StoryViewer"
-        component={StoryViewerScreen}
-        options={{ presentation: 'modal', animation: 'fade' }}
-      />
-      <FStack.Screen
-        name="CreatePost"
-        component={CreatePostScreen}
-        options={{ presentation: 'modal' }}
-      />
-      <FStack.Screen
-        name="PeopleSearch"
-        component={PeopleSearchScreen}
-        options={{ presentation: 'modal' }}
-      />
-    </FStack.Navigator>
-  );
-}
 
 const CStack = createNativeStackNavigator<ChatsStackParamList>();
 function ChatsStackNav() {
@@ -81,6 +51,11 @@ function ChatsStackNav() {
       <CStack.Screen name="ChatsList" component={ChatsListScreen} />
       <CStack.Screen name="Chat" component={ChatScreen} />
       <CStack.Screen name="CreateChat" component={CreateChatScreen} />
+      <CStack.Screen
+        name="PeopleSearch"
+        component={PeopleSearchScreen}
+        options={{ presentation: 'modal' }}
+      />
     </CStack.Navigator>
   );
 }
@@ -125,6 +100,8 @@ function MeStackNav() {
       <MStack.Screen name="CreateClub" component={CreateClubScreen} />
       <MStack.Screen name="Records" component={RecordsScreen} />
       <MStack.Screen name="Stats" component={StatsScreen} />
+      <MStack.Screen name="Wallet" component={WalletScreen} />
+      <MStack.Screen name="Shop" component={ShopScreen} />
     </MStack.Navigator>
   );
 }
@@ -134,23 +111,21 @@ function MeStackNav() {
 const Tab = createBottomTabNavigator<AppTabParamList>();
 
 const ROUTE_TO_TABID: Record<keyof AppTabParamList, TabId> = {
-  Feed: 'feed',
-  Chats: 'chats',
   Record: 'record',
   Journal: 'journal',
+  Chats: 'chats',
   Me: 'me',
 };
 const TABID_TO_ROUTE: Record<TabId, keyof AppTabParamList> = {
-  feed: 'Feed',
-  chats: 'Chats',
   record: 'Record',
   journal: 'Journal',
+  chats: 'Chats',
   me: 'Me',
 };
 
 function CursonaTabBar({ state, navigation }: BottomTabBarProps) {
   const current = state.routes[state.index].name as keyof AppTabParamList;
-  const activeId = ROUTE_TO_TABID[current] ?? 'feed';
+  const activeId = ROUTE_TO_TABID[current] ?? 'record';
   return (
     <TabBar
       active={activeId}
@@ -165,14 +140,13 @@ function CursonaTabBar({ state, navigation }: BottomTabBarProps) {
 export function AppTabs() {
   return (
     <Tab.Navigator
-      initialRouteName="Feed"
+      initialRouteName="Record"
       tabBar={CursonaTabBar}
       screenOptions={{ headerShown: false }}
     >
-      <Tab.Screen name="Feed" component={FeedStackNav} />
-      <Tab.Screen name="Chats" component={ChatsStackNav} />
       <Tab.Screen name="Record" component={RecordStackNav} />
       <Tab.Screen name="Journal" component={JournalStackNav} />
+      <Tab.Screen name="Chats" component={ChatsStackNav} />
       <Tab.Screen name="Me" component={MeStackNav} />
     </Tab.Navigator>
   );

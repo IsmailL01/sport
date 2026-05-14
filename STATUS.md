@@ -4,6 +4,45 @@
 
 ## Текущая фаза
 
+**Review fixes R1–R8** ✅ (2026-05-06) — см. [CHANGELOG.md](CHANGELOG.md) и [docs/REVIEW_ROUNDS_1-3.md](docs/REVIEW_ROUNDS_1-3.md):
+- 🔴 R1: StravaAdapter без `client_secret` (PKCE-ready, refresh через backend-proxy).
+- 🟡 R2: `wallet_balance.coins CHECK (>= 0)` миграция v19 + `validateTransaction` + `InsufficientBalanceError`.
+- 🟡 R3/R6: подчищены комментарии и UI hints упоминающие удалённые feed/stories.
+- 🟡 R4: RunCard + StoryRing удалены (−250 LOC мёртвого кода).
+- 🟡 R5: +23 теста для walletDomain / walletStore / importPlan.
+- 🟡 R7: `markLap` через functional set — закрывает race window.
+- 🟡 R8: Apple displayName type-guard.
+- tsc clean, **jest 435/435 passing**.
+
+**Round 3 P2 scaffolds + ADRs** ✅ (2026-05-06) — см. [CHANGELOG.md](CHANGELOG.md):
+- ADR-0002 Guest mode (deferred), ADR-0003 OAuth Google/Apple, ADR-0004 backend cleanup feed/stories (do-nothing).
+- `AuthProvider` interface + Google/Apple stub-safe adapters (UI кнопки рендерятся только при доступности native пакетов).
+- `HealthKitAdapter` (iOS, lazy `react-native-health`); singleton picker возвращает HK на iOS, HC на Android.
+- `StravaAdapter` pull-only (env-var driven, готов к подключению Round 4).
+- `HealthPlatform` extended: + strava + garmin.
+- Phone field: `useSettingsStore.phoneE164` (MMKV v5), `normalizePhoneE164`, input в Settings, чат-поиск различает phone-query.
+- `ShopScreen` — отдельный sub-screen в Me-stack с 4 категориями и 9 заглушками товаров; вход из WalletScreen.
+- tsc clean, **jest 412/412 passing** (без новых тестов — P2 scaffolds).
+
+**Round 2 P1 polish** ✅ (2026-05-06) — см. [CHANGELOG.md](CHANGELOG.md):
+- Тусклая карта на паузе, тема карты в Settings (outdoors/streets/satellite), «+N монет» banner на RunDetails.
+- Activity-type sport-agnostic: миграция v17, MET-таблицы для run/trail/walk/cycle/treadmill, все chips в TrackerStart активны, calories+currency маршрутизируются по типу.
+- HR-based калории (Keytel 2005) с fallback на MET через `estimateCaloriesBest`.
+- Lap-функционал: миграция v18 (`laps` table), `domain/lap.ts`, кнопка-секундомер в TrackerLive, lap-таблица на RunDetails и SessionDetail с подсветкой fastest/slowest.
+- Integrations: `importRepo.importFromAdapter` с дедупом по `UNIQUE(source, external_uuid)`, `checkWorkoutSanity` (running pace, cycling speed, HR range).
+- tsc clean, **jest 412/412 passing** (+34: 13 caloriesExt + 7 lap + 9 importSanity + 2 importAward + 3 misc).
+
+**Round 1 cleanup + Currency + Integrations contract** ✅ (2026-05-06) — см. [CHANGELOG.md](CHANGELOG.md), [docs/AUDIT.md](docs/AUDIT.md), [docs/CURRENCY.md](docs/CURRENCY.md), [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md):
+- Удалены Feed / Stories с mobile (модули + экраны + навигация + realtime). Backend оставлен запущенным.
+- 4-таб shell: Запись (default) / Журнал / Чаты / Я.
+- Чаты Telegram-style с inline-поиском по displayName / @username.
+- TrackerStart: сводка за неделю + последняя активность.
+- SessionDetail: вернули таблицу сплитов по км.
+- Settings: вытащили theme и units (km/mi) из __DEV__.
+- Currency module: domain + storage + store + UI Wallet, 13 unit-тестов. Hook в session-save.
+- Integrations contract: `HealthAdapter.pullSince`, `HealthConnectAdapter` (Android stub-safe), миграция v16 (`sessions.source` + `external_uuid` + UNIQUE).
+- tsc clean, **jest 378/378 passing**.
+
 **Phase 8 / E — Модерация (reports + audit + admin)** ✅ code-complete (backend + mobile + smoke)
 
 Phase 0 закрыта — выбран Expo React Native, см. [DECISION.md](DECISION.md). Flutter архивирован в `apps/mobile_flutter.archived/`.

@@ -54,4 +54,14 @@ export class MockHealthAdapter implements HealthAdapter {
     }
     return this.fakeImports.filter((w) => w.endedAt >= sinceMs);
   }
+
+  async pullSince(sinceMs: number | null): Promise<ImportedWorkout[]> {
+    if (!this.granted.has('read-workouts')) {
+      throw new Error('read-workouts scope not granted');
+    }
+    const list = sinceMs === null
+      ? this.fakeImports
+      : this.fakeImports.filter((w) => w.endedAt >= sinceMs);
+    return [...list].sort((a, b) => a.startedAt - b.startedAt);
+  }
 }

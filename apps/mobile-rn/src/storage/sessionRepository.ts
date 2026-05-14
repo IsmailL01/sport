@@ -1,4 +1,4 @@
-import type { Session } from '../domain/types';
+import type { ActivityType, Session } from '../domain/types';
 import { getDatabase } from './database';
 
 type SessionRow = {
@@ -13,10 +13,11 @@ type SessionRow = {
   avg_hr_bpm: number | null;
   max_hr_bpm: number | null;
   calories_kcal: number | null;
+  activity_type: string | null;
 };
 
 const SELECT_COLS =
-  'id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note, avg_hr_bpm, max_hr_bpm, calories_kcal';
+  'id, started_at, ended_at, is_closed, distance_m, area_m2, calc_method, note, avg_hr_bpm, max_hr_bpm, calories_kcal, activity_type';
 
 function rowToSession(row: SessionRow): Session {
   return {
@@ -31,6 +32,7 @@ function rowToSession(row: SessionRow): Session {
     avgHrBpm: row.avg_hr_bpm,
     maxHrBpm: row.max_hr_bpm,
     caloriesKcal: row.calories_kcal,
+    activityType: (row.activity_type as ActivityType | null) ?? 'run',
   };
 }
 
@@ -41,12 +43,13 @@ function rowToSession(row: SessionRow): Session {
 export function createSession(session: {
   id: number;
   startedAt: number;
+  activityType?: ActivityType;
 }): void {
   const db = getDatabase();
   db.runSync(
-    `INSERT OR REPLACE INTO sessions (id, started_at)
-     VALUES (?, ?);`,
-    [session.id, session.startedAt],
+    `INSERT OR REPLACE INTO sessions (id, started_at, activity_type)
+     VALUES (?, ?, ?);`,
+    [session.id, session.startedAt, session.activityType ?? 'run'],
   );
 }
 

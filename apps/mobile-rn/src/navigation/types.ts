@@ -48,29 +48,20 @@ export type AuthStackParamList = {
 // === Main app tabs ===
 
 export type AppTabParamList = {
-  Feed: NavigatorScreenParams<FeedStackParamList>;
-  Chats: NavigatorScreenParams<ChatsStackParamList>;
   Record: NavigatorScreenParams<RecordStackParamList>;
   Journal: NavigatorScreenParams<JournalStackParamList>;
+  Chats: NavigatorScreenParams<ChatsStackParamList>;
   Me: NavigatorScreenParams<MeStackParamList>;
 };
 
 // === Per-tab nested stacks ===
-// Все пока — single screen / stub. M5-M10 заполнят детали.
-
-export type FeedStackParamList = {
-  FeedHome: undefined;
-  PostDetail: { postId: string };
-  StoryViewer: { storyId: string; authorId?: string };
-  CreatePost: undefined;
-  /** M9.8: «Найти людей» — открыт из header FeedScreen, для подписок. */
-  PeopleSearch: undefined;
-};
 
 export type ChatsStackParamList = {
   ChatsList: undefined;
   Chat: { chatId: string };
   CreateChat: undefined;
+  /** «Найти людей» — открыт из header ChatsList; tap → ForeignProfile. */
+  PeopleSearch: undefined;
 };
 
 export type RecordStackParamList = {
@@ -94,6 +85,10 @@ export type MeStackParamList = {
   Records: undefined;
   /** M10.3: Подробная статистика с графиками. */
   Stats: undefined;
+  /** Внутренняя валюта (см. docs/CURRENCY.md). */
+  Wallet: undefined;
+  /** Магазин (траты валюты — Round 3 scaffold). */
+  Shop: undefined;
 };
 
 // === Screen props helpers ===

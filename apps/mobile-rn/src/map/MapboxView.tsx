@@ -8,8 +8,10 @@ import { type ReactNode } from 'react';
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Mapbox, { Camera, MapView } from '@rnmapbox/maps';
 
+import { useSettingsStore, type MapStyle } from '../state/settings';
+
 export type MapboxViewProps = {
-  /** Mapbox style URL. По умолчанию — `mapbox://styles/mapbox/outdoors-v12`. */
+  /** Mapbox style URL. Переопределяет настройку пользователя. По умолчанию — берётся из settings.mapStyle. */
   styleUrl?: string;
   /** Если true — камера следует за пользователем (zoom = 16 по умолчанию). */
   followUserLocation?: boolean;
@@ -19,19 +21,25 @@ export type MapboxViewProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-const DEFAULT_STYLE = 'mapbox://styles/mapbox/outdoors-v12';
+const STYLE_URLS: Record<MapStyle, string> = {
+  streets: 'mapbox://styles/mapbox/streets-v12',
+  outdoors: 'mapbox://styles/mapbox/outdoors-v12',
+  satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
+};
 
 export function MapboxView({
-  styleUrl = DEFAULT_STYLE,
+  styleUrl,
   followUserLocation = true,
   followZoomLevel = 16,
   children,
   style,
 }: MapboxViewProps) {
+  const mapStyle = useSettingsStore((s) => s.mapStyle);
+  const resolved = styleUrl ?? STYLE_URLS[mapStyle];
   return (
     <MapView
       style={[styles.map, style]}
-      styleURL={styleUrl}
+      styleURL={resolved}
       compassEnabled
       scaleBarEnabled={false}
       attributionEnabled

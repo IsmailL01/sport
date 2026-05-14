@@ -16,9 +16,7 @@ import {
   Icon,
   Logo,
   Metric,
-  RunCard,
   SectionHeader,
-  StoryRing,
   TabBar,
   TopBar,
   Verified,
@@ -118,41 +116,10 @@ export function DevPreviewScreen() {
           <Verified size={24} />
         </View>
 
-        <SectionHeader title="Stories rail" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <StoryRing src="https://i.pravatar.cc/100?img=33" name="Ты" isOwn />
-            <StoryRing src="https://i.pravatar.cc/100?img=47" name="Анастасия" grade="A" />
-            <StoryRing src="https://i.pravatar.cc/100?img=12" name="Андрей" grade="B" />
-            <StoryRing src="https://i.pravatar.cc/100?img=25" name="Маша" grade="A+" />
-            <StoryRing src="https://i.pravatar.cc/100?img=15" name="Илья" grade="C+" unread={false} />
-          </View>
-        </ScrollView>
-
-        <SectionHeader title="RunCard" />
-        <RunCard
-          author={{ name: 'Анастасия Петрова', avatar: 'https://i.pravatar.cc/120?img=47', grade: 'A' }}
-          location="Dubai, UAE"
-          when="сегодня, 13:03"
-          photo="https://images.unsplash.com/photo-1571008887538-b36bb32f4571?w=800"
-          dist="16,00"
-          time="01:18:56"
-          pace="04:55"
-          xp={17}
-          device="Garmin"
-          weather="+25°"
-          mood="8/10 😎"
-          hashtag="#palm_jumeirah"
-          caption="Утро на пальме — теперь это привычка. Лёгкий ветер с моря, темп держится сам."
-          likes={24}
-          comments={3}
-          liked
-        />
-
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      <TabBar active="feed" />
+      <TabBar active="record" />
     </View>
   );
 }

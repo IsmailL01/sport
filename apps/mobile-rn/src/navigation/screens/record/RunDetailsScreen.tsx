@@ -7,12 +7,12 @@
 //   - Cursona header "Готово" + grade chip
 //   - Map preview (TrackLayer для open / ZoneLayer для closed)
 //   - Stats: distance, duration, avg pace, avg HR, area, calories
-//   - Actions: «Поделиться в ленте», «Export GPX», «Удалить», «Готово»
+//   - Actions: «Export GPX», «Удалить», «Готово»
 //
 // На mount копируем points/areaM2 из activityStore в локальный snapshot,
 // чтобы потом безопасно сделать resetActivity (готов следующий запуск).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Alert, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -26,9 +26,8 @@ import {
   ZoneLayer,
 } from '../../../map';
 import { useActivityStore } from '../../../state/activity';
-import { useAuthStore } from '../../../state/auth';
 import { useHistoryStore } from '../../../state/history';
-import { useFeedStore } from '../../../modules/feed';
+import { useWalletStore } from '../../../state/wallet';
 import { serializeToGpx } from '../../../domain/gpx';
 import { totalDistance } from '../../../util/geo';
 import {
@@ -41,6 +40,7 @@ import {
 import type { Point } from '../../../domain/types';
 import { RECORD_LABELS, type PersonalRecord } from '../../../domain/records';
 import { formatRecordValue } from '../../../domain/recordsFormat';
+import { fastestAndSlowestLap, type Lap } from '../../../domain/lap';
 import type { RecordStackParamList } from '../../types';
 
 type Nav = NativeStackNavigationProp<RecordStackParamList, 'RunDetails'>;
@@ -60,14 +60,27 @@ export function RunDetailsScreen() {
   const closedSessionsPoints = useHistoryStore((s) => s.closedSessionsPoints);
   const resetActivity = useActivityStore((s) => s.reset);
   const acknowledgeNewRecords = useActivityStore((s) => s.acknowledgeNewRecords);
-  const myUser = useAuthStore((s) => s.user);
+  const walletTransactions = useWalletStore((s) => s.transactions);
+  const coinsEarned = useMemo(() => {
+    const tx = walletTransactions.find(
+      (x) => x.sourceSessionId === sessionIdNum && x.kind === 'earn',
+    );
+    return tx?.amount ?? 0;
+  }, [walletTransactions, sessionIdNum]);
+  const coinsCapped = useMemo(() => {
+    const tx = walletTransactions.find(
+      (x) => x.sourceSessionId === sessionIdNum && x.kind === 'earn',
+    );
+    return tx?.meta !== null && tx?.meta !== undefined && tx.meta.capped === true;
+  }, [walletTransactions, sessionIdNum]);
 
-  // Snapshot points/area + newRecords из activity (пока ещё state='stopped').
+  // Snapshot points/area + newRecords + laps из activity (пока ещё state='stopped').
   const snapshot = useRef<{
     points: Point[];
     areaM2: number | null;
     closureFired: boolean;
     newRecords: PersonalRecord[];
+    laps: Lap[];
   } | null>(null);
   if (snapshot.current === null) {
     const a = useActivityStore.getState();
@@ -76,9 +89,11 @@ export function RunDetailsScreen() {
       areaM2: a.areaM2,
       closureFired: a.closureFired,
       newRecords: a.lastNewRecords,
+      laps: a.laps,
     };
   }
-  const { points, areaM2, closureFired, newRecords } = snapshot.current;
+  const { points, areaM2, closureFired, newRecords, laps } = snapshot.current;
+  const lapHighlights = useMemo(() => fastestAndSlowestLap(laps), [laps]);
 
   // Refresh + reset activity один раз. acknowledge → next visit чистый.
   useEffect(() => {
@@ -98,24 +113,6 @@ export function RunDetailsScreen() {
     const km = distanceM / 1000;
     return durationS / 60 / km;
   })();
-
-  const [sharedToFeed, setSharedToFeed] = useState(false);
-
-  const handleShare = async () => {
-    if (myUser === null || session === undefined) return;
-    const km = distanceM / 1000;
-    const minutes = Math.round(durationS / 60);
-    const caption = `🏃 Пробежка: ${km.toFixed(2)} км · ${minutes} мин`;
-    try {
-      await useFeedStore
-        .getState()
-        .composeSession(myUser.id, String(session.id), caption);
-      setSharedToFeed(true);
-      Alert.alert('Опубликовано в ленте', caption);
-    } catch (e) {
-      Alert.alert('Не получилось опубликовать', String(e));
-    }
-  };
 
   const handleExport = async () => {
     if (session === undefined || points.length === 0) {
@@ -273,6 +270,51 @@ export function RunDetailsScreen() {
         </Card>
       ) : null}
 
+      {/* Coins earned banner */}
+      {coinsEarned > 0 ? (
+        <Card
+          style={{
+            marginHorizontal: 20,
+            marginTop: 12,
+            padding: 14,
+            backgroundColor: 'rgba(198,245,96,0.10)',
+            borderColor: 'rgba(198,245,96,0.28)',
+            borderWidth: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: 'rgba(198,245,96,0.2)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Icon name="bolt" size={20} color={t.lime} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{
+                color: t.text,
+                fontSize: 15 * t.fontScale,
+                fontWeight: '800',
+                fontFamily: t.font,
+              }}
+            >
+              +{coinsEarned} монет
+            </Text>
+            <Text style={{ color: t.text3, fontSize: 12 * t.fontScale, marginTop: 2, fontFamily: t.font }}>
+              {coinsCapped ? 'Дневной лимит — часть монет не зачислена' : 'Зачислено в кошелёк'}
+            </Text>
+          </View>
+        </Card>
+      ) : null}
+
       {/* Map preview */}
       <View
         style={{
@@ -292,24 +334,81 @@ export function RunDetailsScreen() {
         </MapboxView>
       </View>
 
+      {/* Laps */}
+      {laps.length > 0 ? (
+        <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
+          <Text
+            style={{
+              color: t.text3,
+              fontSize: 11 * t.fontScale,
+              letterSpacing: 0.6,
+              textTransform: 'uppercase',
+              fontFamily: t.font,
+              marginBottom: 10,
+            }}
+          >
+            Круги
+          </Text>
+          <Card style={{ paddingHorizontal: 14, paddingVertical: 4 }}>
+            {laps.map((lp, idx) => {
+              const fastest = lapHighlights.fastest === lp.lapNumber;
+              const slowest = lapHighlights.slowest === lp.lapNumber;
+              const accent = fastest ? t.lime : slowest ? t.warn : t.text;
+              return (
+                <View
+                  key={lp.lapNumber}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 10,
+                    borderBottomWidth: idx < laps.length - 1 ? 1 : 0,
+                    borderBottomColor: t.divider,
+                  }}
+                >
+                  <Text style={{ width: 36, color: t.text2, fontSize: 13 * t.fontScale, fontFamily: t.font, fontWeight: '700' }}>
+                    {lp.lapNumber}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: t.text,
+                      fontSize: 14 * t.fontScale,
+                      fontFamily: t.fontDisplay,
+                      fontStyle: 'italic',
+                      fontWeight: '700',
+                    }}
+                  >
+                    {formatDuration(lp.durationS)}
+                  </Text>
+                  <Text style={{ color: t.text2, fontSize: 12 * t.fontScale, marginRight: 12, fontFamily: t.font }}>
+                    {formatDistance(lp.distanceM)}
+                  </Text>
+                  <Text
+                    style={{
+                      color: accent,
+                      fontSize: 14 * t.fontScale,
+                      fontFamily: t.fontDisplay,
+                      fontStyle: 'italic',
+                      fontWeight: '700',
+                    }}
+                  >
+                    {lp.paceMinKm !== null ? `${formatPace(lp.paceMinKm)}/км` : '—'}
+                  </Text>
+                </View>
+              );
+            })}
+          </Card>
+        </View>
+      ) : null}
+
       {/* Actions */}
       <View style={{ paddingHorizontal: 20, marginTop: 24, gap: 10 }}>
         <Button
           variant="primary"
           size="lg"
           full
-          disabled={sharedToFeed || myUser === null}
-          onPress={handleShare}
-          icon={<Icon name="share" size={20} color="#000" />}
-        >
-          {sharedToFeed ? 'Опубликовано' : 'Поделиться в ленте'}
-        </Button>
-        <Button
-          variant="secondary"
-          size="md"
-          full
           onPress={handleExport}
-          icon={<Icon name="download" size={18} color={t.text} />}
+          icon={<Icon name="download" size={20} color="#000" />}
         >
           Экспорт GPX
         </Button>

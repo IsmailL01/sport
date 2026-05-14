@@ -1,22 +1,20 @@
-// Bottom tab bar — Cursona 5 tabs. Used as custom tabBar для React Navigation
+// Bottom tab bar — 4 tabs. Used as custom tabBar для React Navigation
 // или standalone в screens (если nav пока не настроен).
-// Phase 8 / M1.
 
 import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { useTheme } from '../ThemeProvider';
 import { Icon, type IconName } from '../icons';
 
-/** Cursona tab order: Лента / Чаты / Запись / Журнал / Я. */
-export type TabId = 'feed' | 'chats' | 'record' | 'journal' | 'me';
+/** Tab order: Запись / Журнал / Чаты / Я. */
+export type TabId = 'record' | 'journal' | 'chats' | 'me';
 
 type TabDef = { id: TabId; label: string; icon: IconName };
 
 const TABS: ReadonlyArray<TabDef> = [
-  { id: 'feed',    label: 'Лента',  icon: 'home' },
-  { id: 'chats',   label: 'Чаты',   icon: 'chat' },
   { id: 'record',  label: 'Запись', icon: 'record' },
   { id: 'journal', label: 'Журнал', icon: 'chart' },
+  { id: 'chats',   label: 'Чаты',   icon: 'chat' },
   { id: 'me',      label: 'Я',      icon: 'user' },
 ];
 

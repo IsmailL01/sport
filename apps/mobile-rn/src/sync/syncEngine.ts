@@ -326,6 +326,7 @@ type LocalSessionRow = {
   avgHrBpm: number | null;
   maxHrBpm: number | null;
   caloriesKcal: number | null;
+  activityType: string | null;
 };
 
 function listPendingSessions(): Session[] {
@@ -336,7 +337,8 @@ function listPendingSessions(): Session[] {
             note, synced_at AS syncedAt, server_id AS serverId,
             COALESCE(updated_at, started_at) AS updatedAt,
             avg_hr_bpm AS avgHrBpm, max_hr_bpm AS maxHrBpm,
-            calories_kcal AS caloriesKcal
+            calories_kcal AS caloriesKcal,
+            activity_type AS activityType
      FROM sessions
      WHERE synced_at IS NULL OR (updated_at IS NOT NULL AND updated_at > synced_at)
      ORDER BY started_at ASC`,
@@ -366,5 +368,6 @@ function rowToSession(row: LocalSessionRow): Session {
     avgHrBpm: row.avgHrBpm,
     maxHrBpm: row.maxHrBpm,
     caloriesKcal: row.caloriesKcal,
+    activityType: (row.activityType as Session['activityType'] | null) ?? 'run',
   };
 }

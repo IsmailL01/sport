@@ -16,6 +16,7 @@ import { useSyncStore } from '../state/sync';
 import { useNotificationsStore } from '../state/social/useNotificationsStore';
 import { useRealtimeStore } from '../state/social/useRealtimeStore';
 import { useModerationStore } from '../modules/moderation';
+import { useWalletStore } from '../state/wallet';
 import { useTheme } from '../design';
 import { getNotificationsAdapter } from '../notifications';
 
@@ -54,8 +55,7 @@ export function RootNavigator() {
 
   // M9.6: connect realtime + register push + pull sessions + fetch role
   // on authentication; disconnect realtime on logout. Без этого вся
-  // realtime-доставка (chat messages, feed events, stories, xp updates)
-  // не работает — App.legacy.tsx делал это в Inner() useEffect.
+  // realtime-доставка (chat messages + xp updates) не работает.
   useEffect(() => {
     if (authState === 'unauthenticated') {
       useRealtimeStore.getState().disconnect();
@@ -73,6 +73,9 @@ export function RootNavigator() {
 
     // Admin role fetch (gate Admin UI).
     void useModerationStore.getState().fetchMyRole(user.id);
+
+    // Wallet (currency) hydrate from local SQLite.
+    useWalletStore.getState().hydrate(user.id);
 
     // Realtime WebSocket + push token registration.
     const accessToken = apiClient.getAccessToken();
@@ -102,13 +105,6 @@ export function RootNavigator() {
       if (!navRef.isReady()) return;
       switch (event) {
         case 'message.new':
-          navRef.navigate('App', { screen: 'Chats', params: { screen: 'ChatsList' } });
-          break;
-        case 'feed.post.liked':
-        case 'feed.post.commented':
-          navRef.navigate('App', { screen: 'Feed', params: { screen: 'FeedHome' } });
-          break;
-        case 'feed.story.published':
           navRef.navigate('App', { screen: 'Chats', params: { screen: 'ChatsList' } });
           break;
         default:

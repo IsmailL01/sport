@@ -19,6 +19,7 @@ function sess(overrides: Partial<Session> & { startedAt: number }): Session {
     avgHrBpm: null,
     maxHrBpm: null,
     caloriesKcal: null,
+    activityType: 'run',
     ...overrides,
   };
 }

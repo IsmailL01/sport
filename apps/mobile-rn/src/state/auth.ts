@@ -216,19 +216,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   logout: async () => {
     await apiClient.clearTokens();
-    // Wipe modular stores on logout (Phase 8 / C+D — модульный паттерн).
-    try {
-      const { useStoriesStore } = await import('../modules/stories');
-      useStoriesStore.getState().clearAll();
-    } catch (e) {
-      console.warn('[auth] stories clearAll failed', e);
-    }
-    try {
-      const { useFeedStore } = await import('../modules/feed');
-      useFeedStore.getState().clearAll();
-    } catch (e) {
-      console.warn('[auth] feed clearAll failed', e);
-    }
+    // Wipe modular stores on logout.
     try {
       const { useModerationStore } = await import('../modules/moderation');
       useModerationStore.getState().clearAll();
@@ -240,6 +228,12 @@ export const useAuthStore = create<AuthStore>((set) => ({
       useXpStore.getState().clearAll();
     } catch (e) {
       console.warn('[auth] xp clearAll failed', e);
+    }
+    try {
+      const { useWalletStore } = await import('./wallet');
+      useWalletStore.getState().clearAll();
+    } catch (e) {
+      console.warn('[auth] wallet clearAll failed', e);
     }
     // M9.8: drop social_relations cache (другой viewer на устройстве после logout).
     try {
