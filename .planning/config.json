@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "mode": "yolo",
+  "granularity": "standard",
+  "parallelization": true,
+  "commit_docs": true,
+  "model_profile": "balanced",
+  "workflow": {
+    "research": true,
+    "plan_check": true,
+    "verifier": true,
+    "nyquist_validation": true,
+    "auto_advance": true,
+    "research_before_questions": false
+  },
+  "project": {
+    "code": "RUN",
+    "title": "Running Ecosystem",
+    "language": "ru",
+    "brownfield": true,
+    "framework": "expo-react-native",
+    "monorepo": true,
+    "platforms": ["ios", "android"],
+    "backend_language": "go"
+  },
+  "planning": {
+    "source_of_truth": [
+      "docs/RUNNING_ECOSYSTEM_TZ.md",
+      "docs/DEVELOPMENT_PLAN.md",
+      "STATUS.md",
+      "docs/DECISIONS/"
+    ],
+    "codebase_map": ".planning/codebase/"
+  }
+}
