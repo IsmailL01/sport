@@ -82,11 +82,11 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-14 — GSD brownfield init on `feat/cursona-redesign`.
-Stopped at: ROADMAP.md + STATE.md written; ready to plan Phase 1.
-Resume file: None.
+Last session: 2026-05-14 — Phase 1 context gathered (autonomous mode).
+Stopped at: `.planning/phases/01-validate-close-territory-core/01-CONTEXT.md` written; ready for planning.
+Resume file: `.planning/phases/01-validate-close-territory-core/01-CONTEXT.md`.
 
-**Next action**: `/gsd-discuss-phase 1` (to refine scope before planning) or `/gsd-plan-phase 1` (to break Phase 1 into plans).
+**Next action**: `/gsd-plan-phase 1` (to break Phase 1 into atomic plans).
 
 ## Artifacts Created (this init)
 
