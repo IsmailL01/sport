@@ -5,6 +5,7 @@
 
 import { SessionManager, type SessionRepo } from '../domain/session/SessionManager';
 import { ClosureDetector } from '../domain/ClosureDetector';
+import type { LocationAdapter, SamplingMode } from '../location/LocationAdapter';
 import { PauseDetector } from '../pipeline/filters/PauseDetector';
 import { Pipeline } from '../pipeline/Pipeline';
 import type { Filter } from '../pipeline/Filter';
@@ -73,20 +74,57 @@ function makeNoopPipeline(): Pipeline {
   return new Pipeline([passthrough]);
 }
 
+/**
+ * Mock LocationAdapter, tracking each setSamplingMode call into a string[]
+ * для проверки порядка переходов (PHASE1-11 / D-28).
+ */
+type MockAdapter = LocationAdapter & {
+  __modes: SamplingMode[];
+  setSamplingMode: jest.Mock;
+};
+
+function makeMockAdapter(): MockAdapter {
+  const modes: SamplingMode[] = [];
+  const setSamplingMode = jest.fn(async (m: SamplingMode) => {
+    modes.push(m);
+  });
+  return {
+    start: jest.fn(() => Promise.resolve()),
+    stop: jest.fn(() => Promise.resolve()),
+    isRunning: jest.fn(() => Promise.resolve(true)),
+    requestForegroundPermission: jest.fn(() => Promise.resolve(true)),
+    requestBackgroundPermission: jest.fn(() => Promise.resolve(true)),
+    setSamplingMode,
+    __modes: modes,
+  };
+}
+
 function makeManager(overrides: {
   repo?: SessionRepo;
   onChange?: jest.Mock;
   pipeline?: Pipeline;
   closureDetector?: ClosureDetector;
   pauseDetector?: PauseDetector;
+  adapter?: MockAdapter;
+  gapTriggerSecGetter?: () => number;
 } = {}) {
   const repo = overrides.repo ?? makeMockRepo();
   const onChange = overrides.onChange ?? jest.fn();
   const pipeline = overrides.pipeline ?? makeNoopPipeline();
   const pauseDetector = overrides.pauseDetector ?? new PauseDetector(() => {});
   const closureDetector = overrides.closureDetector ?? new ClosureDetector(() => {});
-  const m = new SessionManager(pipeline, pauseDetector, closureDetector, repo, onChange);
-  return { m, repo, onChange, pipeline, pauseDetector, closureDetector };
+  const adapter = overrides.adapter ?? makeMockAdapter();
+  const gapTriggerSecGetter = overrides.gapTriggerSecGetter ?? (() => 30);
+  const m = new SessionManager(
+    pipeline,
+    pauseDetector,
+    closureDetector,
+    repo,
+    adapter,
+    gapTriggerSecGetter,
+    onChange,
+  );
+  return { m, repo, onChange, pipeline, pauseDetector, closureDetector, adapter };
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -378,6 +416,133 @@ describe('SessionManager', () => {
 
       expect(m.snapshot().points.length).toBe(1);
       expect(onChange).toHaveBeenCalled();
+    });
+  });
+
+  // ── Adaptive sampling wiring (PHASE1-11 / D-28, Task 2) ────────────────────
+
+  describe('setPaused() → LocationAdapter.setSamplingMode', () => {
+    it("transition false→true calls setSamplingMode('paused') + pipeline.reset() exactly once", () => {
+      const pipelineResetSpy = jest.fn();
+      const passthrough: Filter = {
+        name: 'passthrough',
+        apply: (p) => p,
+        reset: pipelineResetSpy,
+      };
+      const pipeline = new Pipeline([passthrough]);
+      const adapter = makeMockAdapter();
+      const { m } = makeManager({ pipeline, adapter });
+
+      m.start('run');
+      adapter.setSamplingMode.mockClear();
+      pipelineResetSpy.mockClear();
+
+      m.setPaused(true);
+
+      expect(adapter.setSamplingMode).toHaveBeenCalledTimes(1);
+      expect(adapter.__modes[adapter.__modes.length - 1]).toBe('paused');
+      // Pipeline reset гарантирует Kalman re-init (RESEARCH.md §Pitfall 5).
+      expect(pipelineResetSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("transition true→false calls setSamplingMode('active') + pipeline.reset()", () => {
+      const pipelineResetSpy = jest.fn();
+      const passthrough: Filter = {
+        name: 'passthrough',
+        apply: (p) => p,
+        reset: pipelineResetSpy,
+      };
+      const pipeline = new Pipeline([passthrough]);
+      const adapter = makeMockAdapter();
+      const { m } = makeManager({ pipeline, adapter });
+
+      m.start('run');
+      m.setPaused(true); // first transition
+      adapter.setSamplingMode.mockClear();
+      pipelineResetSpy.mockClear();
+
+      m.setPaused(false); // resume
+
+      expect(adapter.setSamplingMode).toHaveBeenCalledTimes(1);
+      expect(adapter.__modes[adapter.__modes.length - 1]).toBe('active');
+      expect(pipelineResetSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('setPaused with same value (no transition) does NOT call setSamplingMode', () => {
+      const adapter = makeMockAdapter();
+      const { m } = makeManager({ adapter });
+
+      m.start('run');
+      adapter.setSamplingMode.mockClear();
+
+      m.setPaused(false); // already false (default)
+      expect(adapter.setSamplingMode).not.toHaveBeenCalled();
+
+      m.setPaused(true);
+      adapter.setSamplingMode.mockClear();
+      m.setPaused(true); // same as previous — no transition
+      expect(adapter.setSamplingMode).not.toHaveBeenCalled();
+    });
+
+    it('setSamplingMode rejection is caught + logged, manager does not throw', () => {
+      const adapter = makeMockAdapter();
+      adapter.setSamplingMode.mockImplementation(() => Promise.reject(new Error('Native task dead')));
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const { m } = makeManager({ adapter });
+
+      m.start('run');
+      expect(() => m.setPaused(true)).not.toThrow();
+      // Async rejection propagates as console.error — but synchronously the
+      // manager already updated state. Verify state was updated despite the failure.
+      expect(m.snapshot().isPaused).toBe(true);
+
+      errSpy.mockRestore();
+    });
+  });
+
+  // ── iOS gap-resume on AppState foreground (PHASE1-12 / D-29, Task 3) ───────
+  // Note: full coverage lives in gapResume.test.ts (Task 3). These two cases
+  // verify constructor wiring of gapTriggerSecGetter alongside Task 2 changes.
+
+  describe('handleAppForeground() — constructor wiring smoke', () => {
+    it('reads gapTriggerSec lazily from getter (changes in settings take effect)', () => {
+      let triggerS = 30;
+      const pipelineResetSpy = jest.fn();
+      const passthrough: Filter = {
+        name: 'passthrough',
+        apply: (p) => p,
+        reset: pipelineResetSpy,
+      };
+      const pipeline = new Pipeline([passthrough]);
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const { m } = makeManager({
+        pipeline,
+        gapTriggerSecGetter: () => triggerS,
+      });
+
+      // No points → handleAppForeground is a no-op.
+      m.handleAppForeground();
+      expect(pipelineResetSpy).not.toHaveBeenCalled();
+
+      // Start session, add a stale point (50s old).
+      m.start('run');
+      pipelineResetSpy.mockClear();
+      // System time is mocked to 2026-05-14 12:00:00 in beforeEach.
+      const now = Date.now();
+      m.ingestRawPoint(makeRaw({ ts: now - 50_000 }));
+      pipelineResetSpy.mockClear();
+
+      // 30s threshold → 50s gap exceeds → reset.
+      m.handleAppForeground();
+      expect(pipelineResetSpy).toHaveBeenCalledTimes(1);
+
+      // Bump threshold above gap; reset should NOT fire (lazy read).
+      triggerS = 120;
+      pipelineResetSpy.mockClear();
+      m.handleAppForeground();
+      expect(pipelineResetSpy).not.toHaveBeenCalled();
+
+      warnSpy.mockRestore();
     });
   });
 });

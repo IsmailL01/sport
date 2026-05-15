@@ -36,6 +36,13 @@ type SettingsStore = {
   deviceId: string | null;
   /** Номер телефона E.164 (для будущего поиска чатов; пока хранится локально). */
   phoneE164: string | null;
+  /**
+   * Порог gap-resume в секундах (Phase 1 / PHASE1-12, D-31).
+   * Когда приложение возвращается из background после > этого порога GPS-молчания,
+   * pipeline сбрасывается чтобы Kalman не выдавал stale-предсказание.
+   * Дефолт 30s; clamped к (0, 600] в setGpsGapTriggerS.
+   */
+  gpsGapTriggerS: number;
 
   setUnits: (units: Units) => void;
   setTheme: (theme: Theme) => void;
@@ -48,6 +55,8 @@ type SettingsStore = {
   setWeekStartDay: (d: WeekStartDay) => void;
   setDeviceId: (id: string) => void;
   setPhoneE164: (phone: string | null) => void;
+  /** Установить gpsGapTriggerS. Clamped к (0, 600]; out-of-range игнорируется. */
+  setGpsGapTriggerS: (seconds: number) => void;
 };
 
 const DEFAULT_ATHLETE: AthleteProfile = {
@@ -63,6 +72,9 @@ const DEFAULT_GOALS: Goals = {
   weeklyDistanceKm: null,
   monthlySessionCount: null,
 };
+
+/** Phase 1 / PHASE1-12, D-31: дефолтный порог gap-resume в секундах. */
+const DEFAULT_GPS_GAP_TRIGGER_S = 30;
 
 const mmkv = createMMKV();
 
@@ -93,6 +105,7 @@ export const useSettingsStore = create<SettingsStore>()(
       goals: DEFAULT_GOALS,
       deviceId: null,
       phoneE164: null,
+      gpsGapTriggerS: DEFAULT_GPS_GAP_TRIGGER_S,
 
       setUnits: (units) => set({ units }),
       setTheme: (theme) => set({ theme }),
@@ -110,15 +123,23 @@ export const useSettingsStore = create<SettingsStore>()(
       setWeekStartDay: (weekStartDay) => set({ weekStartDay }),
       setDeviceId: (deviceId) => set({ deviceId }),
       setPhoneE164: (phoneE164) => set({ phoneE164: normalizePhoneE164(phoneE164) }),
+      setGpsGapTriggerS: (seconds) =>
+        set((s) => {
+          // Clamp к (0, 600]. Out-of-range — игнорируем (защита от T-01-07-01).
+          if (!Number.isFinite(seconds)) return s;
+          if (seconds <= 0 || seconds > 600) return s;
+          return { gpsGapTriggerS: seconds };
+        }),
     }),
     {
       name: 'running-ecosystem-settings',
       storage: createJSONStorage(() => mmkvStorage),
-      version: 5,
+      version: 6,
       // v1 → v2: добавились athlete/goals/weekStartDay. Старые поля сохраняются.
       // v2 → v3: добавился deviceId (Phase 8 / A5).
       // v3 → v4: добавился mapStyle.
       // v4 → v5: добавился phoneE164 (локальный, для будущего поиска чатов).
+      // v5 → v6: добавился gpsGapTriggerS (Phase 1 / PHASE1-12, D-31).
       migrate: (persisted, fromVersion) => {
         let p = (persisted ?? {}) as Partial<SettingsStore>;
         if (fromVersion < 2) {
@@ -139,6 +160,9 @@ export const useSettingsStore = create<SettingsStore>()(
         }
         if (fromVersion < 5) {
           p = { ...p, phoneE164: null };
+        }
+        if (fromVersion < 6) {
+          p = { ...p, gpsGapTriggerS: DEFAULT_GPS_GAP_TRIGGER_S };
         }
         return p as SettingsStore;
       },

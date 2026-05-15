@@ -28,6 +28,7 @@ import type { Lap } from '../domain/lap';
 import { detectNewRecords, type PersonalRecord } from '../domain/records';
 import { SessionManager, type SessionRepo } from '../domain/session/SessionManager';
 import type { ActivityState, ActivityType, Point, RawPoint } from '../domain/types';
+import { locationAdapter } from '../location';
 import { createDefaultPipeline, PauseDetector, type PauseEvent } from '../pipeline';
 import {
   appendLapsForSession,
@@ -156,7 +157,15 @@ const repo: SessionRepo = {
 // побочка stop()). Держим её отдельно — wrapper устанавливает её после stop().
 let pendingLastNewRecords: PersonalRecord[] = [];
 
-const manager = new SessionManager(pipeline, pauseDetector, closureDetector, repo, () => {
+const manager = new SessionManager(
+  pipeline,
+  pauseDetector,
+  closureDetector,
+  repo,
+  locationAdapter,
+  // gpsGapTriggerS читается lazily при каждом foreground'е (D-31).
+  () => useSettingsStore.getState().gpsGapTriggerS,
+  () => {
   // Любая мутация в manager синхронизируется со store. lastNewRecords
   // переносим из pendingLastNewRecords чтобы UI получил их когда они
   // выставлены wrapper'ом сразу после manager.stop().
@@ -180,7 +189,8 @@ const manager = new SessionManager(pipeline, pauseDetector, closureDetector, rep
     laps: snap.laps,
     lapStartIdx: snap.lapStartIdx,
   });
-});
+  },
+);
 
 // ── Wrapper-level orchestration (D-09 Phase A leftover) ──────────────────────
 

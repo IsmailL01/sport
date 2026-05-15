@@ -16,6 +16,7 @@ import { calculateArea, type AreaWarning } from '../AreaCalculator';
 import { ClosureDetector } from '../ClosureDetector';
 import { lapFromRange, type Lap } from '../lap';
 import type { ActivityType, Point, RawPoint, Session } from '../types';
+import type { LocationAdapter } from '../../location/LocationAdapter';
 import { PauseDetector } from '../../pipeline/filters/PauseDetector';
 import { Pipeline } from '../../pipeline/Pipeline';
 import { isClosed, totalDistance } from '../../util/geo';
@@ -111,6 +112,14 @@ export class SessionManager {
     private readonly pauseDetector: PauseDetector,
     private readonly closureDetector: ClosureDetector,
     private readonly repo: SessionRepo,
+    private readonly locationAdapter: LocationAdapter,
+    /**
+     * Геттер порога gap-resume в секундах (Phase 1 / PHASE1-12, D-31).
+     * Инжектится как функция (не значение), чтобы изменения в Settings
+     * подхватывались сразу при следующем foreground без переинстанцирования
+     * manager'а. Wrapper передаёт `() => useSettingsStore.getState().gpsGapTriggerS`.
+     */
+    private readonly gapTriggerSecGetter: () => number,
     private readonly onChange: () => void,
   ) {}
 
@@ -366,10 +375,56 @@ export class SessionManager {
 
   // ── Auxiliary mutators (called by wrapper from PauseDetector / ClosureDetector callbacks) ──
 
-  /** Установить isPaused (вызывается из PauseDetector callback во wrapper'е). */
+  /**
+   * Установить isPaused (вызывается из PauseDetector callback во wrapper'е).
+   *
+   * На transition false→true (auto-paused) и true→false (auto-resumed):
+   *  1. Переключаем LocationAdapter в соответствующий sampling profile
+   *     ('paused' / 'active'). Phase 1 / PHASE1-11, D-28.
+   *  2. Сбрасываем pipeline — Kalman state становится stale при смене accuracy,
+   *     иначе на первой точке после resume получаем jump 15-30м.
+   *     См. RESEARCH.md §Pitfall 5.
+   *
+   * Errors при setSamplingMode логируются, но не падают — adapter может быть
+   * выключен (foreground service killed), или task race на native стороне.
+   */
   setPaused(isPaused: boolean): void {
+    const wasPaused = this.isPaused;
     this.isPaused = isPaused;
+    if (wasPaused !== isPaused) {
+      const mode = isPaused ? 'paused' : 'active';
+      this.locationAdapter.setSamplingMode(mode).catch((e) => {
+        console.error(`[session] setSamplingMode ${mode} failed`, e);
+      });
+      // Reset pipeline — Kalman re-инициализируется на первой новой точке.
+      // Защита от 15-30м jump'а при смене accuracy (RESEARCH.md §Pitfall 5).
+      this.pipeline.reset();
+    }
     this.emit();
+  }
+
+  /**
+   * Обработка gap-resume на iOS app foreground (Phase 1 / PHASE1-12, D-29).
+   *
+   * Когда приложение возвращается из background после > `gpsGapTriggerS` секунд
+   * GPS-молчания (типичный edge case на iOS при killed foreground service),
+   * сбрасываем pipeline чтобы Kalman переинициализировался на следующей точке.
+   *
+   * НЕ интерполируем gap синтетическими точками (D-29): пользователь видит
+   * провал на треке и понимает что GPS был потерян.
+   *
+   * Вызывается из wrapper'а через AppState.addEventListener('change') когда
+   * next === 'active'. Безопасно при `points.length === 0` (no-op).
+   */
+  handleAppForeground(): void {
+    if (this.points.length === 0) return;
+    const last = this.points[this.points.length - 1];
+    const gapMs = Date.now() - last.timestamp;
+    const thresholdMs = this.gapTriggerSecGetter() * 1000;
+    if (gapMs > thresholdMs) {
+      this.pipeline.reset();
+      console.warn(`[gap-resume] ${gapMs}ms gap detected — pipeline reset`);
+    }
   }
 
   /** Отметить замыкание (вызывается из ClosureDetector callback во wrapper'е). */
