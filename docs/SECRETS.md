@@ -25,6 +25,25 @@
 
 ---
 
+## Incident Log
+
+История инцидентов и сканирований секретов. Любая (b)-класс находка (исторический реальный leak) запускает **ротацию**, а не переписывание истории git (D-12). Каждая запись содержит: дату, тип, описание, классификацию (Pitfall 7 taxonomy: a/b/c), статус, и ссылку на план ротации (если есть).
+
+**Классификация (Pitfall 7):**
+- **(a) intentional fixture** — ESLint guard / тестовый fixture, в allowlist scanner'ов
+- **(b) historical real leak** — реальный токен в истории, требует ротации (D-12)
+- **(c) false positive** — паттерн похож на секрет, но это документация/placeholder, добавляется в allowlist с комментарием
+
+| Дата       | Тип               | Описание                                                                                                           | Класс | Статус                                                            | Ссылка               |
+| ---------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ | ----- | ----------------------------------------------------------------- | -------------------- |
+| 2024-Q4    | Mapbox token chat | Mapbox public/secret token обсуждался в чате/тикетах до v1.0 territory refactor (pre-public-release era)            | (b)   | Pending rotation (Phase 2 / plan 02-04, gated on Mapbox dashboard) | `.planning/phases/02-secrets-and-config-hardening/02-04-PLAN-*.md` (TBD) |
+| 2026-05-16 | Gitleaks history scan (`gitleaks detect --log-opts="--all"`, v8.30.1, config `.gitleaks.toml`) | Полный скан истории git на момент завершения 02-03 | (a)+(c) | **0 findings.** Артефакт: `docs/gitleaks-history-scan.json`. Allowlist `.planning/**/*.md` + `.secrets/**` + `apps/mobile-rn/src/__fixtures__/secret.lint-fixture.ts` отработал корректно. | `docs/gitleaks-history-scan.json` |
+| 2026-05-16 | TruffleHog history scan (`trufflehog git file://. --config=.trufflehog/config.yaml`, v3.95.3, exclude `.planning/phases/_archive/.*`) | Полный скан истории git с верифицированными детекторами | (a)+(c) | **0 findings (verified).** Артефакт: `docs/trufflehog-history-scan.json` (нормализован в JSON array). | `docs/trufflehog-history-scan.json` |
+
+**Действия по (b)-class находке (Mapbox pre-v1.0 leak):** Phase 2 / plan **02-04** (Mapbox dashboard rotation) — ротация public + secret token'ов через Mapbox dashboard, обновление `.secrets/<env>/mapbox.yaml` через SOPS (см. 02-01-SUMMARY.md scaffold), верификация в приложении и backend. Этот шаг `autonomous: false` — gated на ручное действие пользователя в Mapbox dashboard.
+
+**Что НЕ делаем (D-12):** не запускаем `git filter-repo` / BFG для удаления токенов из истории. Old токен после ротации становится мёртвым (HTTP 401 на Mapbox API), даже если останется в git history архивных веток.
+
 ## Инвентарь токенов (Token Inventory)
 
 ### Mapbox
