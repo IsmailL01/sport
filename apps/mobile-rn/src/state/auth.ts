@@ -249,6 +249,15 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } catch (e) {
       console.warn('[auth] records clearAll failed', e);
     }
+    // Phase 1 / REL-03: drop feature flag overrides — fresh login can be a
+    // different user with a different rollout bucket.  Dynamic import per
+    // CONVENTIONS.md §State Mgmt (avoids circular dep at module-load time).
+    try {
+      const { useFeatureFlagsStore } = await import('./featureflags');
+      useFeatureFlagsStore.getState().clearAll();
+    } catch (e) {
+      console.warn('[auth] featureflags clearAll failed', e);
+    }
     set({ state: 'unauthenticated', user: null, error: null, needsOnboarding: false });
   },
 
