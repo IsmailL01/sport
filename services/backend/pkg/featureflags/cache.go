@@ -43,7 +43,9 @@ func (s *Store) cacheSetMissing(name string) {
 	})
 }
 
-// cacheDelete инвалидирует entry (например, после Set()).
+// cacheDelete инвалидирует entry (например, после Set()).  Используется
+// admin write path (PUT /admin/featureflags/{name}) — следующий IsEnabled
+// прочитает свежую запись из БД.
 func (s *Store) cacheDelete(name string) {
 	s.cache.Delete(name)
 }
