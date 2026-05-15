@@ -1,0 +1,21 @@
+#ENC[AES256_GCM,data:HtBQR8mirHgTu3EQ7UypAjsgtftvy8b0oME6UZXYsbOeO9K4Qi+Qo/YE50uR9JHOGhBK/zLlL8U7zAhXZBLCRwmWV7HfRlognCatbA==,iv:mV/aDzcftM5rafPjuMbcZJ393AvQerGolsSzONQ1fVQ=,tag:Poz7VxvkqeGvcT5b3tP0Dg==,type:comment]
+#ENC[AES256_GCM,data:38BG6IwuwIl6efXZRFYDx0tNUPvPSebjlB3J7xiUyMWSDJcncbGn1c4uuRiC4FhDxLQEzQIiPZ512n3YDAxzeisn3eCvmzo4bA==,iv:2kTsvcm4M1Zg0WzURDe+I340qzf6H78g13ZpJ2fCrJ8=,tag:hLW5tlaKbe/Jx5zlYL/Uzg==,type:comment]
+STRAVA_CLIENT_ID: ENC[AES256_GCM,data:EFdBMJRnaekOUkvK7yrw6xlb7MnANA==,iv:VZ5abgPdnELyO+qH8yL+6N6Q85p8Y4DHDwOVdh4O5R8=,tag:zu0PsbISvyF4RcsIVnJ4bA==,type:str]
+STRAVA_CLIENT_SECRET: ENC[AES256_GCM,data:AQg4m11g08Zay4rgFLWzu684XnhiDQ==,iv:1rlcplKBLrQ08SPZ7AlkIQspCDNBvdQoT2QYMZVxjVU=,tag:jXycX4YRPUt1RiVFrO5DbQ==,type:str]
+GOOGLE_OAUTH_CLIENT_SECRET: ENC[AES256_GCM,data:ZUnHqS6XiYZ/XcPdDUxH,iv:h1DcNmtMi/VQ4kx0BsKFtHxUJhVQM2e1GYXnYyOfHfU=,tag:qhO2JGmgyOx3SX7Nrygzfg==,type:str]
+APPLE_SIGN_IN_CLIENT_SECRET: ENC[AES256_GCM,data:oMSJGmfnO1WXTw03RmBm,iv:SbA1PIc03yQ2rZ+4mC92awHdHxnaH0gZkUA+BiIYOgI=,tag:cwdpKiyIHD1rG1NkQCehQA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBVU2ZqRlQrVDFvSi84bEFX
+            R0owTDdzNmtmbkRpSkQ1aVhjc1VaUzZJYWhzCllPOUhWUUNaUG5KU1hRSHgrQ0Zq
+            VStVTis2MVpqdnBHbnVQVjJPVERWQk0KLS0tIFVLWU1MZjYzQ0s2aFpXN05lZ3Zj
+            V3FGcVkwdzY2b1pFWFhJMGw0YVFQU3MKmCyAcn8KguqatqTubcoZQJj1fU075jGB
+            zle7pdYHDuurv7XJCJJoOt+nuVnmx5980pWJE/NeEdfXmkJIMNdzDA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my
+    lastmodified: "2026-05-15T21:43:54Z"
+    mac: ENC[AES256_GCM,data:rPUGQq/w2bWRb4MBdq68ESCjl3crxV88uPdLWqhrEQjrJ6ktjw0FAcomtixLzB1Nf8rohCQkttIIqXHpK5Yq+4FZwm85kAOB7KwqjepXHHk2RgYNbwBtahmydDAHRpWlYAeXyv3PC5ahW6OkS7uG40HJ41MtfNo9og92V9htXPw=,iv:q7J5ItRxvOPHF3HECueuaSUHshU152j59OXqUHhN5E4=,tag:HtcRO+oQf3Cfh//0RSAaCQ==,type:str]
+    unencrypted_suffix: _unencrypted
+    version: 3.13.0

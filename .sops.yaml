@@ -11,14 +11,16 @@
 #
 # Pitfall 5 mitigation: see .gitattributes for the `-text` rule that disables
 # git's 3-way merge driver on encrypted ciphertext.
+#
+# Recipient list (comma-separated string per SOPS spec):
+#   - DEV_A: age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my
+#   - TODO(DEV_B): append second developer's age public key once provided.
+#       Until then, .secrets/<env>/*.yaml decrypts only with DEV_A's key — single
+#       point of failure for bus factor (T-02-04). After DEV_B appends, rotate:
+#           sops updatekeys .secrets/<env>/*.yaml
+#       (non-destructive — re-wraps the data-encryption key against the new
+#       recipient list, does NOT re-encrypt plaintext values).
+#   - CI deploy key (Phase 4) appended here once issued.
 creation_rules:
   - path_regex: \.secrets/.*\.yaml$
-    age: >-
-      age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my
-      # TODO(DEV_B): append second developer's age public key here once provided.
-      # Until then, .secrets/<env>/*.yaml decrypts only with DEV_A's key — single
-      # point of failure for bus factor (T-02-04). Rotate via:
-      #     sops updatekeys .secrets/<env>/*.yaml
-      # after appending the second pubkey above. Operation is non-destructive
-      # (re-wraps the data-encryption key against the new recipient list).
-      # CI deploy key (Phase 4) appended here once issued.
+    age: age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my
