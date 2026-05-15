@@ -9,20 +9,20 @@
 
 ### Phase 1 Field Validation (PHASE1)
 
-- [ ] **PHASE1-01**: Run field protocol T1 (5km reference loop) on iPhone, Pixel, и китайском Android — fill `tests/FIELD_PROTOCOL.md` with results
-- [ ] **PHASE1-02**: Run T2/T9 (reference area + closed-loop area) on all three devices — verify ≤5% error (NFR-002)
-- [ ] **PHASE1-03**: Run T6 (2-hour session) on all three devices — verify battery ≤10%/h (NFR-003), memory growth ≤100 MB (NFR-007)
-- [ ] **PHASE1-04**: Run T8 (background reliability, 30 min in pocket) — verify ≥95% record-time on all three devices (NFR-005)
-- [ ] **PHASE1-05**: Run T7 (map FPS at 5000+ points) — verify ≥50 fps panning (NFR-006); if fails, implement `P1-D-04` Douglas-Peucker simplification for big tracks
-- [ ] **PHASE1-06**: Refactor MapScreen into dedicated screen with hook structure (`P1-B`)
-- [ ] **PHASE1-07**: Extract `SessionManager` class from `activityStore` (`P1-C`)
-- [ ] **PHASE1-08**: Add closure haptic feedback + toast notification on first zone closure (`P1-G-09`)
-- [ ] **PHASE1-09**: Build summary screen with full-map after Stop+Save (`P1-J-05`)
-- [ ] **PHASE1-10**: Build manual offline-region picker UI (`P1-K-04`)
-- [ ] **PHASE1-11**: Implement adaptive GPS sampling (high freq when moving, low when paused) (`P1-I-05`)
-- [ ] **PHASE1-12**: Add SignificantLocationChanges fallback for iOS when background activity terminates (`P1-I-02`)
-- [ ] **PHASE1-13**: Rotate Mapbox `server-secret` token (currently `pk.…`, must become `sk.…`); add Android SHA-256 fingerprint restriction; remove tokens from any chat history per `docs/SECRETS.md` TODOs
-- [ ] **PHASE1-14**: Document field-testing acceptance results and close Phase 1 in STATUS.md / DEVELOPMENT_PLAN.md
+- [~] **PHASE1-01**: Run field protocol T1 (5km reference loop) on iPhone, Pixel, и китайском Android — fill `tests/FIELD_PROTOCOL.md` with results. **In progress** — protocol scaffold ✓ (Plan 09 Task 1); device runs deferred-on-user (Plan 09 Tasks 2-4). See ADR-0005.
+- [~] **PHASE1-02**: Run T2/T9 (reference area + closed-loop area) on all three devices — verify ≤5% error (NFR-002). **In progress** — protocol ✓; runs deferred.
+- [~] **PHASE1-03**: Run T6 (2-hour session) on all three devices — verify battery ≤10%/h (NFR-003), memory growth ≤100 MB (NFR-007). **In progress** — protocol ✓; runs deferred.
+- [~] **PHASE1-04**: Run T8 (background reliability, 30 min in pocket) — verify ≥95% record-time on all three devices (NFR-005). **In progress** — protocol ✓; runs deferred.
+- [x] **PHASE1-05**: Run T7 (map FPS at 5000+ points) / implement `P1-D-04` big-track simplification. **Code done** via Plan 05 (`@turf/simplify` dual-source, threshold 2000, dynamic tolerance); T7 FPS runtime verify deferred with PHASE1-01..04.
+- [x] **PHASE1-06**: Refactor MapScreen into dedicated screen with hook structure (`P1-B`). **Done** via Plan 02 (`useTrackerCamera` / `useLayerVisibility` / `usePauseUI` extracted).
+- [x] **PHASE1-07**: Extract `SessionManager` class from `activityStore` (`P1-C`). **Done** via Plan 01 (pure-domain class; real-SQLite integration tests via better-sqlite3 shim).
+- [x] **PHASE1-08**: Add closure haptic feedback + toast notification on first zone closure (`P1-G-09`). **Done** via Plan 03 (expo-haptics ~14.1.4 + in-house Animated.View Toast).
+- [x] **PHASE1-09**: Build summary screen with full-map after Stop+Save (`P1-J-05`). **Done** via Plan 04 (nav.replace flow verified + nav-assertion test + RunDetailsScreen snapshot).
+- [x] **PHASE1-10**: Build manual offline-region picker UI (`P1-K-04`). **Done** via Plan 06 (RegionPickerScreen + RegionPickerOverlay + critical bounds-order bug fix in `offline.ts`).
+- [x] **PHASE1-11**: Implement adaptive GPS sampling (high freq when moving, low when paused) (`P1-I-05`). **Done** via Plan 07 (`LocationAdapter.setSamplingMode` + SessionManager↔PauseDetector wiring).
+- [x] **PHASE1-12**: Add SignificantLocationChanges fallback for iOS when background activity terminates (`P1-I-02`). **Done** via Plan 07 — iOS only (AppState foreground listener + gap-resume); Android SLC unsupported by `expo-location` per D-30.
+- [~] **PHASE1-13**: Rotate Mapbox `server-secret` token (currently `pk.…`, must become `sk.…`); add Android SHA-256 fingerprint restriction; remove tokens from any chat history per `docs/SECRETS.md` TODOs. **In progress** — Tasks 1-3 done (`docs/SECRETS.md` playbook + ESLint v9 flat-config guard for `EXPO_PUBLIC_*_SECRET` + `sk.<…>` literals + audit grep clean); **Task 4 (Mapbox dashboard rotation, owner-driven, ~10 min) deferred** — `01-08-SUMMARY.md` §CHECKPOINT REQUIRED.
+- [x] **PHASE1-14**: Document field-testing acceptance results and close Phase 1 in STATUS.md / DEVELOPMENT_PLAN.md. **Done** via Plan 10 in **deferred-aware mode** — STATUS.md + DEVELOPMENT_PLAN.md + .planning/STATE.md + .planning/ROADMAP.md + REQUIREMENTS.md updated; [ADR-0005](../docs/DECISIONS/0005-phase-1-field-test-outcomes.md) captures deferred-state with explicit resumption checklist.
 
 ### Phase 7 Health Platform & Integrations (HEALTH)
 
@@ -119,8 +119,21 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PHASE1-01..14 | Phase 1: Validate & Close Territory Core | Pending |
-| HEALTH-01..10 | Phase 2: Real Health Integrations | Pending |
+| PHASE1-01 (T1 distance ≤3% on 3 devices) | Phase 1: Validate & Close Territory Core | In Progress (field tests scheduled — protocol in tests/FIELD_PROTOCOL.md; ADR-0005 deferred-aware) |
+| PHASE1-02 (T2/T9 area ≤5% on 3 devices) | Phase 1: Validate & Close Territory Core | In Progress (field tests scheduled — protocol in tests/FIELD_PROTOCOL.md; ADR-0005 deferred-aware) |
+| PHASE1-03 (T6 battery + memory on 3 devices) | Phase 1: Validate & Close Territory Core | In Progress (field tests scheduled — protocol in tests/FIELD_PROTOCOL.md; ADR-0005 deferred-aware) |
+| PHASE1-04 (T8 background ≥95% on 3 devices) | Phase 1: Validate & Close Territory Core | In Progress (field tests scheduled — protocol in tests/FIELD_PROTOCOL.md; ADR-0005 deferred-aware) |
+| PHASE1-05 (big-track simplification / P1-D-04) | Phase 1: Validate & Close Territory Core | Complete (code) — 01-05-SUMMARY.md |
+| PHASE1-06 (TrackerLive hook extraction / P1-B) | Phase 1: Validate & Close Territory Core | Complete (code) — 01-02-SUMMARY.md |
+| PHASE1-07 (SessionManager extraction / P1-C) | Phase 1: Validate & Close Territory Core | Complete (code) — 01-01-SUMMARY.md (Phase A done; Phase B deferred per D-09) |
+| PHASE1-08 (closure haptic+toast / P1-G-09) | Phase 1: Validate & Close Territory Core | Complete (code) — 01-03-SUMMARY.md |
+| PHASE1-09 (summary screen / P1-J-05) | Phase 1: Validate & Close Territory Core | Complete (code) — 01-04-SUMMARY.md |
+| PHASE1-10 (manual offline region picker / P1-K-04) | Phase 1: Validate & Close Territory Core | Complete (code) — 01-06-SUMMARY.md |
+| PHASE1-11 (adaptive sampling / P1-I-05) | Phase 1: Validate & Close Territory Core | Complete (code) — 01-07-SUMMARY.md |
+| PHASE1-12 (iOS SLC gap-resume / P1-I-02) | Phase 1: Validate & Close Territory Core | Complete (code, iOS only — Android SLC unsupported by expo-location per D-30) — 01-07-SUMMARY.md |
+| PHASE1-13 (Mapbox token rotation + ESLint guard) | Phase 1: Validate & Close Territory Core | In Progress (Tasks 1-3 done — 01-08-SUMMARY.md; Task 4 Mapbox dashboard rotation awaits user) |
+| PHASE1-14 (Phase 1 closure documentation) | Phase 1: Validate & Close Territory Core | Complete (deferred-aware closure) — 01-10-SUMMARY.md + ADR-0005 |
+| HEALTH-01..10 | Phase 2: Real Health Integrations | Pending (code-level can start; production release gated on Phase 1 formal closure) |
 | SOCIAL-04 | Phase 3: Cursona Redesign Wrap | Pending |
 | SOCIAL-05..06 | Phase 4: Privacy Zones & Visibility | Pending |
 | SOCIAL-01..03 | Phase 5: Segments & Territory Game | Pending |
