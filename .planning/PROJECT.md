@@ -8,6 +8,26 @@
 
 **Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю.** Если всё остальное падает, это должно работать офлайн, точно, и без сбоев фоновой записи на 30-минутной пробежке.
 
+## Current Milestone: v1.0 Production Readiness
+
+**Goal:** Take Running Ecosystem from Phase 8 / M10 code-complete state to a **publicly launchable v1.0** — field-validated Territory Core, real platform integrations, privacy controls, segments/territory game, coaching, monetization, and GDPR readiness.
+
+**Target features** (rolls up REQ-IDs from REQUIREMENTS.md):
+- **Phase 1 — Validate & Close Territory Core** — field-test on iPhone + Pixel + Chinese-Android; finish residual refactors; rotate Mapbox tokens; close Phase 1 formally (PHASE1-01..14)
+- **Phase 2 — Real Health Integrations** — replace stubs with HealthKit / Health Connect / Strava OAuth / Garmin / FIT-parser / Sensor Sync (HEALTH-01..10)
+- **Phase 3 — Cursona Redesign Wrap** — finalize active branch, merge to `main` (SOCIAL-04)
+- **Phase 4 — Privacy Zones & Visibility** — home/work mask zones + per-session visibility (SOCIAL-05..06)
+- **Phase 5 — Segments & Territory Game** — segments + leaderboards + zone-wars mechanic (SOCIAL-01..03)
+- **Phase 6 — Coaching & Plans** — Coach role, plan builder, dashboard, per-workout feedback (COACH-01..06)
+- **Phase 7 — Premium & Marketplace** — Stripe / RevenueCat, tiers, feature gating, marketplace (PREMIUM-01..06)
+- **Phase 8 — GDPR & Compliance** — consent, export, right-to-be-forgotten, pen-test, bug bounty, i18n EN, CI perf regression (XCUT-01..03 + per-phase XCUT-04..08)
+
+**Key context:** The GSD planning system was initialized on this brownfield codebase on 2026-05-14 mid-stream (Phase 8 / M10 already shipped at code level). Phase 1 of v1.0 was executed via the 10-plan breakdown on `feat/cursona-redesign`; field-test validation and Mapbox token rotation are the only blockers to formal Phase 1 closure. See ADR-0005 for the deferred-aware closure rationale.
+
+**Milestone open date:** 2026-05-14 (formalized 2026-05-15)
+**Milestone target close:** when Phase 8 GDPR readiness ships + pen-test passes (formal v1.0 launch gate)
+**Tracked in:** [.planning/MILESTONES.md](.planning/MILESTONES.md) (v1.0 IN-PROGRESS)
+
 ## Requirements
 
 ### Validated
@@ -139,4 +159,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-14 after GSD brownfield initialization on `feat/cursona-redesign` (post Phase 8 / M10).*
+*Last updated: 2026-05-15 — formalized current scope as Milestone v1.0 Production Readiness; Phase 1 code-complete (deferred-aware closure).*
+*Previous update: 2026-05-14 — GSD brownfield initialization on `feat/cursona-redesign` (post Phase 8 / M10).*

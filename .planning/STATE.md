@@ -2,10 +2,12 @@
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-05-14)
+See: `.planning/PROJECT.md` (updated 2026-05-15)
+See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress)
 
+**Milestone:** v1.0 Production Readiness — IN PROGRESS (opened 2026-05-14, formalized 2026-05-15). Target close: Phase 8 GDPR & Compliance ship + pen-test pass.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** GSD Phase 1 — Validate & Close Territory Core (field-test on 3 OEMs + finish Phase 1 refactors + rotate Mapbox tokens)
+**Current focus:** v1.0 Phase 1 — Validate & Close Territory Core (🟡 code-complete; awaits Mapbox dashboard rotation + 3-OEM field tests). Phase 2 (Real Health Integrations) ready to start in parallel with Phase 1 field-test work.
 
 **Brownfield note:** Codebase is at Phase 8 / M10 (tracking stats shipped) on active branch `feat/cursona-redesign`. GSD phases below cover remaining work only. Existing planning artefacts in `docs/` are the canonical implementation breakdown — GSD plans roll up to those P-IDs.
 
