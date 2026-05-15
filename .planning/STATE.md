@@ -12,11 +12,11 @@ See: `.planning/PROJECT.md` (updated 2026-05-14)
 ## Current Position
 
 Phase: 1 of 8 (Validate & Close Territory Core)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-05-14 — GSD brownfield init completed (PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, codebase analysis docs)
+Plan: 9 of 10 (field-test execution — protocol scaffold landed; device runs pending user action)
+Status: PARTIAL — Plan 09 Task 1 complete (`c1af7c7`); Tasks 2-4 (Pixel / iPhone / Chinese-Android field runs) await physical device execution
+Last activity: 2026-05-14 — Plan 09 Task 1 protocol scaffold committed
 
-Progress: [░░░░░░░░░░] 0% (0 / 49 v1 REQ-IDs delivered via GSD; ≈70 atomic tasks already shipped per `STATUS.md`)
+Progress: [████████░░] 80% (8 of 10 plans landed; Plan 09 partial, Plan 10 awaits Plan 09 Pixel rows for ADR-0005)
 
 ## Performance Metrics
 
@@ -62,7 +62,8 @@ None yet (folder not initialized).
 [Issues that affect future work — see `.planning/codebase/CONCERNS.md` for full list]
 
 - **P0 (must address before public launch)**: `IDENTITY_DEV_MODE=true` default in identity service; missing rate-limit on `/auth/*` endpoints; OTP code unconditionally logged in stdout.
-- **Phase 1 dependency**: Mapbox `server-secret` is currently `pk.…` — must rotate to `sk.…` before Phase 1 closes (PHASE1-13).
+- **Phase 1 dependency (user action)**: Plan 08 Task 4 — Mapbox `sk.` token rotation in dashboard; required in `~/.netrc` (iOS) + `~/.gradle/gradle.properties` (Android) before Plan 09 Tasks 2-4 device builds can be cut. See `01-08-SUMMARY.md` §CHECKPOINT REQUIRED.
+- **Phase 1 dependency (user action)**: Plan 09 Tasks 2-4 — physical device field runs (Pixel / iPhone / Chinese-Android × T1, T2, T6, T7, T8, T9). Protocol scaffold ready in `tests/FIELD_PROTOCOL.md`. Pixel runnable now (gated only on Plan 08 Task 4); iPhone gated additionally on Xcode install; Chinese-Android gated on device acquisition. See `01-09-SUMMARY.md` §CHECKPOINT REQUIRED.
 - **Phase 2 dependency**: backend `/integrations/strava/{exchange,refresh}` endpoints do not exist yet (R1 partial); env-var naming inconsistent (`EXPO_PUBLIC_API_BASE` vs `EXPO_PUBLIC_API_URL`).
 - **R18 (cross-cutting schema)**: `personal_records` and `sessions` lack `user_id` columns — must add before Phase 4 visibility or any Guest-mode revisit.
 - **Active branch**: `feat/cursona-redesign` must be merged to `main` (Phase 3) before deeper phases ship to avoid drift.
@@ -82,11 +83,11 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-14 — Phase 1 context gathered (autonomous mode).
-Stopped at: `.planning/phases/01-validate-close-territory-core/01-CONTEXT.md` written; ready for planning.
-Resume file: `.planning/phases/01-validate-close-territory-core/01-CONTEXT.md`.
+Last session: 2026-05-14 — Plan 09 Task 1 (field-test protocol scaffold) landed as commit `c1af7c7`.
+Stopped at: `.planning/phases/01-validate-close-territory-core/01-09-SUMMARY.md` §CHECKPOINT REQUIRED — USER ACTION. Tasks 2-4 await physical device execution.
+Resume file: `.planning/phases/01-validate-close-territory-core/01-09-SUMMARY.md`.
 
-**Next action**: `/gsd-plan-phase 1` (to break Phase 1 into atomic plans).
+**Next action**: Owner-driven field runs per `tests/FIELD_PROTOCOL.md` (Pixel first, per D-02). After Pixel rows filled in + committed, run `/gsd-execute-plan 01-10` to close Phase 1 (ADR-0005 + STATUS.md / ROADMAP.md updates).
 
 ## Artifacts Created (this init)
 
