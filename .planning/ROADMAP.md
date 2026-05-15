@@ -53,8 +53,11 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 3. `pkg/featureflags` package on backend + mirror on mobile with the v1.0 flag set
 4. `docs/v1.0-SCOPE.md` lists IN capabilities (Territory Core, Activity Journal, Chat, Stats, Wallet, Strava-read-only-OAuth) and explicit OUT capabilities (privacy zones, segments, coaching, premium, GDPR consent flow — all v1.1+)
 5. Decision recorded in `docs/DECISIONS/0007-v1.0-release-contract.md`
-**Plans**: TBD
-**Maps to existing plan**: New scope; references `pkg/openapi/` if present.
+**Plans**: 3 plans across 2 waves
+- [ ] `01-01-PLAN.md` — Contract & ADR (REL-01, REL-04, REL-05) — Wave 1 — OpenAPI 3.1.0 extension to 7 services + `_shared/` components + Redocly lint + Go drift-check tool + `docs/v1.0-SCOPE.md` IN/OUT freeze + ADR-0007
+- [ ] `01-02-PLAN.md` — Version negotiation E2E (REL-02) — Wave 1 — `pkg/clientversion` shared Go lib + per-service mount in 8 services + Caddy passthrough + mobile `version.ts` + `apiClient.ts` 426 intercept + `ForceUpdateScreen` + `expo-application` added to package.json
+- [ ] `01-03-PLAN.md` — Feature flags (REL-03) — Wave 2 (depends on 01-02; same main.go files) — Migration `0021_featureflags` + `pkg/featureflags` (FNV-1a rollout with 0x00 separator, 30s cache + singleflight) + identity handlers + 8 main.go wirings + admin UI extension + mobile Zustand+MMKV store + offline-first defaults + clearAll-on-logout wiring
+**Maps to existing plan**: New scope (v1.0 hardening); no pre-v1.0 P-IDs apply.
 
 ### Phase 2: Secrets & config hardening
 **Workstream:** `backend` (NON-NEGOTIABLE — gates Phase 3 strictly per user redline)

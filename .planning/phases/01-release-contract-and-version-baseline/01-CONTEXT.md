@@ -27,7 +27,7 @@
 ### What exists (relevant to this phase)
 - **`services/backend/api/identity.yaml`** (185 lines, OpenAPI 3.1.0, hand-written) — covers `/auth/register`, `/auth/login`, refresh-token flow. Per file comment: "Phase 2 / P2-A-02."
 - **`services/backend/api/activity-sync.yaml`** (181 lines, OpenAPI 3.1.0, hand-written) — covers `POST /sessions`, points upload, idempotency-by-`clientSessionId`. Per file comment: "Phase 2 / P2-A-04."
-- **`services/backend/gateway/`** — gateway service exists; natural place for version-check middleware (single enforcement point).
+- **`services/backend/gateway/`** — **Caddy-only directory** (Caddyfile + admin static HTML); confirmed by research, NOT a Go service. Middleware enforcement lands in `pkg/clientversion` shared lib mounted per-service (revised D-08).
 - **7 backend services** (identity, feed, social-graph, activity-sync, realtime-gw, messaging, notifications, media) + gateway. All use Go 1.22+ `mux.HandleFunc("METHOD /path", ...)` pattern.
 - **`apps/mobile-rn/src/auth/apiClient.ts`** — central API client wrapper. Sets `Authorization: Bearer` + `Content-Type: application/json`. **Does NOT set any version header.** This is the seam to add `X-Client-Version`.
 - **Mobile state stores** (`src/state/`) — Zustand pattern: `auth.ts`, `settings.ts`, `activity.ts`, `wallet.ts`, etc. New `featureflags.ts` follows this convention.
@@ -53,15 +53,15 @@
 ### Version Negotiation (REL-02)
 
 - **D-05: HTTP header transport** — `X-Client-Version: <semver> (<build-number>)` (e.g., `X-Client-Version: 1.0.0 (42)`). Server parses the semver portion; build number is informational for support tickets. **Why:** URL path versioning (`/v1/...`) fragments routes and forces big migrations later; query params get lost in logs; header is industry-standard for client capability.
-- **D-06: Mobile reads version from `expo-application`** — `Application.nativeApplicationVersion` (semver) + `Application.nativeBuildVersion` (build number). Stamped into `X-Client-Version` header by `apiClient.ts` before every request.
+- **D-06 (REVISED post-research): Mobile reads version from `expo-application`** — `Application.nativeApplicationVersion` (semver) + `Application.nativeBuildVersion` (build number). Stamped into `X-Client-Version` header by `apiClient.ts` before every request. **`expo-application@~7.0.8` is currently in `node_modules/` but NOT in `apps/mobile-rn/package.json`** — Phase 1 must add it as direct dep via `npx expo install expo-application` (research-verified). EAS OTA updates do NOT change `nativeApplicationVersion` — the header reflects the binary (correct semantics for compatibility negotiation, since OTA can't introduce native-side breaking changes).
 - **D-07: Server compatibility model = backward-compatible only with explicit min-supported-version.** Server publishes `min_supported_version: "1.0.0"` per endpoint family (or globally for v1.0). Client too-old → `HTTP 426 Upgrade Required` with body `{ "error": "client_too_old", "min_version": "1.0.0", "force_update_url": "https://<domain>/android/manifest.json" }` (Android) or App Store URL (iOS).
-- **D-08: Enforcement point = gateway middleware.** Gateway service checks `X-Client-Version` on all `/api/*` paths; individual services trust the gateway header. **Why:** Single enforcement point, no per-service duplication, easier to evolve compatibility policy.
+- **D-08 (REVISED post-research): Enforcement via shared `pkg/clientversion` Go lib mounted per-service at outermost mux wrap.** Research surfaced that `services/backend/gateway/` is **Caddy-only** (contains `Caddyfile` + `Caddyfile.prod` + `admin/`) — there is no Go gateway service to attach middleware to. Instead: write `pkg/clientversion` shared Go lib (mirrors `pkg/ratelimit` / `pkg/permissions` shape); each service wraps its `http.ServeMux` at outermost registration so the middleware fires before any handler. **Why:** Single-source-of-truth for version policy preserved (one Go lib, not duplicated); per-service mount is the only architecturally clean option given Caddy-only edge. Caddy reverse-proxies pass `X-Client-Version` through unchanged — add integration test to verify.
 - **D-09: Mobile response handling.** On `426`, `apiClient.ts` triggers a force-update screen (re-using Phase 18's `min-supported-version` UX). Same code path; just a different trigger.
 - **D-10: Versioning policy = strict semver** with major bumps for breaking changes. `v1.0.0` covers the entire closed beta; minor bumps (`1.0.1`, `1.0.2`) for non-breaking fixes; `v1.1.0` will require a separate min-version negotiation. Documented in ADR-0007.
 
 ### Feature Flags (REL-03)
 
-- **D-11: Backend `pkg/featureflags`** as shared Go library. Used by all 7 services. Single-table Postgres source-of-truth (`featureflags` migration) with columns: `flag_name TEXT PK`, `enabled_bool BOOLEAN`, `rollout_percent INT 0-100`, `updated_at TIMESTAMPTZ`. Read-through with 30-second in-memory cache per service. Admin UI extends existing `gateway/admin/index.html`.
+- **D-11 (REVISED post-research): Backend `pkg/featureflags`** as shared Go library. Used by all 7 services. Single-table Postgres source-of-truth via migration **`0021_featureflags.up.sql`** (current latest on disk is `0020_auth_otp` — research correction; my initial CONTEXT had `0020`). Columns: `flag_name TEXT PK`, `enabled_bool BOOLEAN`, `rollout_percent INT 0-100`, `description TEXT`, `updated_at TIMESTAMPTZ`, `updated_by_user_id BIGINT REFERENCES users(id)`. Read-through with 30-second in-memory cache per service + `sync.Once`-style singleflight to prevent thundering herd on cache miss. Admin UI extends existing `gateway/admin/index.html` (the `admin/` lives inside the Caddy-served static directory).
 - **D-12: Flag types for v1.0 = boolean + percentage rollout only.** No A/B variants, no per-user targeting, no LaunchDarkly-style segments. Rollout percentage hashed by `(user_id, flag_name)` via FNV-1a → deterministic per-user assignment. **Variants + targeting are v1.1.**
 - **D-13: Mobile transport = dedicated `GET /featureflags` endpoint.** Cached client-side with 5-minute TTL. Mobile fetches on app launch + every 5min when foreground + on auth state change. Anonymous (pre-login) returns global flags; authenticated returns global + per-user-rolled flags.
 - **D-14: Mobile-side mirror = `apps/mobile-rn/src/state/featureflags.ts` (Zustand store)** + `apps/mobile-rn/src/state/featureflagsApi.ts` (HTTP client). **Why:** Matches existing Zustand pattern (settings, auth, wallet, sensors, etc.); no new `modules/` structure since feature flags are a cross-cutting concern, not a feature domain.
@@ -109,7 +109,17 @@
 - **OpenAPI spec linting:** `redocly lint` or `spectral lint` — planner picks; both work.
 - **CI route-vs-spec drift check:** small Go binary in `services/backend/scripts/openapi-routes-check.go` that imports each service's router registration func and diffs against the YAML.
 - **Admin UI for feature flags:** extends `gateway/admin/index.html` (static HTML + vanilla JS, matches Phase 8/L precedent). No new SPA framework.
-- **Naming for feature flag table migration:** `0020_featureflags.up.sql` (continues numeric migration sequence; current latest is `0019_wallet_balance_check`).
+- **Naming for feature flag table migration:** `0021_featureflags.up.sql` (continues numeric migration sequence; current latest on disk is `0020_auth_otp` — research-verified).
+
+### Corrections Applied Post-Research (2026-05-15)
+
+The Phase 1 research pass surfaced three load-bearing corrections to the auto-mode CONTEXT decisions. All three verified empirically before applying:
+
+1. **D-06 augmented:** `expo-application@~7.0.8` is in `node_modules/` but NOT declared in `apps/mobile-rn/package.json`. Phase 1 task must add it via `npx expo install expo-application` (else the import fails on a fresh `npm install`). Also confirmed: EAS OTA does NOT change `nativeApplicationVersion` (binary-version semantics correct for compat negotiation).
+2. **D-08 revised:** `services/backend/gateway/` is Caddy-only (Caddyfile + admin static HTML), NOT a Go service. Version-check enforcement lands in shared `pkg/clientversion` Go lib mounted per-service at outermost mux wrap. Single-source-of-truth preserved via the lib.
+3. **D-11 revised:** Latest migration on disk is `0020_auth_otp`, not `0019_wallet_balance_check`. Feature flag migration is `0021_featureflags.up.sql` (not 0020). My initial CONTEXT was off-by-one.
+
+These corrections propagate to REQUIREMENTS.md / ROADMAP.md / MILESTONES.md as well — flagged for the planner to either update or note as a known doc-drift item (lean: update during this phase since they're touched).
 
 ### Folded Todos
 
@@ -138,10 +148,10 @@ None — `.planning/todos/` not initialized.
 - `apps/mobile-rn/src/state/settings.ts` — same Zustand+MMKV persistence pattern
 
 ### Backend Architecture Anchors
-- `services/backend/gateway/` — gateway service; new home for version-check middleware (single enforcement point per D-08)
-- `services/backend/pkg/` — shared Go libs lives here; `pkg/featureflags/` lands here (alongside existing `pkg/ratelimit`, `pkg/permissions`, `pkg/audit`)
-- `services/backend/migrations/` — new migration `0020_featureflags.up.sql` + `0020_featureflags.down.sql` (current latest is `0019`)
-- `services/backend/gateway/admin/index.html` — admin UI extension point (Phase 8/L precedent: vanilla HTML+JS)
+- `services/backend/gateway/` — **Caddy-only directory** (`Caddyfile` + `Caddyfile.prod` + `admin/`); NOT a Go service. Per D-08-revised: version-check middleware lives in `pkg/clientversion` mounted per-service.
+- `services/backend/pkg/` — shared Go libs live here; new `pkg/featureflags/` AND `pkg/clientversion/` land here (alongside existing `pkg/ratelimit`, `pkg/permissions`, `pkg/audit`)
+- `services/backend/migrations/` — new migration `0021_featureflags.up.sql` + `0021_featureflags.down.sql` (current latest on disk is `0020_auth_otp` — research-verified)
+- `services/backend/gateway/admin/index.html` — admin UI extension point served as static asset by Caddy (Phase 8/L precedent: vanilla HTML+JS)
 
 ### CLAUDE.md Rules (apply globally; relevant subset)
 - Offline-first → influences D-15 feature flag default behavior
@@ -177,7 +187,7 @@ None — `.planning/todos/` not initialized.
 - **Russian-language doc headers + English technical body** — `docs/v1.0-SCOPE.md` follows.
 
 ### Integration Points
-- **Gateway service version middleware** is the single enforcement point for `X-Client-Version` (D-08).
+- **`pkg/clientversion` Go lib + per-service mount** is the single enforcement point for `X-Client-Version` (D-08-revised; Caddy gateway is reverse-proxy only).
 - **`apiClient.ts`** is the single integration point for client-side version stamping + 426 handling (D-09).
 - **`gateway/admin/index.html`** is the single integration point for feature flag admin UI (D-11).
 - **`pkg/featureflags`** is the single integration point for backend services to check flags (`featureflags.IsEnabled(ctx, userID, "strava_oauth_enabled")` style API).
