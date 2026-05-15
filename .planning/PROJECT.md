@@ -10,22 +10,48 @@
 
 ## Current Milestone: v1.0 Production Readiness
 
-**Goal:** Take Running Ecosystem from Phase 8 / M10 code-complete state to a **publicly launchable v1.0** — field-validated Territory Core, real platform integrations, privacy controls, segments/territory game, coaching, monetization, and GDPR readiness.
+**Redefined:** 2026-05-15 — scope shifted from "ship 8 feature phases" to "harden the existing Phase 8/M10 code-complete baseline for closed beta with real testers." Feature work (privacy zones, segments, coaching, premium, GDPR consent) slides to v1.1+. See `.planning/MILESTONES.md` and `.planning/REQUIREMENTS.md` §Deferred from v1.0.
 
-**Target features** (rolls up REQ-IDs from REQUIREMENTS.md):
-- **Phase 1 — Validate & Close Territory Core** — field-test on iPhone + Pixel + Chinese-Android; finish residual refactors; rotate Mapbox tokens; close Phase 1 formally (PHASE1-01..14)
-- **Phase 2 — Real Health Integrations** — replace stubs with HealthKit / Health Connect / Strava OAuth / Garmin / FIT-parser / Sensor Sync (HEALTH-01..10)
-- **Phase 3 — Cursona Redesign Wrap** — finalize active branch, merge to `main` (SOCIAL-04)
-- **Phase 4 — Privacy Zones & Visibility** — home/work mask zones + per-session visibility (SOCIAL-05..06)
-- **Phase 5 — Segments & Territory Game** — segments + leaderboards + zone-wars mechanic (SOCIAL-01..03)
-- **Phase 6 — Coaching & Plans** — Coach role, plan builder, dashboard, per-workout feedback (COACH-01..06)
-- **Phase 7 — Premium & Marketplace** — Stripe / RevenueCat, tiers, feature gating, marketplace (PREMIUM-01..06)
-- **Phase 8 — GDPR & Compliance** — consent, export, right-to-be-forgotten, pen-test, bug bounty, i18n EN, CI perf regression (XCUT-01..03 + per-phase XCUT-04..08)
+**Goal:** Take Running Ecosystem from "works on dev machine, deployed to single VPS at `148-253-214-156.sslip.io`" → "deployable from IaC to a fresh Hetzner account, signed release builds for iOS + Android, observable without leaking GPS/PII, and a tagged `v1.0-rc.1` release after 48h staging soak with ≥8 real runners."
 
-**Key context:** The GSD planning system was initialized on this brownfield codebase on 2026-05-14 mid-stream (Phase 8 / M10 already shipped at code level). Phase 1 of v1.0 was executed via the 10-plan breakdown on `feat/cursona-redesign`; field-test validation and Mapbox token rotation are the only blockers to formal Phase 1 closure. See ADR-0005 for the deferred-aware closure rationale.
+**Structure:** **21 phases across 5 workstreams** (`shared` | `backend` | `android` | `ios` | `mobile-shared`). Critical path: Phase 1 (shared) → Phase 2 (backend — gates everything) → {backend Phase 3–8 || android Phase 9/11/14/18 || ios Phase 10/12/15/19} → Phase 13 (Mapbox SDK 11.x migration, mobile-shared) → Phase 14+15 (native + ABI per platform) → Phase 16 (background reliability — inherits Pixel field-test gating from old Phase 1) → Phase 20 (device matrix, 8 classes) → Phase 21 (staging E2E + go/no-go + tag `v1.0-rc.1`).
+
+**Target features** (rolls up to v1.0 REQ-IDs — see `.planning/REQUIREMENTS.md`):
+- **Phase 1 — Release contract & version baseline** (shared, REL-01..05)
+- **Phase 2 — Secrets & config hardening** (backend, SEC-01..09 — NON-NEGOTIABLE, gates Phase 3 strictly)
+- **Phase 3 — Infrastructure as code** (backend, INFRA-01..07 — Ansible + Terraform-for-cloud-resources)
+- **Phase 4 — CI/CD pipeline** (backend, CICD-01..06 — rollback drill with real DB migration in path)
+- **Phase 5 — Observability backend** (backend, OBS-01..08 — Sentry self-hosted on separate VPS)
+- **Phase 6 — Edge protection & rate-limiting** (backend, EDGE-01..05 — closes CONCERNS.md P0 `/auth/*` gap)
+- **Phase 7 — DB + queues + state ops** (backend, DB-01..08 — pgBackRest to Hetzner Storage Box, restore drill, R18 zero-downtime migration)
+- **Phase 8 — Load + chaos baselines** (backend, LOAD-01..06)
+- **Phase 9 — Android release signing** (android, AND-SIGN-01..05)
+- **Phase 10 — iOS release signing** (ios, IOS-SIGN-01..05)
+- **Phase 11 — Android release build config** (android, AND-BUILD-01..06 + HEALTH-04 Android impl)
+- **Phase 12 — iOS release build config** (ios, IOS-BUILD-01..05 + HEALTH-04 iOS impl)
+- **Phase 13 — Mapbox SDK 11.x migration** (mobile-shared, MAPBOX11-01..05 — gated on debug regression of all Phase 1 tracker features)
+- **Phase 14 — Android native + ABI matrix** (android, AND-NATIVE-01..05 — 16 KB page-size for Android 15+)
+- **Phase 15 — iOS native + device class compat** (ios, IOS-NATIVE-01..03)
+- **Phase 16 — Background reliability in release** (mobile-shared, BG-01..08 — inherits Pixel field-test acceptance from old Phase 1)
+- **Phase 17 — Crash reporting** (shared, CRASH-01..06 — mobile Sentry with PII-strip)
+- **Phase 18 — Android self-hosted update channel** (android, AND-DIST-01..06 — no Firebase, de-Googled testers supported)
+- **Phase 19 — iOS TestFlight pipeline** (ios, IOS-DIST-01..04)
+- **Phase 20 — Device matrix + physical tests** (shared, DEVICES-01..08 — 8 device classes)
+- **Phase 21 — Staging E2E + go/no-go + tag `v1.0-rc.1`** (shared, E2E-01..07 — 48h soak, ≥8 real runners)
+
+**Pre-v1.0 baseline (already shipped, see §Validated below):** Phase 8 / M10 code-complete on `feat/cursona-redesign` with 35 commits of Phase 1 territory-core refactors (SessionManager extraction, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 token-secret guard). Those commits remain on the branch; old planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`. Pixel field-test acceptance criteria copied verbatim into `.planning/phases/16-background-reliability-in-release/16-CONTEXT.md` (skeleton) for re-validation against signed RELEASE builds.
+
+**Hard rules (carried into every phase):**
+- No secret committed; placeholders like `EXPO_PUBLIC_MAPBOX_TOKEN_EXAMPLE_DO_NOT_USE` and `sk.EXAMPLE_DO_NOT_USE`
+- No `latest` image tags in production; pin to immutable SHA256 digests
+- No `--no-verify` on commits; pre-commit hooks must pass
+- No telemetry event that could correlate a runner to a location they ran; default to NOT sending
+- Crash reports from production → separate Sentry project from staging; never cross
+- Release APK/IPA must be reproducible: two CI runs of same tag → byte-identical artifacts (modulo signature)
+- **Phase 2 → Phase 3 strict sequencing**: Ansible templates source from SOPS, not inline values retroactively cleaned
 
 **Milestone open date:** 2026-05-14 (formalized 2026-05-15)
-**Milestone target close:** when Phase 8 GDPR readiness ships + pen-test passes (formal v1.0 launch gate)
+**Milestone target close:** Tagged `v1.0-rc.1` after 48h staging soak with ≥8 real runners (Phase 21 acceptance)
 **Tracked in:** [.planning/MILESTONES.md](.planning/MILESTONES.md) (v1.0 IN-PROGRESS)
 
 ## Requirements
@@ -159,5 +185,6 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-15 — formalized current scope as Milestone v1.0 Production Readiness; Phase 1 code-complete (deferred-aware closure).*
-*Previous update: 2026-05-14 — GSD brownfield initialization on `feat/cursona-redesign` (post Phase 8 / M10).*
+*Last updated: 2026-05-15 — Milestone v1.0 Production Readiness REDEFINED as 21-phase hardening scope (replaces earlier feature-focused 8-phase scope). Feature work deferred to v1.1+.*
+*Previous: 2026-05-15 — formalized current scope as Milestone v1.0 (initial scope, since superseded).*
+*Previous: 2026-05-14 — GSD brownfield initialization on `feat/cursona-redesign` (post Phase 8 / M10).*

@@ -2,44 +2,45 @@
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-05-15)
+See: `.planning/PROJECT.md` (updated 2026-05-15 — milestone v1.0 redefined)
 See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress)
 
-**Milestone:** v1.0 Production Readiness — IN PROGRESS (opened 2026-05-14, formalized 2026-05-15). Target close: Phase 8 GDPR & Compliance ship + pen-test pass.
+**Milestone:** v1.0 Production Readiness — IN PROGRESS, **REDEFINED 2026-05-15** as 21-phase hardening scope. Earlier 8-phase feature scope superseded. Feature work (privacy zones, segments, coaching, premium, GDPR) slides to v1.1+. Target close: tagged `v1.0-rc.1` after 48h staging soak with ≥8 real runners.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** v1.0 Phase 1 — Validate & Close Territory Core (🟡 code-complete; awaits Mapbox dashboard rotation + 3-OEM field tests). Phase 2 (Real Health Integrations) ready to start in parallel with Phase 1 field-test work.
+**Current focus:** **Phase 1 of v1.0 hardening — Release Contract & Version Baseline** (`shared` workstream). Ready for `/gsd-discuss-phase 1`.
 
-**Brownfield note:** Codebase is at Phase 8 / M10 (tracking stats shipped) on active branch `feat/cursona-redesign`. GSD phases below cover remaining work only. Existing planning artefacts in `docs/` are the canonical implementation breakdown — GSD plans roll up to those P-IDs.
+**Brownfield note:** Codebase remains at Phase 8 / M10 code-complete on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors landed under the superseded scope — kept as-is in git history; planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`). Pixel + iPhone field-test acceptance criteria inherited by new Phase 16 (CONTEXT skeleton seeded).
 
 ## Current Position
 
-Phase: 1 of 8 (Validate & Close Territory Core) — **code-complete, field-tests pending**
-Plan: 10 of 10 (Phase 1 closure docs — deferred-aware mode)
-Status: Phase 1 closed at code-level 2026-05-14 via Plans 01-10; **NOT formally closed** until Plan 08 Task 4 (Mapbox dashboard rotation) + Plan 09 Tasks 2-4 (per-device field runs) complete. See ADR-0005.
-Last activity: 2026-05-14 — Plan 10 closure docs landed in deferred-aware mode (ADR-0005 + STATUS + DEVELOPMENT_PLAN + STATE + ROADMAP + REQUIREMENTS)
+Phase: **1 of 21** (Release contract & version baseline) — `shared` workstream
+Plan: 0 of TBD (Phase 1 not yet discussed/planned in new scope)
+Status: Ready to plan
+Last activity: 2026-05-15 — Milestone v1.0 redefined as 21-phase hardening scope; old Phase 1 archived; new Phase 16 CONTEXT skeleton seeded with inherited Pixel field-test gating.
 
-Progress: [█████████░] 90% (9 of 10 plans landed at code-level; Plan 09 partial — Task 1 done, Tasks 2-4 deferred-on-user; Plan 10 complete deferred-aware)
+Progress: [░░░░░░░░░░] 0% of new v1.0 scope (0 of 96 v1.0 REQ-IDs delivered)
+**Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
 
-**Next phase (gated):** Phase 2 (Real Health Integrations) — code-level work can start in parallel via `/gsd-discuss-phase 2`. Production release of Phase 2 features is gated on Phase 1 formal closure (per ADR-0005 Consequences).
+**Next phase (gated):** Phase 2 (Secrets & config hardening) — `backend` workstream. NON-NEGOTIABLE prerequisite for all subsequent phases. **Strict no-parallelization with Phase 3** per user redline.
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9 of 10 code-level + 1 deferred-aware (Plan 10) = 10 of 10 with caveats. Phase 1 baseline 2026-05-14.
-- Average duration: ~25-35 minutes per code plan (Plans 02..09 SUMMARY metrics)
-- Total execution time: ~4-5 hours of agent work (Plans 01-09 across multi-active sessions on 2026-05-14)
+- Total v1.0 hardening plans completed: 0 (scope just redefined 2026-05-15)
+- Pre-v1.0 baseline (superseded scope): 10 plans (9 code-complete + 1 deferred-aware) executed 2026-05-14, ~25-35 min per plan; commits remain on `feat/cursona-redesign`
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1 (Validate & Close Territory Core) | 10 | 10 (9 code-complete + Plan 10 deferred-aware) | ~25-35 min |
+| — | — | — | — |
+
+(Phase 1 of new v1.0 scope not yet planned; per-phase metrics will accumulate as phases execute.)
 
 **Recent Trend:**
-- Last 5 plans (chronological): 01-06 → 01-01 → 01-07 → 01-02 → 01-03 → 01-08 → 01-05 → 01-04 → 01-09 → 01-10 (parallel waves)
-- Trend: Phase 1 closeout shipped on schedule; field validation remains owner-driven and deferred.
+- Last activity: 2026-05-15 — v1.0 scope redefined; planning artifacts rewritten atomically.
 
-*Updated after each plan completion*
+*Updated after each plan completion.*
 
 ## Accumulated Context
 
@@ -49,75 +50,99 @@ Full decision log in `docs/DECISIONS/` (ADRs) and `.planning/PROJECT.md` §Key D
 
 Recent / load-bearing decisions affecting current work:
 
-- **ADR-0001**: Expo RN over Flutter — locked; Flutter archived in `apps/mobile_flutter.archived/`.
-- **ADR-0002**: Guest mode deferred — revisit if signup friction blocks adoption.
-- **ADR-0003**: OAuth Google + Apple via `AuthProvider` interface — stub-safe; backend exchange endpoints still pending (Phase 2 / Phase 3 work).
-- **ADR-0004**: Feed/Stories backend do-nothing — preserved when feed came back on `feat/cursona-redesign`; revisit at 90 days or on security audit.
-- **ADR-0005**: Phase 1 field-test outcomes — Code Closeout, Deferred Validation (2026-05-14). Phase 1 closed at code-level; formal closure gated on Mapbox dashboard rotation + 3-device field runs. See `docs/DECISIONS/0005-phase-1-field-test-outcomes.md`.
-- **GSD init 2026-05-14**: REQ-IDs (`PHASE1-*`, `HEALTH-*`, `SOCIAL-*`, `COACH-*`, `PREMIUM-*`, `XCUT-*`) provide GSD-side traceability; existing `P<phase>-<section>-<number>` task IDs remain the canonical implementation breakdown.
+- **ADR-0001**: Expo RN over Flutter — locked; Flutter archived.
+- **ADR-0002**: Guest mode deferred.
+- **ADR-0003**: OAuth Google + Apple via `AuthProvider` interface — stub-safe; backend exchange endpoints pending (in v1.0 Phase 11/12 for Strava only per HEALTH-04).
+- **ADR-0004**: Feed/Stories backend do-nothing.
+- **ADR-0005**: Phase 1 (old scope) field-test outcomes — Code Closeout, Deferred Validation (2026-05-14). **Now relocated**: field-test acceptance gating moved into new Phase 16 (`.planning/phases/16-background-reliability-in-release/16-CONTEXT.md`); ADR-0005 still tracks the eventual `Accepted (closed)` flip after Phase 21 soak.
+- **2026-05-15 — Milestone v1.0 redefinition**: 8-phase feature scope superseded by 21-phase hardening scope. Workstream tags `shared` | `backend` | `android` | `ios` | `mobile-shared`. Phase 2 → Phase 3 strict sequencing (SOPS-first). Mapbox 11.x migration inserted as Phase 13 (between mobile build config and native+ABI), gated on debug-build regression of all old Phase 1 tracker features. HEALTH-04 (Strava read-only OAuth) pulled into v1.0 as standalone REQ-ID with split impl (Phase 11+12) and validation (Phase 21).
+- **Future ADRs scheduled in v1.0:**
+  - `0006-mapbox-token-incident.md` — Phase 2: documents the dual-token rotation (deferred pk.→sk. CI token + prod runtime pk.* token) as treated-as-compromise incident
+  - `0007-v1.0-release-contract.md` — Phase 1: locks mobile↔backend wire contract + version negotiation policy
+  - `0008-mapbox-sdk-11-migration.md` — Phase 13: documents `@rnmapbox/maps` 10.x→11.x breaking changes and resolution
 
 ### Pending Todos
 
-[From `.planning/todos/pending/` — ideas captured during sessions]
+[Carry-forward from pre-v1.0 baseline — relocated into v1.0 phases]
 
-**Phase 1 formal closure (USER ACTIONS — see ADR-0005 §«Список user actions»):**
+**Old Phase 1 (superseded scope) user actions — now part of new Phase 2 + Phase 16:**
 
-1. ☐ **Mapbox dashboard rotation** (Plan 08 Task 4, ~10 минут) — generate new `sk.<…>` token with `DOWNLOADS:READ` scope, store in `~/.netrc` (iOS) + `~/.gradle/gradle.properties` (Android), delete old leaked tokens, append entry to `docs/SECRETS.md` §«История ротаций». Full procedure: `01-08-SUMMARY.md` §CHECKPOINT REQUIRED — Task 4.
-2. ☐ **Field test execution** (Plan 09 Tasks 2-4): Pixel → iPhone → Chinese-Android, each running T1 / T2 / T6 / T7 / T8 / T9. Fill per-device tables in `tests/FIELD_PROTOCOL.md`; place GPX + battery photos under `tests/runs/<device>/<test>/`. Commit per-device: `test(phase1): pixel field results … (PHASE1-01..04)`. iPhone gated additionally on Xcode install; Chinese-Android gated on device acquisition.
-3. ☐ **Update ADR-0005** after Pixel + iPhone runs minimum — replace `deferred` with measured values, flip status to `Accepted (closed)`, sync STATUS.md / DEVELOPMENT_PLAN.md / STATE.md / ROADMAP.md.
+1. ☐ **Mapbox dashboard rotation** — folded into new Phase 2 SEC-03 + SEC-04 (broader incident-reset scope: BOTH deferred pk.→sk. CI token AND production runtime pk.* token; ADR-0006 to write)
+2. ☐ **Field test execution** (Pixel → iPhone → Chinese-Android × T1/T2/T6/T7/T8/T9) — folded into new Phase 16 BG-01..08; acceptance criteria preserved in `.planning/phases/16-background-reliability-in-release/16-CONTEXT.md`
+3. ☐ **Flip ADR-0005** to `Accepted (closed)` with measured NFR values — folded into new Phase 21 E2E-07
 
 ### Blockers/Concerns
 
 [Issues that affect future work — see `.planning/codebase/CONCERNS.md` for full list]
 
-- **P0 (must address before public launch)**: `IDENTITY_DEV_MODE=true` default in identity service; missing rate-limit on `/auth/*` endpoints; OTP code unconditionally logged in stdout.
-- **Phase 1 formal closure (USER ACTION, blocks Phase 2 production release)**: Plan 08 Task 4 (Mapbox `sk.` token rotation in dashboard + `~/.netrc` / `~/.gradle/gradle.properties`) + Plan 09 Tasks 2-4 (per-device field runs Pixel/iPhone/Chinese-Android × T1/T2/T6/T7/T8/T9) + ADR-0005 update with measured NFR values. Full checklist: `docs/DECISIONS/0005-phase-1-field-test-outcomes.md` §«Список user actions для разблокирования formal closure». Phase 2 code-level work can start in parallel.
-- **Phase 2 dependency**: backend `/integrations/strava/{exchange,refresh}` endpoints do not exist yet (R1 partial); env-var naming inconsistent (`EXPO_PUBLIC_API_BASE` vs `EXPO_PUBLIC_API_URL`).
-- **R18 (cross-cutting schema)**: `personal_records` and `sessions` lack `user_id` columns — must add before Phase 4 visibility or any Guest-mode revisit.
-- **Active branch**: `feat/cursona-redesign` must be merged to `main` (Phase 3) before deeper phases ship to avoid drift.
+**P0 items distributed across new v1.0 phases per user redline:**
+- `IDENTITY_DEV_MODE=true` default → **Phase 2 SEC-05** (secrets/config hardening)
+- Missing `/auth/*` rate-limit → **Phase 6 EDGE-01** (edge protection)
+- OTP unconditional log → **Phase 5 OBS-04** (observability — no PII in logs)
+- R18 missing `user_id` on `personal_records`/`sessions` → **Phase 7 DB-03** (zero-downtime migration; backfill strategy LOUDLY DEFERRED to `/gsd-discuss-phase 7` for agent DB inspection)
+
+**Active branch:** `feat/cursona-redesign` IS the v1.0 line. Merge to `main` no longer a separate phase — handled in Phase 21 E2E acceptance when `v1.0-rc.1` is tagged.
 
 ## Deferred Items
 
 Items acknowledged and carried forward:
 
-| Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| Auth | Guest mode | Deferred per ADR-0002 | 2026-05-14 (init) |
-| Map | Mapbox Studio custom style | Deferred from `P0-A-02` | 2026-05-14 (init) |
-| Backend | Feed/Stories endpoint deprecation | Do-nothing per ADR-0004 | 2026-05-14 (init) |
-| i18n | Languages beyond RU+EN | On-demand only | 2026-05-14 (init) |
-| Platform | Web client (athlete-facing) | Out of scope | 2026-05-14 (init) |
-| Platform | Watch native apps (Garmin IQ / watchOS) | HealthKit/Health Connect strategy | 2026-05-14 (init) |
+| Category | Item | Status | Reference |
+|----------|------|--------|-----------|
+| Features | HEALTH-01/02/03/05/06/07/08/09/10 (HealthKit/HealthConnect/Strava write/Garmin/FIT/Sensor Sync) | v1.1 | REQUIREMENTS.md §Deferred from v1.0 |
+| Features | SOCIAL-01..03 (segments/leaderboards/zone-wars) | v1.2 | REQUIREMENTS.md §Deferred from v1.0 |
+| Features | SOCIAL-05..06 (privacy zones, visibility) | v1.1 | REQUIREMENTS.md §Deferred from v1.0 |
+| Features | COACH-01..06 (coaching & plans) | v1.3 | REQUIREMENTS.md §Deferred from v1.0 |
+| Features | PREMIUM-01..06 (Stripe/RevenueCat/tiers/marketplace) | v1.4 | REQUIREMENTS.md §Deferred from v1.0 |
+| Compliance | XCUT-01..06 (GDPR consent/export/RTBF/pen-test/bug-bounty) | v1.5 (public launch gate) | REQUIREMENTS.md §Deferred from v1.0 |
+| i18n | XCUT-05 (RU + EN scaffolding) | v1.1 — **do not pre-wire in v1.0 code** | User redline |
+| Auth | Guest mode | Deferred per ADR-0002 | — |
+| Map | Mapbox Studio custom style | `outdoors-v12` fine for closed beta | — |
+| Backend | Feed/Stories endpoint deprecation | Do-nothing per ADR-0004 | — |
+| Platform | Web client (athlete-facing) | Out of scope | — |
+| Platform | Watch native apps (Garmin IQ / watchOS) | HealthKit/Health Connect strategy | — |
+| Distribution | Public TestFlight + Play Store submission | Closed beta uses internal TestFlight + self-hosted Android channel | — |
+| Distribution | Hardware HSM for Android keystore | v1.1 upgrade if/when public Play Store; closed beta uses encrypted file + 2 offline backups | User decision |
+| Infra | Multi-region geographic expansion | v2.0 | User decision |
 
 ## Session Continuity
 
-Last session: 2026-05-14 — Plan 10 (Phase 1 closure docs) executed in **deferred-aware mode**. ADR-0005 written (`af32b77`); STATUS.md + DEVELOPMENT_PLAN.md updated (`7c8b865`); STATE.md + ROADMAP.md + REQUIREMENTS.md being updated in current session.
-Stopped at: Phase 1 code-complete; formal closure deferred — see `docs/DECISIONS/0005-phase-1-field-test-outcomes.md` §«Список user actions для разблокирования formal closure».
-Resume file: `.planning/phases/01-validate-close-territory-core/01-10-SUMMARY.md` (this plan's SUMMARY, written deferred-aware).
+Last session: 2026-05-15 — Milestone v1.0 redefined; ROADMAP.md / REQUIREMENTS.md rewritten; PROJECT.md / MILESTONES.md / STATE.md updated; old Phase 1 planning dir archived; new Phase 16 CONTEXT skeleton seeded with inherited Pixel field-test acceptance criteria.
+Stopped at: All v1.0 planning artifacts written and ready for atomic commit. Phase 1 ready to discuss.
+Resume file: `.planning/ROADMAP.md` §Phase 1 (Release contract & version baseline).
 
-**Next action options:**
-1. **User actions** (recommended path to Phase 1 formal closure): execute the 3-step checklist in ADR-0005 — Mapbox rotation → field tests → ADR update.
-2. **Phase 2 code-level start** (parallel): run `/gsd-discuss-phase 2` to begin discussing Real Health Integrations. Plans for Phase 2 can land at code-level while Phase 1 field tests are in flight, but production release of Phase 2 features is gated on Phase 1 formal closure (per ADR-0005 Consequences).
+**Next action**: `/gsd-discuss-phase 1` to refine Phase 1 scope (release contract, version negotiation, feature flag matrix, v1.0 IN/OUT freeze).
 
-## Artifacts Created (this init)
+## Artifacts Created (cumulative)
 
-- `.planning/PROJECT.md`
-- `.planning/REQUIREMENTS.md`
-- `.planning/ROADMAP.md`
-- `.planning/STATE.md` (this file)
+**From 2026-05-14 GSD init:**
 - `.planning/config.json`
-- `.planning/codebase/STACK.md`
-- `.planning/codebase/INTEGRATIONS.md`
-- `.planning/codebase/ARCHITECTURE.md`
-- `.planning/codebase/STRUCTURE.md`
-- `.planning/codebase/CONVENTIONS.md`
-- `.planning/codebase/TESTING.md`
-- `.planning/codebase/CONCERNS.md`
+- `.planning/codebase/{STACK,INTEGRATIONS,ARCHITECTURE,STRUCTURE,CONVENTIONS,TESTING,CONCERNS}.md`
+
+**Rewritten 2026-05-15 (milestone v1.0 redefinition):**
+- `.planning/PROJECT.md` (Current Milestone section)
+- `.planning/REQUIREMENTS.md` (full rewrite — 96 v1.0 REQ-IDs + Deferred section)
+- `.planning/ROADMAP.md` (full rewrite — 21 phases across 5 workstreams)
+- `.planning/MILESTONES.md` (v1.0 entry updated to new scope)
+- `.planning/STATE.md` (this file)
+
+**Created 2026-05-15:**
+- `.planning/phases/16-background-reliability-in-release/16-CONTEXT.md` (skeleton with inherited Pixel field-test acceptance criteria)
+
+**Archived 2026-05-15:**
+- `.planning/phases/_archive/pre-v1.0-territory-refactors/` (was `.planning/phases/01-validate-close-territory-core/` — 14 files: CONTEXT/RESEARCH/PATTERNS/DISCUSSION-LOG + 10 PLAN.md + 10 SUMMARY.md from the superseded scope)
+
+**Future ADRs scheduled (will write as their phases execute):**
+- `docs/DECISIONS/0006-mapbox-token-incident.md` (Phase 2)
+- `docs/DECISIONS/0007-v1.0-release-contract.md` (Phase 1)
+- `docs/DECISIONS/0008-mapbox-sdk-11-migration.md` (Phase 13)
 
 ## Source-of-Truth References
 
-- `docs/RUNNING_ECOSYSTEM_TZ.md` — master technical spec (961 lines)
-- `docs/DEVELOPMENT_PLAN.md` — canonical implementation tasks (`P<phase>-<section>-<number>`)
-- `STATUS.md` — living phase + task status (updated on every close)
-- `docs/DECISIONS/` — ADR 0001..0004 (framework, guest mode, OAuth, feed cleanup)
+- `docs/RUNNING_ECOSYSTEM_TZ.md` — master technical spec (961 lines); §2.4 NFR table is canonical for Phase 16 acceptance numbers
+- `docs/DEVELOPMENT_PLAN.md` — canonical pre-v1.0 implementation tasks (P-IDs)
+- `STATUS.md` — living per-task status
+- `docs/DECISIONS/` — ADR 0001..0005; future 0006/0007/0008 scheduled
 - `docs/AUDIT.md`, `docs/REVIEW_ROUNDS_1-3.md` — review outputs feeding `CONCERNS.md`
+- `tests/FIELD_PROTOCOL.md` — field-test capture table (541 lines, seeded by pre-v1.0 Plan 09 Task 1; consumed by new Phase 16/20)
+- `.planning/phases/_archive/pre-v1.0-territory-refactors/` — superseded scope's planning artifacts, retained for historical reference
