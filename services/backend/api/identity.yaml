@@ -111,6 +111,49 @@ paths:
         '204':
           description: Refresh отозван (или его уже не было — idempotent)
 
+  /auth/request-code:
+    post:
+      summary: Запрос OTP-кода на email
+      description: |
+        Phase 8/M migration 0020. Отправляет одноразовый код на email; ответ всегда 204
+        чтобы не раскрывать наличие аккаунта. Rate-limit 5/min (закрывает EDGE-01).
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '204':
+          description: Код отправлен (idempotent — ответ одинаков и для unknown email).
+
+  /auth/login-with-code:
+    post:
+      summary: Login по email + одноразовому OTP-коду
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, minLength: 4, maxLength: 8 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPairResponse' }
+        '401':
+          description: Неверный код / истёкший / уже использован
+
   /me:
     get:
       summary: Профиль текущего пользователя

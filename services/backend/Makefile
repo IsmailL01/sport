@@ -1,4 +1,4 @@
-.PHONY: help up up-stack down migrate migrate-down run-identity run-activity-sync test test-coverage tidy docker-build observability-up observability-down
+.PHONY: help up up-stack down migrate migrate-down run-identity run-activity-sync test test-coverage tidy docker-build observability-up observability-down check-routes
 
 DB_URL ?= postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable
 
@@ -17,6 +17,7 @@ help:
 	@echo "  test-coverage       Тесты с coverage report"
 	@echo "  tidy                go mod tidy во всех модулях"
 	@echo "  docker-build        Собрать Docker images stack-сервисов"
+	@echo "  check-routes        OpenAPI route-vs-handler drift check (Phase 1 / REL-01)"
 
 up:
 	docker compose up -d postgres
@@ -74,3 +75,7 @@ tidy:
 	cd pkg && go mod tidy
 	cd identity && go mod tidy
 	cd activity-sync && go mod tidy
+
+check-routes:
+	cd scripts/openapi-routes-check && GOWORK=off go test -race ./...
+	cd scripts/openapi-routes-check && GOWORK=off go run . --repo-root $$(git rev-parse --show-toplevel)
