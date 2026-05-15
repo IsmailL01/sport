@@ -1,4 +1,4 @@
-.PHONY: help up up-stack down migrate migrate-down run-identity run-activity-sync test test-coverage tidy docker-build observability-up observability-down check-routes
+.PHONY: help up up-stack down migrate migrate-down run-identity run-activity-sync test test-coverage tidy docker-build observability-up observability-down check-routes scan-secrets
 
 DB_URL ?= postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable
 
@@ -18,6 +18,7 @@ help:
 	@echo "  tidy                go mod tidy во всех модулях"
 	@echo "  docker-build        Собрать Docker images stack-сервисов"
 	@echo "  check-routes        OpenAPI route-vs-handler drift check (Phase 1 / REL-01)"
+	@echo "  scan-secrets        Run gitleaks against repo (Phase 2 / SEC-01)"
 
 up:
 	docker compose up -d postgres
@@ -79,3 +80,8 @@ tidy:
 check-routes:
 	cd scripts/openapi-routes-check && GOWORK=off go test -race ./...
 	cd scripts/openapi-routes-check && GOWORK=off go run . --repo-root $$(git rev-parse --show-toplevel)
+
+scan-secrets:
+	@command -v gitleaks >/dev/null 2>&1 || { \
+		echo "gitleaks не установлен. Установите: brew install gitleaks"; exit 1; }
+	cd $$(git rev-parse --show-toplevel) && gitleaks detect --no-banner --redact --source .
