@@ -152,9 +152,16 @@ export function TrackerLiveScreen() {
         followZoomLevel={cameraProps.followZoomLevel}
       >
         <LocationPuckLayer />
-        <HistoryTerritoryLayer closedSessionsPoints={closedSessionsPoints} />
+        {/* PHASE1-05: zoom прокидываем из useTrackerCamera (live followZoomLevel ≈ 16),
+            чтобы simplifyForDisplay масштабировал tolerance под текущий масштаб. */}
+        <HistoryTerritoryLayer
+          closedSessionsPoints={closedSessionsPoints}
+          zoom={cameraProps.followZoomLevel}
+        />
         {layerFlags.showCorridor && <CorridorLayer points={points} />}
-        {layerFlags.showTrack && <TrackLayer points={points} />}
+        {layerFlags.showTrack && (
+          <TrackLayer points={points} zoom={cameraProps.followZoomLevel} />
+        )}
         {layerFlags.showZone && <ZoneLayer points={points} />}
       </MapboxView>
 

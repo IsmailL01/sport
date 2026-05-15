@@ -326,10 +326,16 @@ export function RunDetailsScreen() {
           backgroundColor: t.surface3,
         }}
       >
+        {/* PHASE1-05: zoom=13 совпадает с MapboxView.zoomLevel по умолчанию для
+            followUserLocation=false preview. simplifyForDisplay масштабирует
+            tolerance соответственно (см. CONTEXT.md D-13). */}
         <MapboxView followUserLocation={false}>
           <LocationPuckLayer />
-          <HistoryTerritoryLayer closedSessionsPoints={closedSessionsPoints} />
-          <TrackLayer points={points} />
+          <HistoryTerritoryLayer
+            closedSessionsPoints={closedSessionsPoints}
+            zoom={13}
+          />
+          <TrackLayer points={points} zoom={13} />
           {closureFired ? <ZoneLayer points={points} /> : null}
         </MapboxView>
       </View>
