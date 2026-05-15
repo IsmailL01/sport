@@ -32,6 +32,9 @@ export type ActivityState = 'idle' | 'recording' | 'stopped';
  * Реализация в wrapper'е (state/activity.ts) комбинирует sessionRepository +
  * pointRepository + lapRepository + sensorRepository.
  */
+/** Способ расчёта площади — match для Session['calcMethod'] из domain/types.ts. */
+export type CalcMethod = 'shoelace_simple' | 'shoelace_with_warning' | 'corridor' | null;
+
 export interface SessionRepo {
   createSession(s: { id: number; startedAt: number; activityType: ActivityType }): void;
   finalizeSession(
@@ -39,19 +42,19 @@ export interface SessionRepo {
     finals: {
       endedAt: number;
       isClosed: boolean | null;
-      distanceM: number;
+      distanceM: number | null;
       areaM2: number | null;
-      calcMethod: string | null;
-      avgHrBpm: number | null;
-      maxHrBpm: number | null;
-      caloriesKcal: number | null;
+      calcMethod: CalcMethod;
+      avgHrBpm?: number | null;
+      maxHrBpm?: number | null;
+      caloriesKcal?: number | null;
     },
   ): void;
   deleteSession(sid: number): void;
   findActiveSession(): Session | null;
   appendPoints(sid: number, pts: Point[]): void;
   loadPointsForSession(sid: number): Point[];
-  appendLapsForSession(sid: number, laps: Lap[]): void;
+  appendLapsForSession(sid: number, laps: readonly Lap[]): void;
   aggregateHrForSession(sid: number): { avgHrBpm: number | null; maxHrBpm: number | null };
 }
 
@@ -181,7 +184,7 @@ export class SessionManager {
       const closed = isClosed(this.points, distance);
       const areaResult = closed
         ? calculateArea(this.points)
-        : { areaM2: null as number | null, method: null as string | null, warnings: [] as AreaWarning[] };
+        : { areaM2: null as number | null, method: null as CalcMethod, warnings: [] as AreaWarning[] };
       this.distanceM = distance;
       this.areaM2 = areaResult.areaM2;
       this.areaWarnings = areaResult.warnings;

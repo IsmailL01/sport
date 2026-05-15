@@ -1,35 +1,59 @@
+// Zustand-обёртка над SessionManager (PHASE1-07 / D-09 Phase A).
+//
+// Раньше этот файл был 466-строчным «god-store'ом», который мешал в одном
+// месте: state-машину, pipeline-singleton'ы, IO в SQLite, calorie/records/wallet
+// оркестрацию и zustand-actions. После рефакторинга он стал тонкой обёрткой:
+//   1. Конструирует pipeline / PauseDetector / ClosureDetector (как раньше).
+//   2. Строит конкретный SessionRepo из repo-модулей storage/.
+//   3. Создаёт ровно один SessionManager на module-level, прокидывает
+//      `() => useActivityStore.setState(manager.snapshot())` как onChange.
+//   4. Экспортирует useActivityStore с полями из снимка manager'а и actions,
+//      которые делегируют в manager.
+//   5. Оркестрирует cross-cutting concerns (wallet / records / calories), которые
+//      жёстко завязаны на zustand-сторы (useSettingsStore, useAuthStore,
+//      useWalletStore) — это делается ПОСЛЕ `manager.stop()` через
+//      `finalizeSession` follow-up update. Эта часть остаётся в Phase A здесь;
+//      Phase B (см. D-09) может убрать её в выделенный orchestrator.
+//
+// UI-контракт не меняется: ровно те же поля сна́пшота, что были до рефакторинга
+// (см. ActivityStore type ниже), читаются селекторами useActivityStore(s => ...).
+
 import { create } from 'zustand';
 
-import { calculateArea, type AreaWarning } from '../domain/AreaCalculator';
+import type { AreaWarning } from '../domain/AreaCalculator';
+import { calculateArea } from '../domain/AreaCalculator';
 import { ClosureDetector } from '../domain/ClosureDetector';
-import type { ActivityState, ActivityType, Point } from '../domain/types';
+import { estimateCaloriesBest } from '../domain/calories';
+import type { Lap } from '../domain/lap';
+import { detectNewRecords, type PersonalRecord } from '../domain/records';
+import { SessionManager, type SessionRepo } from '../domain/session/SessionManager';
+import type { ActivityState, ActivityType, Point, RawPoint } from '../domain/types';
+import { createDefaultPipeline, PauseDetector, type PauseEvent } from '../pipeline';
 import {
-  createDefaultPipeline,
-  PauseDetector,
-  type PauseEvent,
-} from '../pipeline';
+  appendLapsForSession,
+} from '../storage/lapRepository';
 import {
   appendPoints,
   loadPointsForSession,
 } from '../storage/pointRepository';
+import {
+  getCurrentValuesByKind,
+  upsertRecord,
+} from '../storage/recordsRepository';
+import {
+  aggregateHrForSession,
+} from '../storage/sensorRepository';
 import {
   createSession,
   deleteSession,
   finalizeSession,
   findActiveSession,
 } from '../storage/sessionRepository';
-import { aggregateHrForSession } from '../storage/sensorRepository';
-import { appendLapsForSession } from '../storage/lapRepository';
-import { isClosed, totalDistance } from '../util/geo';
-import { estimateCaloriesBest } from '../domain/calories';
-import { lapFromRange, type Lap } from '../domain/lap';
-import { detectNewRecords, type PersonalRecord } from '../domain/records';
-import { getCurrentValuesByKind, upsertRecord } from '../storage/recordsRepository';
-import { useSettingsStore } from './settings';
 import { useAuthStore } from './auth';
+import { useSettingsStore } from './settings';
 import { useWalletStore } from './wallet';
 
-const FLUSH_THRESHOLD = 10;
+// ── Public store type (unchanged contract for UI) ────────────────────────────
 
 type ActivityStore = {
   state: ActivityState;
@@ -83,45 +107,30 @@ type ActivityStore = {
   acknowledgeNewRecords: () => void;
 };
 
-let buffer: Point[] = [];
+// ── Module-level wiring ──────────────────────────────────────────────────────
 
-function flushBuffer(sessionId: number | null, force: boolean): number {
-  if (sessionId === null) return 0;
-  if (!force && buffer.length < FLUSH_THRESHOLD) return buffer.length;
-  if (buffer.length === 0) return 0;
-  try {
-    appendPoints(sessionId, buffer);
-    buffer = [];
-  } catch (e) {
-    console.error('[activity] flush failed', e);
-  }
-  return 0;
-}
-
-// Pipeline и PauseDetector — singletons на module level.
-// LocationAdapter callback вызывает их через exported helpers (см. ниже).
 const pipeline = createDefaultPipeline({
   onDrop: (event) => {
     if (__DEV__) {
       console.log(`[pipeline] dropped by ${event.filterName}`);
     }
-    useActivityStore.getState().incrementDropped(event.filterName);
+    manager.incrementDropped(event.filterName);
   },
 });
 
 const pauseDetector = new PauseDetector((event: PauseEvent) => {
-  useActivityStore.getState().setPaused(event.type === 'auto-paused');
+  manager.setPaused(event.type === 'auto-paused');
   if (__DEV__) {
     console.log(`[pause] ${event.type}`);
   }
 });
 
 const closureDetector = new ClosureDetector((event) => {
-  useActivityStore.getState().setClosureFired();
+  manager.setClosureFired();
   // Сразу пересчитываем площадь по AreaCalculator (с warnings).
-  const points = useActivityStore.getState().points;
-  const result = calculateArea(points);
-  useActivityStore.getState().setArea(result.areaM2, result.warnings);
+  const snap = manager.snapshot();
+  const result = calculateArea(snap.points);
+  manager.setArea(result.areaM2, result.warnings);
   if (__DEV__) {
     console.log(
       `[closure] fired (dist=${event.totalDistanceM.toFixed(0)}m, gap=${event.closeGapM.toFixed(0)}m, area=${result.areaM2?.toFixed(0)}m²)`,
@@ -129,338 +138,241 @@ const closureDetector = new ClosureDetector((event) => {
   }
 });
 
-// Throttle для recompute area (не каждые 1 точку — каждые 30с).
-let lastAreaRecompute = 0;
-const AREA_RECOMPUTE_INTERVAL_MS = 30_000;
+const repo: SessionRepo = {
+  createSession,
+  finalizeSession,
+  deleteSession,
+  findActiveSession,
+  appendPoints,
+  loadPointsForSession,
+  appendLapsForSession,
+  aggregateHrForSession: (sid) => {
+    const r = aggregateHrForSession(sid);
+    return { avgHrBpm: r.avgHrBpm, maxHrBpm: r.maxHrBpm };
+  },
+};
 
-function maybeRecomputeArea(): void {
-  if (!useActivityStore.getState().closureFired) return;
-  const now = Date.now();
-  if (now - lastAreaRecompute < AREA_RECOMPUTE_INTERVAL_MS) return;
-  lastAreaRecompute = now;
-  const points = useActivityStore.getState().points;
-  const result = calculateArea(points);
-  useActivityStore.getState().setArea(result.areaM2, result.warnings);
+// `lastNewRecords` НЕ покрывается snapshot'ом SessionManager'а (это пост-фактум
+// побочка stop()). Держим её отдельно — wrapper устанавливает её после stop().
+let pendingLastNewRecords: PersonalRecord[] = [];
+
+const manager = new SessionManager(pipeline, pauseDetector, closureDetector, repo, () => {
+  // Любая мутация в manager синхронизируется со store. lastNewRecords
+  // переносим из pendingLastNewRecords чтобы UI получил их когда они
+  // выставлены wrapper'ом сразу после manager.stop().
+  const snap = manager.snapshot();
+  useActivityStore.setState({
+    state: snap.state,
+    points: snap.points,
+    startedAt: snap.startedAt,
+    endedAt: snap.endedAt,
+    sessionId: snap.sessionId,
+    bufferedCount: snap.bufferedCount,
+    rawCount: snap.rawCount,
+    droppedCount: snap.droppedCount,
+    lastDropFilter: snap.lastDropFilter,
+    lastRawAccuracy: snap.lastRawAccuracy,
+    isPaused: snap.isPaused,
+    closureFired: snap.closureFired,
+    areaM2: snap.areaM2,
+    areaWarnings: snap.areaWarnings,
+    activityType: snap.activityType,
+    laps: snap.laps,
+    lapStartIdx: snap.lapStartIdx,
+  });
+});
+
+// ── Wrapper-level orchestration (D-09 Phase A leftover) ──────────────────────
+
+/**
+ * После manager.stop(): wallet / records / calories считаются здесь, потому что
+ * зависят от zustand-сторов (useSettingsStore.athlete, useAuthStore.user,
+ * useWalletStore.awardForSession). SessionManager pure-domain — он этого не знает.
+ *
+ * Подход — UPDATE-after-UPDATE: manager уже вызвал finalizeSession с
+ * caloriesKcal=null. Мы пересчитываем calories и вызываем finalizeSession
+ * второй раз, перезаписывая поле. Также детектируем personal records и
+ * выдаём wallet award.
+ */
+function postStopEnrich(): void {
+  const snap = manager.snapshot();
+  if (snap.sessionId === null || snap.startedAt === null || snap.endedAt === null) return;
+  const sessionId = snap.sessionId;
+  const startedAt = snap.startedAt;
+  const endedAt = snap.endedAt;
+  const distance = snap.distanceM;
+  const points = snap.points;
+  const activityType = snap.activityType;
+  const durationS = (endedAt - startedAt) / 1000;
+  // Take latest HR aggregate from repo (manager already wrote one, but reads
+  // are cheap and ensure we have the freshest value).
+  let avgHrBpm: number | null = null;
+  let maxHrBpm: number | null = null;
+  try {
+    const hr = repo.aggregateHrForSession(sessionId);
+    avgHrBpm = hr.avgHrBpm;
+    maxHrBpm = hr.maxHrBpm;
+  } catch (e) {
+    console.warn('[activity] aggregateHrForSession failed', e);
+  }
+  // Калории — best-of MET vs HR-based.
+  const athlete = useSettingsStore.getState().athlete;
+  const caloriesKcal = estimateCaloriesBest(
+    activityType,
+    athlete,
+    avgHrBpm,
+    durationS,
+    distance,
+  );
+  // Записываем обновлённые финалы (overwrites caloriesKcal=null который
+  // manager оставил).
+  try {
+    finalizeSession(sessionId, {
+      endedAt,
+      isClosed: snap.closureFired,
+      distanceM: distance,
+      areaM2: snap.areaM2,
+      calcMethod: (snap.areaWarnings.includes('self-intersection')
+        ? 'shoelace_with_warning'
+        : snap.areaM2 !== null
+          ? 'shoelace_simple'
+          : null) as 'shoelace_simple' | 'shoelace_with_warning' | null,
+      avgHrBpm,
+      maxHrBpm,
+      caloriesKcal,
+    });
+  } catch (e) {
+    console.error('[activity] finalizeSession enrich failed', e);
+  }
+  // Wallet award (idempotent — wallet store сам проверяет двойную выдачу).
+  try {
+    const userId = useAuthStore.getState().user?.id ?? null;
+    if (userId !== null && caloriesKcal !== null && durationS > 0) {
+      useWalletStore.getState().awardForSession({
+        userId,
+        sessionId,
+        activity: activityType,
+        kcal: caloriesKcal,
+        durationS,
+        distanceM: distance,
+        avgHrBpm,
+      });
+    }
+  } catch (e) {
+    console.warn('[activity] awardForSession failed', e);
+  }
+  // Detect & persist personal records.
+  let newRecords: PersonalRecord[] = [];
+  try {
+    if (distance > 0 && durationS > 0) {
+      const current = getCurrentValuesByKind();
+      const detected = detectNewRecords(
+        {
+          sessionId,
+          startedAt,
+          endedAt,
+          distanceM: distance,
+          durationS,
+          caloriesKcal,
+        },
+        points,
+        current,
+      );
+      newRecords = detected.map((d) => ({
+        kind: d.kind,
+        value: d.value,
+        sessionId,
+        achievedAt: endedAt,
+        prevValue: d.prevValue,
+      }));
+      for (const rec of newRecords) {
+        upsertRecord(rec);
+      }
+    }
+  } catch (e) {
+    console.warn('[activity] detectNewRecords failed', e);
+  }
+  pendingLastNewRecords = newRecords;
+  // Push records into store (snapshot already copied other fields via onChange).
+  useActivityStore.setState({ lastNewRecords: newRecords });
 }
+
+// ── Public ingest entry (called by LocationAdapter) ──────────────────────────
 
 /**
  * Точка входа из LocationAdapter — вызывается на каждом raw-event.
- * Пропускает через pipeline, если принято — добавляет в state.
- * Раw-метаданные (accuracy, raw count) сохраняем всегда — для UI-диагностики.
+ * Делегирует в SessionManager. UI читает результат через useActivityStore.
  */
-export function ingestRawPoint(raw: {
-  timestamp: number;
-  latitude: number;
-  longitude: number;
-  altitude: number | null;
-  accuracy: number | null;
-  speed: number | null;
-  heading: number | null;
-}): void {
-  useActivityStore.getState().noteRaw(raw.accuracy);
-  const accepted = pipeline.process(raw);
-  if (accepted === null) return;
-  pauseDetector.observe(accepted);
-  useActivityStore.getState().acceptPoint(accepted);
+export function ingestRawPoint(raw: RawPoint): void {
+  manager.ingestRawPoint(raw);
 }
 
-export const useActivityStore = create<ActivityStore>((set, get) => ({
-  state: 'idle',
-  points: [],
-  startedAt: null,
-  endedAt: null,
-  sessionId: null,
-  bufferedCount: 0,
-  rawCount: 0,
-  droppedCount: 0,
-  lastDropFilter: null,
-  lastRawAccuracy: null,
-  isPaused: false,
-  closureFired: false,
-  areaM2: null,
-  areaWarnings: [],
-  lastNewRecords: [],
-  activityType: 'run',
-  laps: [],
-  lapStartIdx: 0,
+// ── Recovery wrapper (kept side-effecting on store for lastNewRecords reset) ──
+
+function doRecoverLast(): void {
+  manager.recoverLast();
+  // recoverLast → state stopped → ensure lastNewRecords cleared (recovery
+  // produces a "viewed" session, not a freshly-broken record).
+  useActivityStore.setState({ lastNewRecords: [] });
+}
+
+// ── Store factory ────────────────────────────────────────────────────────────
+
+const initial = manager.snapshot();
+
+export const useActivityStore = create<ActivityStore>(() => ({
+  state: initial.state,
+  points: initial.points,
+  startedAt: initial.startedAt,
+  endedAt: initial.endedAt,
+  sessionId: initial.sessionId,
+  bufferedCount: initial.bufferedCount,
+  rawCount: initial.rawCount,
+  droppedCount: initial.droppedCount,
+  lastDropFilter: initial.lastDropFilter,
+  lastRawAccuracy: initial.lastRawAccuracy,
+  isPaused: initial.isPaused,
+  closureFired: initial.closureFired,
+  areaM2: initial.areaM2,
+  areaWarnings: initial.areaWarnings,
+  lastNewRecords: pendingLastNewRecords,
+  activityType: initial.activityType,
+  laps: initial.laps,
+  lapStartIdx: initial.lapStartIdx,
 
   start: (activityType = 'run') => {
-    const sessionId = Date.now();
-    buffer = [];
-    pipeline.reset();
-    pauseDetector.reset();
-    closureDetector.reset();
-    lastAreaRecompute = 0;
-    try {
-      createSession({ id: sessionId, startedAt: sessionId, activityType });
-    } catch (e) {
-      console.error('[activity] createSession failed', e);
-    }
-    set({
-      state: 'recording',
-      points: [],
-      startedAt: sessionId,
-      endedAt: null,
-      sessionId,
-      bufferedCount: 0,
-      rawCount: 0,
-      droppedCount: 0,
-      lastDropFilter: null,
-      lastRawAccuracy: null,
-      isPaused: false,
-      closureFired: false,
-      areaM2: null,
-      areaWarnings: [],
-      activityType,
-      laps: [],
-      lapStartIdx: 0,
-    });
+    manager.start(activityType);
   },
-
   stop: () => {
-    const { sessionId, state, points } = get();
-    if (state !== 'recording') return;
-    const remainingBuffered = flushBuffer(sessionId, true);
-    const endedAt = Date.now();
-    if (sessionId !== null) {
-      const distance = totalDistance(points);
-      const closed = isClosed(points, distance);
-      // Финальный пересчёт через AreaCalculator (с упрощением + детектом самопересечения).
-      const areaResult = closed
-        ? calculateArea(points)
-        : { areaM2: null, method: null, warnings: [] as AreaWarning[] };
-      // Аггрегируем HR-данные сессии (если sensor был подключён в Phase 5+).
-      let avgHrBpm: number | null = null;
-      let maxHrBpm: number | null = null;
-      try {
-        const hr = aggregateHrForSession(sessionId);
-        avgHrBpm = hr.avgHrBpm;
-        maxHrBpm = hr.maxHrBpm;
-      } catch (e) {
-        console.warn('[activity] aggregateHrForSession failed', e);
-      }
-      // Оценка калорий: HR-based если есть полная биометрия и HR, иначе MET.
-      const startedAt = get().startedAt;
-      const durationS = startedAt !== null ? (endedAt - startedAt) / 1000 : 0;
-      const athlete = useSettingsStore.getState().athlete;
-      const activityType = get().activityType;
-      const caloriesKcal = estimateCaloriesBest(
-        activityType,
-        athlete,
-        avgHrBpm,
-        durationS,
-        distance,
-      );
-      try {
-        finalizeSession(sessionId, {
-          endedAt,
-          isClosed: closed,
-          distanceM: distance,
-          areaM2: areaResult.areaM2,
-          calcMethod: areaResult.method,
-          avgHrBpm,
-          maxHrBpm,
-          caloriesKcal,
-        });
-      } catch (e) {
-        console.error('[activity] finalizeSession failed', e);
-      }
-
-      // Currency: начислить монеты за сессию (если есть user + kcal). См. domain/currency.ts.
-      try {
-        const userId = useAuthStore.getState().user?.id ?? null;
-        if (userId !== null && caloriesKcal !== null && durationS > 0) {
-          useWalletStore.getState().awardForSession({
-            userId,
-            sessionId,
-            activity: activityType,
-            kcal: caloriesKcal,
-            durationS,
-            distanceM: distance,
-            avgHrBpm,
-          });
-        }
-      } catch (e) {
-        console.warn('[activity] awardForSession failed', e);
-      }
-
-      // Финализируем последний lap (между последним lap-mark и финишем).
-      try {
-        const lapStart = get().lapStartIdx;
-        const existingLaps = get().laps;
-        const allLaps = [...existingLaps];
-        if (points.length - lapStart >= 2) {
-          const tail = lapFromRange(points, lapStart, existingLaps.length + 1);
-          if (tail !== null) allLaps.push(tail);
-        }
-        if (allLaps.length > 0) {
-          appendLapsForSession(sessionId, allLaps);
-          set({ laps: allLaps });
-        }
-      } catch (e) {
-        console.warn('[activity] persist laps failed', e);
-      }
-
-      // M10.1: detect и persist новые личные рекорды.
-      let newRecords: PersonalRecord[] = [];
-      try {
-        if (startedAt !== null && distance > 0 && durationS > 0) {
-          const current = getCurrentValuesByKind();
-          const detected = detectNewRecords(
-            {
-              sessionId, startedAt, endedAt,
-              distanceM: distance, durationS, caloriesKcal,
-            },
-            points,
-            current,
-          );
-          newRecords = detected.map((d) => ({
-            kind: d.kind,
-            value: d.value,
-            sessionId,
-            achievedAt: endedAt,
-            prevValue: d.prevValue,
-          }));
-          for (const rec of newRecords) {
-            upsertRecord(rec);
-          }
-        }
-      } catch (e) {
-        console.warn('[activity] detectNewRecords failed', e);
-      }
-
-      set({
-        state: 'stopped',
-        endedAt,
-        bufferedCount: remainingBuffered,
-        isPaused: false,
-        areaM2: areaResult.areaM2,
-        areaWarnings: areaResult.warnings,
-        lastNewRecords: newRecords,
-      });
-    } else {
-      set({
-        state: 'stopped',
-        endedAt,
-        bufferedCount: remainingBuffered,
-        isPaused: false,
-      });
-    }
+    manager.stop();
+    postStopEnrich();
   },
-
-  acceptPoint: (point) => {
-    const { state, sessionId } = get();
-    if (state !== 'recording') return;
-    buffer.push(point);
-    set((s) => ({
-      points: [...s.points, point],
-      bufferedCount: buffer.length,
-    }));
-    const after = flushBuffer(sessionId, false);
-    if (after !== buffer.length || buffer.length === 0) {
-      set({ bufferedCount: after });
-    }
-    // Пробуем детект замыкания и пересчёт площади.
-    const fresh = useActivityStore.getState().points;
-    closureDetector.check(fresh);
-    maybeRecomputeArea();
-  },
-
-  reset: () => {
-    const { sessionId } = get();
-    if (sessionId !== null) {
-      try {
-        deleteSession(sessionId);
-      } catch (e) {
-        console.error('[activity] deleteSession failed', e);
-      }
-    }
-    buffer = [];
-    pipeline.reset();
-    pauseDetector.reset();
-    closureDetector.reset();
-    lastAreaRecompute = 0;
-    set({
-      state: 'idle',
-      points: [],
-      startedAt: null,
-      endedAt: null,
-      sessionId: null,
-      bufferedCount: 0,
-      rawCount: 0,
-      droppedCount: 0,
-      lastDropFilter: null,
-      lastRawAccuracy: null,
-      isPaused: false,
-      closureFired: false,
-      areaM2: null,
-      areaWarnings: [],
-      lastNewRecords: [],
-      activityType: 'run',
-      laps: [],
-      lapStartIdx: 0,
-    });
-  },
-
-  recoverLast: () => {
-    const { state } = get();
-    if (state !== 'idle') return;
-    let session = null;
-    let pts: Point[] = [];
-    try {
-      session = findActiveSession();
-      if (session !== null) {
-        pts = loadPointsForSession(session.id);
-      }
-    } catch (e) {
-      console.error('[activity] recover failed', e);
-      return;
-    }
-    if (session === null || pts.length === 0) return;
-    buffer = [];
-    pipeline.reset();
-    pauseDetector.reset();
-    closureDetector.reset();
-    lastAreaRecompute = 0;
-    // Если у session уже есть закрытие (recovered after stop) — переопределим area.
-    const recoveredArea = session.areaM2;
-    set({
-      state: 'stopped',
-      points: pts,
-      startedAt: session.startedAt,
-      endedAt: session.endedAt ?? pts[pts.length - 1]?.timestamp ?? null,
-      sessionId: session.id,
-      bufferedCount: 0,
-      droppedCount: 0,
-      isPaused: false,
-      closureFired: session.isClosed === true,
-      areaM2: recoveredArea,
-      areaWarnings:
-        session.calcMethod === 'shoelace_with_warning' ? ['self-intersection'] : [],
-    });
-  },
-
   markLap: () => {
-    // Functional set: гарантирует, что мы читаем актуальный points даже если
-    // между вычислением и записью пришла новая точка через acceptPoint.
-    set((s) => {
-      if (s.state !== 'recording') return s;
-      if (s.points.length - s.lapStartIdx < 2) return s; // нужны ≥2 точки
-      const lap = lapFromRange(s.points, s.lapStartIdx, s.laps.length + 1);
-      if (lap === null) return s;
-      return {
-        laps: [...s.laps, lap],
-        lapStartIdx: s.points.length - 1,
-      };
-    });
+    manager.markLap();
   },
+  acceptPoint: (point) => {
+    manager.acceptPoint(point);
+  },
+  reset: () => {
+    manager.reset();
+    pendingLastNewRecords = [];
+    useActivityStore.setState({ lastNewRecords: [] });
+  },
+  recoverLast: doRecoverLast,
 
-  incrementDropped: (filterName) =>
-    set((s) => ({ droppedCount: s.droppedCount + 1, lastDropFilter: filterName })),
-  setPaused: (isPaused) => set({ isPaused }),
-  setClosureFired: () => set({ closureFired: true }),
-  setArea: (areaM2, areaWarnings) => set({ areaM2, areaWarnings }),
-  noteRaw: (accuracy) =>
-    set((s) => ({ rawCount: s.rawCount + 1, lastRawAccuracy: accuracy })),
-  acknowledgeNewRecords: () => set({ lastNewRecords: [] }),
+  // Internal counters — преимущественно вызываются pipeline / pauseDetector /
+  // closureDetector callbacks, не из UI. Делегируем в manager.
+  incrementDropped: (filterName) => manager.incrementDropped(filterName),
+  setPaused: (paused) => manager.setPaused(paused),
+  setClosureFired: () => manager.setClosureFired(),
+  setArea: (areaM2, areaWarnings) => manager.setArea(areaM2, areaWarnings),
+  noteRaw: (_accuracy) => {
+    // SessionManager.ingestRawPoint уже инкрементит rawCount + lastRawAccuracy
+    // через свою внутреннюю логику. UI ожидает что noteRaw существует, поэтому
+    // оставляем функцию (no-op) для backward-compat.
+  },
+  acknowledgeNewRecords: () => {
+    pendingLastNewRecords = [];
+    useActivityStore.setState({ lastNewRecords: [] });
+  },
 }));
