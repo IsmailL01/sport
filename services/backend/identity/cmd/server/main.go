@@ -1,9 +1,12 @@
 // identity/cmd/server — entry point identity-сервиса.
 //
 // Конфиг через ENV:
-//   IDENTITY_HTTP_ADDR        :8081
-//   IDENTITY_DB_URL           postgres://...
-//   IDENTITY_JWT_SECRET       (>=32 байта)
+//   IDENTITY_HTTP_ADDR        OPTIONAL  :8081
+//   IDENTITY_DB_URL           REQUIRED  postgres://... (содержит пароль)
+//   IDENTITY_JWT_SECRET       REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//   IDENTITY_DEV_MODE         OPTIONAL  default false; refused if DB URL non-local
+//   CLIENT_MIN_VERSION        OPTIONAL  default 1.0.0
+//   FORCE_UPDATE_URL_*        OPTIONAL  default ""
 //
 // Использование:
 //   make run-identity
@@ -17,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +35,10 @@ import (
 	"github.com/runningecosystem/backend/pkg/featureflags"
 )
 
+// exitFunc — swappable hook для тестирования envRequire.
+// Default = os.Exit. Тесты подменяют на recording-stub.
+var exitFunc = os.Exit
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("fatal", "error", err)
@@ -43,11 +51,27 @@ func run() error {
 	slog.SetDefault(logger)
 
 	addr := envOr("IDENTITY_HTTP_ADDR", ":8081")
-	dbURL := envOr("IDENTITY_DB_URL", "postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable")
-	jwtSecret := []byte(envOr("IDENTITY_JWT_SECRET", "dev-secret-must-be-at-least-32-bytes-long!!"))
+	// REQUIRED — содержит пароль Postgres
+	dbURL := envRequire("IDENTITY_DB_URL")
+	// REQUIRED — JWT signing key (длина ≥32 enforced в pkg/auth/jwt.go:43-46)
+	jwtSecret := []byte(envRequire("IDENTITY_JWT_SECRET"))
 	// DevMode = выводить devCode в response /auth/request-code (для smoke,
-	// staging). В production выставить IDENTITY_DEV_MODE=false.
-	devMode := envOr("IDENTITY_DEV_MODE", "true") == "true"
+	// staging). Дефолт false; включить вручную для local dev.
+	devMode := envOr("IDENTITY_DEV_MODE", "false") == "true"
+
+	// Phase 2 / SEC-05: prod-detection guard. Если DEV_MODE включён в окружении,
+	// где DB URL НЕ указывает на localhost — это почти наверняка ошибка оператора
+	// (stale env vars, copy-paste из dev в prod). Отказываемся стартовать.
+	if devMode {
+		if !isLocalDBURL(dbURL) {
+			slog.Error(
+				"REFUSING TO START: IDENTITY_DEV_MODE=true but database is not localhost",
+				"db_host", redactPassword(dbURL),
+			)
+			os.Exit(1)
+		}
+		slog.Warn("IDENTITY_DEV_MODE=true — OTP devCode WILL be returned in /auth/request-code; this MUST NOT happen in prod")
+	}
 
 	signer, err := auth.NewSigner(jwtSecret)
 	if err != nil {
@@ -125,6 +149,18 @@ func envOr(key, def string) string {
 	return def
 }
 
+// envRequire возвращает значение переменной окружения или завершает процесс
+// через exitFunc(1), если переменная отсутствует или пустая.
+// Phase 2 / SEC-09: fail-fast при отсутствии секрета.
+func envRequire(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		slog.Error("required env var missing", "key", key)
+		exitFunc(1)
+	}
+	return v
+}
+
 // redactPassword скрывает пароль в URL для логов.
 // postgres://user:secret@host/db → postgres://user:***@host/db
 func redactPassword(url string) string {
@@ -149,4 +185,22 @@ func redactPassword(url string) string {
 		return url
 	}
 	return url[:colon+1] + "***" + url[at:]
+}
+
+// isLocalDBURL возвращает true если URL указывает на локальный/dev-Postgres.
+// Используется для prod-detection guard в IDENTITY_DEV_MODE.
+// Phase 2 / SEC-05: substring-match по 4 known-local префиксам:
+//   - localhost
+//   - 127.0.0.1
+//   - host.docker.internal (Docker for Mac)
+//   - @postgres: (Docker network DNS)
+//
+// False-positives (например, URL содержит "localhost" в имени БД, но не в host)
+// допустимы — это conservative-safe direction: ошибаемся в сторону allow,
+// а не блокируем легитимный dev-setup.
+func isLocalDBURL(url string) bool {
+	return strings.Contains(url, "localhost") ||
+		strings.Contains(url, "127.0.0.1") ||
+		strings.Contains(url, "host.docker.internal") ||
+		strings.Contains(url, "@postgres:")
 }
