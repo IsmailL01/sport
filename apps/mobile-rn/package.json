@@ -23,6 +23,7 @@
     "@turf/simplify": "^7.3.5",
     "@turf/turf": "^7.3.5",
     "expo": "~54.0.33",
+    "expo-application": "~7.0.8",
     "expo-blur": "~15.0.8",
     "expo-file-system": "~19.0.22",
     "expo-haptics": "~14.1.4",
