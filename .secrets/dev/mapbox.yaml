@@ -3,6 +3,8 @@
 #ENC[AES256_GCM,data:i30MizJ32Jhtnodkg/HHdnUuBHQwUQpEnVbW5swPYj/GUii0s8cTPxk4VYkx6XbIC9BorPlZc6EtBBoGqBa/Eml8YavGpkVjeajTtA==,iv:jpQQa9UyCPk+FXVgq6eFhlKl28T9m2g20EEHaSG87eI=,tag:2FAhXu68X3k5kor4IREhCg==,type:comment]
 MAPBOX_PUBLIC_TOKEN: ENC[AES256_GCM,data:Uiv9GDYo/MWnfCoqeCQDIgl3aq0T9TcbSoxAgOaw/g==,iv:f5KkF6Ax1YtHppD4JVrMrQKoNU5TvHf26ppVlw1Mu1U=,tag:YhKeATWnIP8yEug8ktBlaQ==,type:str]
 MAPBOX_SECRET_TOKEN: ENC[AES256_GCM,data:BOyMFJDCpT693v/g3Nyjg5f436VR+7Bqjc6LhA3KYw==,iv:xOOJhXEzwNTy5Lbvksr6da6Tce8PimuZESpwrtkuYC0=,tag:zyxVEaNmdnFfXPKhLtbZEQ==,type:str]
+EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN: ENC[AES256_GCM,data:uuatQgvPStvmIdszlcvtARpd89kNeFSi1J2Zp5LG4uE+/Gds3cxTG567FpsDR2GxTCsQUi/hutdpMO3UPSx2uulZSJsVhiW233Bb2Kye5aU3M1j6/jE=,iv:CIu8QK0Y+OssKIJDZZOzTh0ml82AX+0nQr9bmNbQbSI=,tag:xa9d6Bq82ODCM82LeAQf9A==,type:str]
+MAPBOX_DOWNLOADS_TOKEN: ENC[AES256_GCM,data:J0NGeXbThlIHFQcSohcr6QpBhMbLVdft+tfvvgg58CWdY911Azz0G1wUoywb8KH4mGmYh2wfohHk3Ql1Si7ezaGQOPLvtWlUFTKQjWO648Vkh9jjdmA=,iv:YjIQzsT6SzKAufpNYGNNhCTMNbwlD433HeZS7J313GI=,tag:vwzo/gdGDyAZmujn3GdpqA==,type:str]
 sops:
     age:
         - enc: |
@@ -14,7 +16,7 @@ sops:
             Box82jFj91NWNdGhgP4rYG4Oac3K5sl1WxsHgL8P20nfIr5w1ppadw==
             -----END AGE ENCRYPTED FILE-----
           recipient: age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my
-    lastmodified: "2026-05-15T21:43:14Z"
-    mac: ENC[AES256_GCM,data:Wh4hgzqkirR+zacsvxUASnRIHGPMi6jGD/NJlLohaLBZUT86aI35b+S1U2eLQp0FgMj94sD3iPya8Dwr9Elm1p4BdHNkzSfKQvBrXf0vqHmZrewqMlaKPtRckU5MKaB+3z4ZiuJl1T1AMgHlTFvs59k+xMLHTK72XXFu+1N38rg=,iv:9Ac0nWWUz/onvWy5VRiKzDJXACFDyHtSKlhr4r55Zs8=,tag:dUd+kCFeddNcayEapoVm/Q==,type:str]
+    lastmodified: "2026-05-15T23:50:01Z"
+    mac: ENC[AES256_GCM,data:lMn2uE+upieRRQpAKpXETLFkkBAGpBu3gxctzmLuSWVFjc6iOlv6nN6jZt8NAnlNh265BMY9a9QXKU4Dtk/ZHHJ/9FEgSAL1ufmlFp2lrSRIv0ggJCIcwrjlogknvnqzUx36cWKjuvJEORMHCQrTH9vLcpWpVz1YF4oxrI+bcPg=,iv:3OaB6rttqXdJvBJmvXNbnP8L/W1D/woVMDMMIkslbU0=,tag:fCb/9nB802De+9kSzqRKEg==,type:str]
     unencrypted_suffix: _unencrypted
     version: 3.13.0
