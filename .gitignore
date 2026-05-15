@@ -11,7 +11,11 @@
 *.p12
 *.mobileprovision
 .netrc
-secrets/
+# Legacy plaintext-secrets dir at repo root (pre-SOPS scaffold). Kept ignored
+# for backward compat; new encrypted secrets live under `.secrets/` (note dot).
+# Leading slash anchors to repo root so we don't accidentally ignore the
+# `services/backend/scripts/secrets/` script directory (Plan 02-01 Task 3).
+/secrets/
 
 # ===== macOS =====
 .DS_Store
