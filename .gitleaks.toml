@@ -1,0 +1,54 @@
+# Phase 2 / SEC-08 — D-10. Upstream rule mapbox-api-token catches pk.+keyword only;
+# sk. and bare pk. need custom rules (RESEARCH Pitfall 2 closes the gap).
+#
+# Pinned for gitleaks v8.30.1. Custom rules verified against upstream regex
+# at line 2569 of gitleaks/master config/gitleaks.toml.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "mapbox-secret-token"
+description = "Mapbox secret access token (sk.) — never bundles, never commits"
+regex = '''\bsk\.[A-Za-z0-9_-]{60,}\.[A-Za-z0-9_-]{20,}\b'''
+keywords = ["sk."]
+tags = ["secret", "mapbox"]
+
+[[rules]]
+id = "mapbox-public-token-bare"
+description = "Mapbox public access token (pk.) literal — flag for review"
+regex = '''\bpk\.[A-Za-z0-9_-]{60,}\.[A-Za-z0-9_-]{20,}\b'''
+keywords = ["pk."]
+tags = ["mapbox"]
+
+# ---------------------------------------------------------------------------
+# Global allowlists
+# ---------------------------------------------------------------------------
+
+[[allowlists]]
+description = "Intentional ESLint guard fixture (pre-v1.0 Plan 08) — fake sk. literal that the ESLint v9 token-secret guard must reject. The fixture file IS the test."
+paths = [
+  '''apps/mobile-rn/src/__fixtures__/secret\.lint-fixture\.ts''',
+]
+
+[[allowlists]]
+description = "SOPS-encrypted YAML ciphertext blocks — every .secrets/<env>/*.yaml line carries ENC[AES256_GCM,...] envelopes. These are encrypted output, not plaintext secrets."
+regexes = [
+  '''ENC\[AES256_GCM,data:[A-Za-z0-9+/=]+''',
+]
+paths = [
+  '''\.secrets/.*\.yaml''',
+]
+
+[[allowlists]]
+description = "Planning documents (.planning/**/*.md) — contain documentation-only fake-token literals (e.g., sk.eyJ1IjoiZmFrZSI...fake-suffix-for-fixture, pk.PLACEHOLDER_REPLACE_IN_02-04) used to describe regex patterns and acceptance tests. These are not real secrets. Phase 4 / CICD-01 will additionally enforce per-PR review on .planning/ changes."
+paths = [
+  '''\.planning/.*\.md''',
+]
+
+[[allowlists]]
+description = "Local-only .env files — .env is gitignored (never staged), but worktree-mode scans surface them. The pre-commit hook runs --staged so .env content cannot reach git history."
+paths = [
+  '''apps/mobile-rn/\.env$''',
+  '''apps/mobile-rn/\.env\.local$''',
+]

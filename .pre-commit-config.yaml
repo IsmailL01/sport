@@ -1,0 +1,11 @@
+# Phase 2 / SEC-01 / SEC-08 — D-08 + D-11.
+# Staged-files-only gitleaks scan; full-repo + trufflehog runs in CI (Phase 4 CICD-01).
+#
+# Pinned to v8.30.1 explicitly per ROADMAP §Hard Rules ("no `latest` tags ever" —
+# pinning a specific gitleaks revision is the analog).
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

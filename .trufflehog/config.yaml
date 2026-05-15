@@ -1,0 +1,23 @@
+# Phase 2 / SEC-01 — D-09. Trufflehog config for CI deep-scan complementing
+# gitleaks pre-commit (D-08).
+#
+# Trufflehog v3.95.3 uses external regex files for include/exclude paths
+# (--include-paths / --exclude-paths flags). This YAML carries repo-level intent
+# and detector tuning; the Phase 4 GH Actions job references it via --config.
+#
+# Detector defaults are kept — we want the full verified-secret coverage.
+# The only allowlist entries here are for SOPS-encrypted blobs and archived
+# planning artifacts (`.planning/phases/_archive/...`) that may carry pre-v1.0
+# token placeholders.
+
+# Detector configuration: keep all defaults; do NOT exclude any detector category
+# (no_excluded_detectors) — verified-secret scope is intentional for v1.0.
+detectors: []
+
+# Paths excluded from scan output (path regexes, one per line).
+# These are documented here for intent; the trufflehog CLI invocation in CI
+# will additionally pass --exclude-paths .trufflehog/exclude-paths.txt if a
+# regex file is needed (trufflehog v3.95.x prefers external files for paths).
+exclude_paths:
+  - '.planning/phases/_archive/.*'
+  - '\.secrets/.*\.yaml'
