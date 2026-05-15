@@ -16,7 +16,7 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 
 **Phase numbering convention:** Integer 1–21. Original draft used `9a/9b` letter-pair notation for platform-symmetric phases; these are integer-numbered here for `/gsd-execute-phase N` compatibility. Mapping in the phase list below.
 
-- [ ] **Phase 1: Release contract & version baseline** — `shared` — Lock mobile↔backend wire contract, version negotiation, feature-flag matrix, v1.0 IN/OUT freeze
+- [x] **Phase 1: Release contract & version baseline** — `shared` — Lock mobile↔backend wire contract, version negotiation, feature-flag matrix, v1.0 IN/OUT freeze — **Code-complete 2026-05-15** (Plans 01-01..03 shipped on `feat/cursona-redesign`; REL-01..05 all delivered. Live deployment + OpenAPI YAML extension follow-ups tracked in 01-03-SUMMARY.md).
 - [ ] **Phase 2: Secrets & config hardening** — `backend` — `gitleaks`+`trufflehog` clean, SOPS-encrypted secrets, Mapbox token incident reset, `IDENTITY_DEV_MODE` fix
 - [ ] **Phase 3: Infrastructure as code** — `backend` — Ansible + Terraform-for-cloud-resources, dev/staging/prod environments, systemd + Caddy
 - [ ] **Phase 4: CI/CD pipeline** — `backend` — GitHub Actions matrix, signed images pinned to digests, one-button rollback **proven with real DB migration in path**

@@ -14,11 +14,11 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 ## Current Position
 
 Phase: **1 of 21** (Release contract & version baseline) — `shared` workstream
-Plan: 0 of TBD (Phase 1 not yet discussed/planned in new scope)
-Status: Ready to plan
-Last activity: 2026-05-15 — Milestone v1.0 redefined as 21-phase hardening scope; old Phase 1 archived; new Phase 16 CONTEXT skeleton seeded with inherited Pixel field-test gating.
+Plan: 3 of 3 — Plan 01-03 (feature flags) executed and committed; Phase 1 plans 01-01..03 all complete
+Status: Phase 1 code-complete (pending OpenAPI YAML cleanup for `/featureflags` per v1.0.x followup + migration apply)
+Last activity: 2026-05-15 — Plan 01-03 executed: pkg/featureflags shared lib + migration 0021 + identity admin CRUD + mobile Zustand+MMKV store + auth-aware refresh/clearAll wiring. 33 new tests (20 backend + 13 mobile); 567 mobile tests total. 5 atomic commits 9d70f01..1e78ee0.
 
-Progress: [░░░░░░░░░░] 0% of new v1.0 scope (0 of 96 v1.0 REQ-IDs delivered)
+Progress: [▓░░░░░░░░░] ~5% of new v1.0 scope (REL-01..05 delivered; 5 of 96 v1.0 REQ-IDs complete)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
 
 **Next phase (gated):** Phase 2 (Secrets & config hardening) — `backend` workstream. NON-NEGOTIABLE prerequisite for all subsequent phases. **Strict no-parallelization with Phase 3** per user redline.
@@ -26,19 +26,22 @@ Progress: [░░░░░░░░░░] 0% of new v1.0 scope (0 of 96 v1.0 RE
 ## Performance Metrics
 
 **Velocity:**
-- Total v1.0 hardening plans completed: 0 (scope just redefined 2026-05-15)
+- Total v1.0 hardening plans completed: 3 (Plan 01-01..03; Phase 1 wave 1+2)
 - Pre-v1.0 baseline (superseded scope): 10 plans (9 code-complete + 1 deferred-aware) executed 2026-05-14, ~25-35 min per plan; commits remain on `feat/cursona-redesign`
 
 **By Phase:**
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| — | — | — | — |
+| Phase | Plans | Total       | Avg/Plan |
+|-------|-------|-------------|----------|
+| 1     | 3     | ~3.5h total | ~70 min  |
 
-(Phase 1 of new v1.0 scope not yet planned; per-phase metrics will accumulate as phases execute.)
+Plan 01-03 actual: ~75 min (single executor pass, 5 commits, 33 new tests).
 
 **Recent Trend:**
-- Last activity: 2026-05-15 — v1.0 scope redefined; planning artifacts rewritten atomically.
+- Last activity: 2026-05-15 — Plan 01-03 Feature Flags end-to-end shipped (REL-03); Phase 1 code-complete.
+- 2026-05-15 — Plan 01-02 Version Negotiation (REL-02) shipped (8 services + mobile X-Client-Version).
+- 2026-05-15 — Plan 01-01 API Contract + ADR-0007 (REL-01/04/05) shipped.
+- 2026-05-15 — v1.0 scope redefined; planning artifacts rewritten atomically.
 
 *Updated after each plan completion.*
 
@@ -107,9 +110,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-15 — Milestone v1.0 redefined (commit `bf511fc`); Phase 1 context gathered in autonomous mode (CONTEXT.md + DISCUSSION-LOG.md written for `01-release-contract-and-version-baseline`).
-Stopped at: Phase 1 CONTEXT.md complete with 14 gray-area decisions (D-01..D-22) covering OpenAPI 3.1.0 hand-written YAML extension to 7 services, `X-Client-Version` HTTP header + HTTP 426 force-update, `pkg/featureflags` Postgres-backed boolean + percentage-rollout flags with offline-first mobile defaults, `docs/v1.0-SCOPE.md` markdown table, comprehensive ADR-0007. Phase 18 wording correction (VPS-direct vs Storage Box) flagged in CONTEXT.md D-22 for `/gsd-discuss-phase 18`.
-Resume file: `.planning/phases/01-release-contract-and-version-baseline/01-CONTEXT.md`.
+Last session: 2026-05-15 — Plan 01-03 (Feature Flags) executed end-to-end on `feat/cursona-redesign`. 5 commits 9d70f01..1e78ee0. Migration 0021 + pkg/featureflags + identity admin endpoints + 8-service flagStore wiring + admin UI Feature flags section + mobile Zustand+MMKV store with auth-aware refresh/clearAll lifecycle. 33 new tests; backend pkg/featureflags + clientversion + permissions all green; mobile 567 tests + tsc clean.
+Stopped at: Phase 1 code-complete. Three follow-ups deferred to v1.0.x or deployment: (1) migration apply on running stack at 148-253-214-156.sslip.io, (2) OpenAPI YAML extension with `/featureflags` paths in identity.yaml, (3) live curl smoke against running admin endpoints.
+Resume file: `.planning/phases/01-release-contract-and-version-baseline/01-03-SUMMARY.md`.
 
 **Next action**: `/gsd-plan-phase 1` to break Phase 1 into atomic plans. Researcher should investigate: OpenAPI 3.1.0 best practices for service-per-file pattern, Go 1.22+ mux extraction patterns for CI route-spec drift check, percentage-rollout hash function selection (FNV-1a vs xxhash for `(user_id, flag)` determinism), `expo-application` version-stamping hook placement in `apiClient.ts`.
 

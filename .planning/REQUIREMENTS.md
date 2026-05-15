@@ -12,11 +12,11 @@ Total: **96 REQ-IDs across 21 phases**.
 
 ### Phase 1 — Release Contract & Version Baseline (REL)
 
-- [ ] **REL-01**: `docs/API-CONTRACT-v1.0.md` enumerates every backend endpoint mobile depends on with request/response schemas
-- [ ] **REL-02**: Version negotiation header (`X-Client-Version` + server-side compatibility map) implemented on representative endpoint with documented pattern
-- [ ] **REL-03**: `pkg/featureflags` package on backend + mirror module on mobile with v1.0 flag set
-- [ ] **REL-04**: `docs/v1.0-SCOPE.md` lists IN capabilities (Territory Core, Activity Journal, Chat, Stats, Wallet, HEALTH-04 Strava read) and explicit OUT capabilities
-- [ ] **REL-05**: Decision recorded in `docs/DECISIONS/0007-v1.0-release-contract.md`
+- [x] **REL-01**: `docs/API-CONTRACT-v1.0.md` enumerates every backend endpoint mobile depends on with request/response schemas — delivered in Plan 01-01.
+- [x] **REL-02**: Version negotiation header (`X-Client-Version` + server-side compatibility map) implemented on representative endpoint with documented pattern — delivered in Plan 01-02 (`pkg/clientversion` + mobile apiClient + force-update UX).
+- [x] **REL-03**: `pkg/featureflags` package on backend + mirror module on mobile with v1.0 flag set — delivered in Plan 01-03 (migration 0021 + Postgres+cache+singleflight + FNV-1a rollout + identity admin CRUD + 8-service wiring + mobile Zustand+MMKV store + auth-aware refresh/clearAll).
+- [x] **REL-04**: `docs/v1.0-SCOPE.md` lists IN capabilities (Territory Core, Activity Journal, Chat, Stats, Wallet, HEALTH-04 Strava read) and explicit OUT capabilities — delivered in Plan 01-01.
+- [x] **REL-05**: Decision recorded in `docs/DECISIONS/0007-v1.0-release-contract.md` — delivered in Plan 01-01.
 
 ### Phase 2 — Secrets & Config Hardening (SEC)
 
@@ -290,7 +290,7 @@ Per user redline: "Old REQ-IDs (except HEALTH-04) move to v1.1+ in REQUIREMENTS.
 
 | Requirement Range | Phase | Status |
 |-------------------|-------|--------|
-| REL-01..05 | Phase 1: Release contract | Pending |
+| REL-01..05 | Phase 1: Release contract | **Complete** (2026-05-15; Plans 01-01..03 shipped on `feat/cursona-redesign`) |
 | SEC-01..09 | Phase 2: Secrets hardening | Pending |
 | INFRA-01..07 | Phase 3: IaC | Pending |
 | CICD-01..06 | Phase 4: CI/CD | Pending |
