@@ -100,11 +100,26 @@ services/**/coverage.out
 services/**/vendor/
 
 # ===== Тестовые артефакты, отчёты =====
-tests/runs/
+# Phase 1 field-test runs (PHASE1-01..04) commit GPX exports + battery photos.
+# Repo is private (T-01-09-01 in 01-09-PLAN threat model); Phase 4 will add
+# privacy-zone clipping before opening the repo. Pattern uses `tests/runs/*`
+# (not `tests/runs/`) so that `!` negations on subpaths can re-include
+# specific artifacts; with `tests/runs/` the directory itself is ignored
+# and git cannot re-include children below it.
+tests/runs/*
+!tests/runs/.gitkeep
+!tests/runs/README.md
+!tests/runs/*/
+!tests/runs/**/*.gpx
+!tests/runs/**/*.md
+!tests/runs/**/*.jpg
+!tests/runs/**/*.jpeg
+!tests/runs/**/*.png
 tests/screenshots/
 tests/gpx/
 *.gpx
 !tests/gpx/reference/*.gpx
+!tests/runs/**/*.gpx
 
 # ===== Прочее =====
 *.tsbuildinfo

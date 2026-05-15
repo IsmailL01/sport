@@ -1,8 +1,263 @@
 # FIELD PROTOCOL — Phase 0 / Phase 1
 
-Документ описывает 10 (+5 для Phase 1) сценариев полевого тестирования прототипов и шаблон отчёта по каждому.
+Документ описывает 10 (+5 для Phase 1) сценариев полевого тестирования прототипов и шаблон отчёта по каждому, **плюс** свежие per-device результаты Phase 1 (PHASE1-01..04 / план 01-09).
 
-> **Источник требований:** [docs/RUNNING_ECOSYSTEM_TZ.md](../docs/RUNNING_ECOSYSTEM_TZ.md) §2.5 (T1–T10), [docs/DEVELOPMENT_PLAN.md](../docs/DEVELOPMENT_PLAN.md) `P0-D-01`, `P1-M-01` (T11–T15).
+> **Источник требований:** [docs/RUNNING_ECOSYSTEM_TZ.md](../docs/RUNNING_ECOSYSTEM_TZ.md) §2.4–2.5 (NFR + T1–T10), [docs/DEVELOPMENT_PLAN.md](../docs/DEVELOPMENT_PLAN.md) `P0-D-01`, `P1-M-01` (T11–T15).
+> **Связанный GSD-план:** [`.planning/phases/01-validate-close-territory-core/01-09-PLAN-field-test-execution.md`](../.planning/phases/01-validate-close-territory-core/01-09-PLAN-field-test-execution.md).
+> **REQ-IDs:** PHASE1-01 (T1), PHASE1-02 (T2/T9), PHASE1-03 (T6), PHASE1-04 (T8). PHASE1-05 / NFR-006 (T7 FPS) — closure-supporting.
+
+---
+
+## Build Prerequisite (ВНИМАНИЕ — читать перед сборкой)
+
+Сборки APK / IPA, на которых выполняются T1/T2/T6/T7/T8/T9 в этом протоколе,
+**должны быть сделаны после того, как landed**:
+
+1. **Plans 01–07** (Phase 1 рефакторы — все SUMMARYs в
+   `.planning/phases/01-validate-close-territory-core/`):
+   SessionManager + real-SQLite tests, hook extraction, closure haptic+toast,
+   summary screen verify, big-track simplify, offline region picker, adaptive
+   sampling + SLC. Без них T7 / T6 / T2 могут показывать stale numbers.
+2. **Plan 08 Task 4** — owner-driven Mapbox token rotation.
+   - Открыть [`.planning/phases/01-validate-close-territory-core/01-08-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-08-SUMMARY.md)
+     §CHECKPOINT REQUIRED.
+   - Новый `sk.…` токен должен лежать в `~/.netrc` (iOS pod install) **и** в
+     `~/.gradle/gradle.properties` (Android gradle build).
+   - Без него: `pod install` падает на 401 от `api.mapbox.com`; gradle SDK
+     download падает с тем же кодом. Тесты Task 2 (Pixel parity-build),
+     Task 3 (iPhone), Task 4 (Chinese-Android) **заблокированы** на этом
+     шаге, пока он не выполнен.
+
+**Verification — перед запуском первого теста:**
+
+```bash
+# iOS — netrc установлен?
+grep -A2 'api.mapbox.com' ~/.netrc | head -5
+# Должен содержать: machine api.mapbox.com / login mapbox / password sk.…
+
+# Android — gradle.properties установлен?
+grep 'MAPBOX_DOWNLOADS_TOKEN' ~/.gradle/gradle.properties
+# Должен содержать: MAPBOX_DOWNLOADS_TOKEN=sk.…
+
+# Smoke-test сборки:
+cd apps/mobile-rn && npm run lint   # должен пройти; ESLint-guard из Plan 08 живой
+```
+
+Если verification падает — STOP, выполните Plan 08 Task 4, потом возвращайтесь.
+
+---
+
+## Acceptance Thresholds (NFR table из `docs/RUNNING_ECOSYSTEM_TZ.md` §2.4)
+
+Эти числа — авторитетный источник pass/fail для Plan 09. Не выдумывайте свои.
+
+| Test | NFR | Threshold | Per-device gate |
+|------|-----|-----------|-----------------|
+| T1 (5km loop) | NFR-001 | distance error ≤ **3 %** vs Garmin / reference | `|phone − ref| / ref ≤ 0.03` |
+| T2 (reference area, football field) | NFR-002 | area error ≤ **5 %** vs surveyed | `|reported − ref| / ref ≤ 0.05` |
+| T6 (2-hour session, screen on) | NFR-003 + NFR-007 | battery ≤ **10 %/h** AND memory growth ≤ **100 MB** | `(start_pct − end_pct) / 2 ≤ 10` AND `peak_mem − base_mem ≤ 100` |
+| T7 (5000+ pts panning) | NFR-006 | ≥ **50 fps** panning, min over 60 s | `min_fps ≥ 50` |
+| T8 (in-pocket 30 min) | NFR-005 | ≥ **95 %** record-time when phone in pocket | `active_record_s / 1800 ≥ 0.95` |
+| T9 (closed-loop area) | NFR-002 | area error ≤ **5 %** vs reference closed shape | `|reported − ref| / ref ≤ 0.05` |
+
+---
+
+## Order of Operations (D-02 device order + per-device test order)
+
+**Между устройствами:** Pixel → iPhone → Chinese-Android (CONTEXT.md D-02).
+
+**На каждом устройстве:**
+
+1. **T1** (5 km loop) — быстрый смоук-тест точности GPS.
+2. **T2** (статический обход football field) **или T9** (динамический обход —
+   можно сделать в один заход).
+3. **T6** (2 часа screen-on) — самый длинный, ставится после короткого
+   разогрева T1+T2/T9.
+4. **T8** (30 min in-pocket background) — отдельный заход.
+5. **T7** (FPS panning) — выполняется на завершённой длинной сессии
+   (T6 даёт ≥5000 точек), не требует отдельного выхода на улицу.
+
+Этот порядок сначала валидирует точность (T1/T2/T9), затем стабильность
+длительной сессии (T6), затем background-надёжность (T8), и финально
+производительность UI (T7) на накопленных данных.
+
+---
+
+## Result Template (одна строка на тест-на-устройстве)
+
+Колонки фиксированы — `01-09-PLAN` §verification проверяет их наличие через grep:
+
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| `YYYY-MM-DD` | model | OS ver | `<short>` | reference value | measured value + error % | ✅ / ❌ | `tests/runs/<dev>/<T>/<ts>.gpx` | OEM-killer settings, gotchas, photo paths |
+
+Для T6/T8 в «Notes» обязательно ссылка на `battery_before.jpg`/`battery_after.jpg`
+рядом с GPX.
+
+---
+
+## ▶ Per-Device Result Tables (заполняются по мере прогонов)
+
+> Заполняйте сразу после прогона. Если тест не выполнен — оставьте строку
+> с прочерками и пометкой `pending`. Plan 10 (PHASE1-14) читает эти таблицы
+> для ADR-0005.
+
+### Pixel (Android — debug APK)
+
+**Device acquisition:** ✅ in-hand (per `STATUS.md`).
+**Build status:** ✅ parity build готов после Plan 08 Task 4.
+
+#### T1 — Pixel — distance ≤3%
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | Pixel — | Android — | — | — km (Garmin) | — km / — % error | pending | `tests/runs/pixel/T1/<ts>.gpx` | — |
+
+**Gate:** Pass требует `Outcome error % ≤ 3` (NFR-001).
+
+#### T2 — Pixel — area ≤5% (reference field)
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | Pixel — | Android — | — | 7140 m² (105×68) | — m² / — % error | pending | `tests/runs/pixel/T2/<ts>.gpx` | reference dims confirmed? |
+
+**Gate:** Pass требует `Outcome error % ≤ 5` (NFR-002).
+
+#### T6 — Pixel — battery ≤10%/h, memory ≤100 MB
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | Pixel — | Android — | — | start: —% / —MB | end: —% / —MB → rate —%/h, Δmem —MB | pending | `tests/runs/pixel/T6/<ts>.gpx` | photos: `battery_before.jpg`, `battery_after.jpg` |
+
+**Gate:** Pass требует `battery_rate ≤ 10 %/h` (NFR-003) AND `Δmem ≤ 100 MB` (NFR-007).
+
+#### T7 — Pixel — min FPS ≥50 при 5000+ pts
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | Pixel — | Android — | — | track ≥5000 pts | min_fps over 60 s = — | pending | `tests/runs/pixel/T6/<ts>.gpx` (re-use) | tool: Flipper / RN PerfMonitor |
+
+**Gate:** Pass требует `min_fps ≥ 50` (NFR-006).
+
+#### T8 — Pixel — ≥95% record-time in pocket
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | Pixel — | Android — | — | 1800 s wall | active_record_s = — | pending | `tests/runs/pixel/T8/<ts>.gpx` | screen lock, в кармане, без касаний |
+
+**Gate:** Pass требует `active_record_s / 1800 ≥ 0.95` (NFR-005).
+
+#### T9 — Pixel — closed-loop area ≤5%
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | Pixel — | Android — | — | reference shape — m² | reported — m² / — % error | pending | `tests/runs/pixel/T9/<ts>.gpx` | замыкание сработало? (haptic+toast) |
+
+**Gate:** Pass требует `Outcome error % ≤ 5` (NFR-002 в динамике) AND closure detector сработал.
+
+---
+
+### iPhone (iOS)
+
+**Device acquisition:** ✅ in-hand.
+**Build status:** ⏳ **gated на Xcode install** (per `STATUS.md` TODO) AND на Plan 08 Task 4 (Mapbox `sk.` в `~/.netrc`).
+
+#### T1 — iPhone — distance ≤3%
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | iPhone — | iOS — | — | — km (Garmin) | — km / — % error | pending | `tests/runs/iphone/T1/<ts>.gpx` | — |
+
+**Gate:** Pass требует `Outcome error % ≤ 3` (NFR-001).
+
+#### T2 — iPhone — area ≤5% (reference field)
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | iPhone — | iOS — | — | 7140 m² | — m² / — % error | pending | `tests/runs/iphone/T2/<ts>.gpx` | — |
+
+**Gate:** Pass требует `Outcome error % ≤ 5` (NFR-002).
+
+#### T6 — iPhone — battery ≤10%/h, memory ≤100 MB
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | iPhone — | iOS — | — | start: —% / —MB | end: —% / —MB → rate —%/h, Δmem —MB | pending | `tests/runs/iphone/T6/<ts>.gpx` | iOS battery management обычно мягче Android — ожидаемо ниже % drop |
+
+**Gate:** Pass требует `battery_rate ≤ 10 %/h` AND `Δmem ≤ 100 MB`.
+
+#### T7 — iPhone — min FPS ≥50 при 5000+ pts
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | iPhone — | iOS — | — | track ≥5000 pts | min_fps over 60 s = — | pending | `tests/runs/iphone/T6/<ts>.gpx` (re-use) | tool: Instruments Core Animation FPS |
+
+**Gate:** Pass требует `min_fps ≥ 50`.
+
+#### T8 — iPhone — ≥95% record-time in pocket
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | iPhone — | iOS — | — | 1800 s wall | active_record_s = — | pending | `tests/runs/iphone/T8/<ts>.gpx` | iOS агрессивен к background; failure mode пишем в Notes для ADR-0005 |
+
+**Gate:** Pass требует `active_record_s / 1800 ≥ 0.95`.
+
+#### T9 — iPhone — closed-loop area ≤5%
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | iPhone — | iOS — | — | reference shape — m² | reported — m² / — % error | pending | `tests/runs/iphone/T9/<ts>.gpx` | замыкание сработало? |
+
+**Gate:** Pass требует `Outcome error % ≤ 5` AND closure detector сработал.
+
+---
+
+### Chinese-Android (Xiaomi / Realme / Oppo / Honor)
+
+**Device acquisition:** ⏳ **gated** — устройство ещё не приобретено
+(per `STATUS.md` Phase 1 progress). Любая Xiaomi / Realme / Oppo / Honor с
+агрессивным battery optimizer подходит.
+**Build status:** APK тот же, что и на Pixel (parity build); OEM-specific
+setup mandatory перед T6/T8.
+
+#### OEM-specific setup (обязательно перед T6/T8)
+- **Xiaomi:** Settings → Apps → Permissions → Autostart → включить для app.
+  Settings → Battery → App battery saver → **No restrictions**. Документировать
+  точные шаги в колонке Notes.
+- **Realme:** аналогично — найти Autostart + battery saver settings, whitelist.
+- **Oppo:** аналогично.
+- **Honor:** Phone Manager → Battery → App launch → Manage manually → enable
+  Auto-launch, Secondary launch, Run in background.
+
+#### T1 — Chinese-Android — distance ≤3%
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | `<vendor>-<model>` | Android — | — | — km (Garmin) | — km / — % error | pending | `tests/runs/<vendor>-<model>/T1/<ts>.gpx` | — |
+
+**Gate:** Pass требует `Outcome error % ≤ 3` (NFR-001). Ожидание: должен пройти — точность зависит от GPS-чипа, не OEM-tuning.
+
+#### T2 — Chinese-Android — area ≤5%
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | `<vendor>-<model>` | Android — | — | 7140 m² | — m² / — % error | pending | `tests/runs/<vendor>-<model>/T2/<ts>.gpx` | — |
+
+**Gate:** Pass требует `Outcome error % ≤ 5`.
+
+#### T6 — Chinese-Android — battery ≤10%/h, memory ≤100 MB
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | `<vendor>-<model>` | Android — | — | start: —% / —MB | end: —% / —MB → rate —%/h, Δmem —MB | pending | `tests/runs/<vendor>-<model>/T6/<ts>.gpx` | OEM autostart enabled? указать |
+
+**Gate:** Pass требует `battery_rate ≤ 10 %/h` AND `Δmem ≤ 100 MB`. **Ожидание:** на агрессивных OEM может превысить 10 %/h — если превышение — accepted limitation per D-36, фиксируем в ADR-0005.
+
+#### T7 — Chinese-Android — min FPS ≥50 при 5000+ pts
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | `<vendor>-<model>` | Android — | — | track ≥5000 pts | min_fps over 60 s = — | pending | `tests/runs/<vendor>-<model>/T6/<ts>.gpx` (re-use) | tool: Flipper |
+
+**Gate:** Pass требует `min_fps ≥ 50`.
+
+#### T8 — Chinese-Android — ≥95% record-time in pocket
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | `<vendor>-<model>` | Android — | — | 1800 s wall | active_record_s = — | pending | `tests/runs/<vendor>-<model>/T8/<ts>.gpx` | **highest-risk test on chinese OEM** — autostart кнопка нажата? Если fail — accepted per D-36 |
+
+**Gate:** Pass требует `active_record_s / 1800 ≥ 0.95`. **Ожидание:** highest-risk test. Если fail даже при правильном autostart — accepted limitation, документируется в ADR-0005 + в-app warning к Phase 4.
+
+#### T9 — Chinese-Android — closed-loop area ≤5%
+| Date | Device | OS | Build hash | Baseline | Outcome value | Pass/Fail | GPX file path | Notes |
+|------|--------|----|------------|----------|----------------|-----------|---------------|-------|
+| — | `<vendor>-<model>` | Android — | — | reference shape — m² | reported — m² / — % error | pending | `tests/runs/<vendor>-<model>/T9/<ts>.gpx` | замыкание сработало? |
+
+**Gate:** Pass требует `Outcome error % ≤ 5` AND closure detector сработал.
 
 ---
 
@@ -17,6 +272,11 @@
    - фотография телефона до/после с состоянием батареи в кадре (для NFR-003)
 4. **Эталонные референсы** — параллельно записывать на Garmin / Strava / Komoot для сравнения дистанции и трека.
 5. **Заполнение шаблона отчёта** — копия `REPORT_TEMPLATE.md` (см. ниже) внутрь папки прогона.
+
+> **Note для Phase 1 (Plan 09):** «Заполнение шаблона отчёта» больше не
+> обязательно — достаточно строки в Per-Device Result Table + GPX в
+> `tests/runs/<device>/<test>/<timestamp>.gpx`. REPORT.md создавайте только
+> если прогон шёл нештатно.
 
 ---
 
@@ -185,6 +445,11 @@
 
 ## Шаблон отчёта (`REPORT_TEMPLATE.md`)
 
+> **Plan 09 note:** этот шаблон остался от Phase 0. Для Phase 1 Plan 09
+> достаточно строки в Per-Device Result Table выше + GPX. REPORT.md
+> создавайте опционально, если прогон шёл нештатно (force-kill,
+> OEM-killer, неожиданный gap в треке и т.п.).
+
 Копировать в `tests/runs/<framework>/<test_id>/<run_id>/REPORT.md` для каждого прогона.
 
 ```markdown
@@ -260,6 +525,7 @@
 | `P0-D-04`        | T1–T10 на китайском Android, оба фреймворка        | То же                           |
 | `P0-D-05`        | Заполнить decision matrix (ТЗ §2.6) → DECISION.md  | После всех прогонов             |
 | `P1-M-02..03`    | Эталонные пробежки 5/10/21/30 км + анализ          | Phase 1                         |
+| **PHASE1-01..04** (Plan 09 Tasks 2-4) | Per-device result tables выше — Pixel → iPhone → Chinese-Android | Phase 1 closure (после Plan 08 Task 4) |
 
 ---
 
@@ -270,3 +536,6 @@
 - ❌ Background не работает на Android → battery optimization, `FOREGROUND_SERVICE_LOCATION` permission, persistent notification
 - ❌ FPS просел → проверить, что используется `LineLayer + GeoJsonSource` (НЕ `PolylineAnnotation`) и `setShape` без пересоздания источника (FR-022, FR-024)
 - ❌ Площадь сильно расходится → проверить, что используется локальная плоская проекция, а не haversine-based площадь
+- ❌ **Mapbox 401 при сборке** (gradle или pod install) → Plan 08 Task 4 не выполнен; `sk.` токен не в `~/.netrc` или `~/.gradle/gradle.properties`. См. `docs/SECRETS.md` §Rotation Playbook + `01-08-SUMMARY.md` §CHECKPOINT REQUIRED.
+- ❌ **iOS T8 fail (≤95%)** → expo-task-manager foreground service может быть suppressed; на следующий foreground приложение проверит gap и продолжит, но **не интерполирует** — gap виден в треке (D-29). Документировать failure mode в Notes для ADR-0005.
+- ❌ **Chinese-Android T8 fail при включённом Autostart** → accepted limitation per D-36; PHASE1-12 SLC может не помочь на Android (D-30 — нет SLC API в expo-location). Фиксируем в ADR-0005, добавляем in-app hint к Phase 4.
