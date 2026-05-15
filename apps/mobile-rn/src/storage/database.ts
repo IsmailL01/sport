@@ -40,12 +40,37 @@ export function getDatabase(): SQLite.SQLiteDatabase {
   if (_db !== null) return _db;
   const db = SQLite.openDatabaseSync(DB_NAME);
   db.execSync('PRAGMA journal_mode = WAL;');
-  runMigrations(db);
+  runMigrationsOn(db);
   _db = db;
   return db;
 }
 
-function runMigrations(db: SQLite.SQLiteDatabase): void {
+/**
+ * Test-only hook: подменить module-level singleton БД. Используется в
+ * `src/__tests__/sessionRepository.integration.test.ts` для подачи `:memory:`
+ * экземпляра, заполняемого через `runMigrations()` в `beforeEach`. PHASE1-07.
+ *
+ * Под Jest preset jest-expo `__DEV__` обычно true, но мы не блокируем хук
+ * жёстко через assert — потеря защиты допустима, потому что функция не
+ * экспортирована в публичный API через `index.ts` (его нет в storage/), а
+ * прямой импорт `_setDatabase` из неструктурированного места легко
+ * детектируется ревьюером.
+ */
+export function _setDatabase(db: SQLite.SQLiteDatabase | null): void {
+  _db = db;
+}
+
+/**
+ * Прогнать все миграции до TARGET_VERSION на переданной БД. Под Jest
+ * вызывается с in-memory экземпляром после `_setDatabase`. Под runtime —
+ * `getDatabase()` использует её на свежей файловой БД лениво.
+ */
+export function runMigrations(): void {
+  const db = getDatabase();
+  runMigrationsOn(db);
+}
+
+function runMigrationsOn(db: SQLite.SQLiteDatabase): void {
   const row = db.getFirstSync<{ user_version: number }>(
     'PRAGMA user_version;',
   );
