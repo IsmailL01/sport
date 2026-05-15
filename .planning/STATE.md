@@ -13,12 +13,12 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 ## Current Position
 
-Phase: **1 of 21** (Release contract & version baseline) — `shared` workstream
-Plan: 3 of 3 — Plan 01-03 (feature flags) executed and committed; Phase 1 plans 01-01..03 all complete
-Status: Phase 1 code-complete (pending OpenAPI YAML cleanup for `/featureflags` per v1.0.x followup + migration apply)
-Last activity: 2026-05-15 — Plan 01-03 executed: pkg/featureflags shared lib + migration 0021 + identity admin CRUD + mobile Zustand+MMKV store + auth-aware refresh/clearAll wiring. 33 new tests (20 backend + 13 mobile); 567 mobile tests total. 5 atomic commits 9d70f01..1e78ee0.
+Phase: **2 of 21** (Secrets & config hardening) — `backend` workstream
+Plan: 02-01 (SOPS+age scaffold) executed + 02-02 (envRequire + DEV_MODE) executed; 02-03 (scanners + pre-commit) and 02-04 (Mapbox incident + docs) pending
+Status: Phase 2 substrate complete — SOPS encryption + envRequire fail-fast both shipped. Remaining work: gitleaks/trufflehog/pre-commit wiring (02-03) and ADR-0006 + Mapbox dashboard rotation (02-04).
+Last activity: 2026-05-15 — Plan 02-01 executed: `.sops.yaml` + 9 encrypted `.secrets/<env>/{shared,mapbox,oauth}.yaml` slot files + `verify_sops_roundtrip.sh` smoke test (Pitfall 1 guard). DEV_A age recipient registered; DEV_B pending pubkey delivery (TODO in `.sops.yaml`, `sops updatekeys` rotation playbook in `.secrets/README.md`). 3 atomic commits 5e73162..04f44b8.
 
-Progress: [▓░░░░░░░░░] ~5% of new v1.0 scope (REL-01..05 delivered; 5 of 96 v1.0 REQ-IDs complete)
+Progress: [▓░░░░░░░░░] ~7% of new v1.0 scope (REL-01..05 + SEC-02-substrate + SEC-05/06/09 delivered; 7-of-96 REQ-IDs complete, SEC-02 substrate-only pending 02-03/02-04 closure)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
 
 **Next phase (gated):** Phase 2 (Secrets & config hardening) — `backend` workstream. NON-NEGOTIABLE prerequisite for all subsequent phases. **Strict no-parallelization with Phase 3** per user redline.
@@ -34,11 +34,16 @@ Progress: [▓░░░░░░░░░] ~5% of new v1.0 scope (REL-01..05 del
 | Phase | Plans | Total       | Avg/Plan |
 |-------|-------|-------------|----------|
 | 1     | 3     | ~3.5h total | ~70 min  |
+| 2     | 2/4   | ~22 min so far | ~11 min  |
 
 Plan 01-03 actual: ~75 min (single executor pass, 5 commits, 33 new tests).
+Plan 02-01 actual: ~12 min (single executor pass, 3 commits, 14 created files, Pitfall 1 round-trip smoke green for dev/staging/prod).
+Plan 02-02 actual: ~10 min (per 02-02-SUMMARY metrics).
 
 **Recent Trend:**
-- Last activity: 2026-05-15 — Plan 01-03 Feature Flags end-to-end shipped (REL-03); Phase 1 code-complete.
+- Last activity: 2026-05-15 — Plan 02-01 SOPS+age scaffold shipped (SEC-02 substrate; commits 5e73162..04f44b8).
+- 2026-05-15 — Plan 02-02 envRequire + DEV_MODE shipped (SEC-05/06/09; 8 services migrated, 10 new test cases).
+- 2026-05-15 — Plan 01-03 Feature Flags end-to-end shipped (REL-03); Phase 1 code-complete.
 - 2026-05-15 — Plan 01-02 Version Negotiation (REL-02) shipped (8 services + mobile X-Client-Version).
 - 2026-05-15 — Plan 01-01 API Contract + ADR-0007 (REL-01/04/05) shipped.
 - 2026-05-15 — v1.0 scope redefined; planning artifacts rewritten atomically.
