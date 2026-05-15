@@ -18,6 +18,7 @@
 // UI-контракт не меняется: ровно те же поля сна́пшота, что были до рефакторинга
 // (см. ActivityStore type ниже), читаются селекторами useActivityStore(s => ...).
 
+import { AppState, type AppStateStatus } from 'react-native';
 import { create } from 'zustand';
 
 import type { AreaWarning } from '../domain/AreaCalculator';
@@ -191,6 +192,22 @@ const manager = new SessionManager(
   });
   },
 );
+
+// ── AppState gap-resume listener (Phase 1 / PHASE1-12, D-29..D-31) ──────────
+//
+// iOS edge case: foreground service может быть killed в background — точки
+// перестают идти. Когда пользователь возвращается в приложение, проверяем
+// gap между последней точкой и now; если > `gpsGapTriggerS` секунд —
+// сбрасываем pipeline (Kalman re-init на первой новой точке). Gap НЕ
+// интерполируется — пользователь видит провал на треке (D-29).
+//
+// Listener регистрируется один раз на module-init. unsubscribe не нужен —
+// модуль живёт всю жизнь app process'а.
+
+AppState.addEventListener('change', (next: AppStateStatus) => {
+  if (next !== 'active') return;
+  manager.handleAppForeground();
+});
 
 // ── Wrapper-level orchestration (D-09 Phase A leftover) ──────────────────────
 

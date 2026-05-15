@@ -51,3 +51,13 @@ but should be addressed by a later plan in this phase.
   that explicitly mock Mapbox) — but for now, `__tests__/` is small and the override
   is conservative.
 
+
+## Discovered during 01-07 (adaptive sampling + SLC)
+
+### `src/ui/Toast.tsx` typecheck error — missing JSX namespace
+
+- **Discovered:** 2026-05-14, Task 3 verification (`npm run typecheck`)
+- **Symptom:** `src/ui/Toast.tsx(18,71): error TS2503: Cannot find namespace 'JSX'.`
+- **Scope:** Pre-existing on Plan 03 (closure-feedback). The Toast.tsx file is being authored by the parallel Plan 03 agent running in the same wave. Plan 03 will pin React JSX types or use `React.JSX.Element` directly to fix this.
+- **NOT FIXED HERE** — this file is not in Plan 01-07's `files_modified` list; touching it would expand scope per SCOPE BOUNDARY rule.
+- **Action:** Plan 03 owner addresses in their own task commits.
