@@ -27,6 +27,27 @@
 
 ## Инвентарь токенов (Token Inventory)
 
+### Полный реестр (v1.0)
+
+10 типов секретов в проекте по состоянию на Phase 2 (см. `02-CONTEXT.md` §scout_findings #45). Каждая запись имеет playbook ротации ниже — см. соответствующий `## Rotation Playbook —`.
+
+| #  | Тип секрета                                | Env-var name (или PRIMARY)                          | Где в SOPS                                    | Bundle? | Назначение / Playbook                                           |
+| -- | ------------------------------------------ | --------------------------------------------------- | --------------------------------------------- | ------- | --------------------------------------------------------------- |
+| 1  | Mapbox `sk.` (CI/build-time SDK)           | `MAPBOX_DOWNLOADS_TOKEN`                            | `.secrets/{dev,staging,prod}/mapbox.yaml`     | ❌ НЕТ   | iOS `pod install` + Android `gradle build` SDK download; см. §Mapbox `sk.` playbook ниже |
+| 2  | Mapbox `pk.` (runtime, per-env)            | `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`                   | `.secrets/{dev,staging,prod}/mapbox.yaml`     | ✅ ДА    | Рендер карты в приложении; см. §Mapbox `pk.` playbook            |
+| 3  | Postgres password                          | `POSTGRES_PASSWORD` (+ per-service `*_DB_URL`)      | `.secrets/{dev,staging,prod}/shared.yaml`     | ❌ НЕТ   | Auth для Postgres + TimescaleDB; см. §POSTGRES_PASSWORD playbook |
+| 4  | JWT signing secret (≥32 байта)             | `IDENTITY_JWT_SECRET`                               | `.secrets/{dev,staging,prod}/shared.yaml`     | ❌ НЕТ   | Подпись/верификация identity JWT; см. §JWT_SECRET playbook       |
+| 5  | MinIO root credentials (paired)            | `MINIO_ROOT_USER` + `MINIO_ROOT_PASSWORD`           | `.secrets/{dev,staging,prod}/shared.yaml`     | ❌ НЕТ   | Admin auth для MinIO; см. §MINIO_ROOT_* playbook                 |
+| 6  | Expo push access token                     | `EXPO_ACCESS_TOKEN`                                 | `.secrets/{dev,staging,prod}/shared.yaml`     | ❌ НЕТ   | Push-уведомления notifications service (optional); см. §EXPO_ACCESS_TOKEN playbook |
+| 7  | Caddy ACME email                           | `CADDY_ACME_EMAIL`                                  | `.secrets/{dev,staging,prod}/shared.yaml`     | ❌ НЕТ   | Let's Encrypt account email — не секрет, но deploy-config; см. §CADDY_ACME_EMAIL playbook |
+| 8  | OAuth client secrets (Strava + future)     | `STRAVA_CLIENT_SECRET` (+ Google/Apple deferred)    | `.secrets/{dev,staging,prod}/oauth.yaml`      | ❌ НЕТ   | OAuth confidential client flow; см. §OAuth client secrets playbook |
+| 9  | SOPS master key (per dev)                  | `SOPS_AGE_KEY_FILE` → `~/.config/sops/age/keys.txt` | НЕ в SOPS (это сам ключ!)                     | ❌ НЕТ   | Decrypt-key для всех `.secrets/**/*.yaml`; см. §SOPS_AGE_KEY playbook |
+| 10 | NATS auth                                   | (NATS_AUTH_TOKEN — deferred v1.1)                   | (deferred — v1.1)                              | ❌ НЕТ   | Auth для NATS брокера; см. §NATS auth playbook (deferred-v1.1 stub) |
+
+> **Канонический store** — SOPS-encrypted `.secrets/{dev,staging,prod}/<group>.yaml`. Локальные dev-копии (`~/.netrc`, `~/.gradle/gradle.properties`, `apps/mobile-rn/.env`) — derived state, sync-from-SOPS не наоборот.
+
+> **Не в SOPS:** SOPS master key (#9) сам по себе — он живёт в `~/.config/sops/age/keys.txt` (плюс 1Password sealed + USB backup per dev). NATS auth (#10) deferred v1.1 — текущее состояние: NATS открыт на Docker-сети без AuthN, acceptable для v1.0 closed-beta.
+
 ### Mapbox
 
 Проект использует **два класса Mapbox-токенов**. Различать их критично — путаница приводила к утечкам в Phase 0.
@@ -149,6 +170,434 @@ cd apps/mobile-rn/android
 2. Открыть экран с картой → тайлы должны грузиться (это проверка `pk.` runtime-токена).
 3. Только **после успеха** п.1-2 — вернуться к Шагу 2 и удалить старый утёкший токен (если ещё не удалён).
 4. Дописать запись в раздел «Rotation Log» внизу этого файла: дата, кто ротировал, причина (одна строка, **без значений токенов**).
+
+---
+
+## Rotation Playbook — Mapbox `pk.` token (4 шага)
+
+Запускается при подозрении на утечку (попадание `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` в чат / git history / EAS Build logs / screenshot бандла), **или** по плановому графику (раз в 6 месяцев — fallback per RESEARCH Pitfall 9), **или** при смене Bundle ID / SHA-256 fingerprint (например, новый release keystore).
+
+`pk.` тоже public, но утечка → возможность злоупотребления квотой нашего Mapbox-аккаунта со стороны. **Per-env separation** (prod / staging / dev) изолирует blast radius.
+
+### Шаг 1. Создать новый `pk.` в Mapbox dashboard
+
+1. Открыть https://account.mapbox.com/access-tokens (sign in: `iassd` / `dragon2015516@gmail.com`).
+2. **Create a token**. Имя: `sport-mobile-runtime-pk-{prod|staging|dev}-<YYYY-MM>`.
+3. **НЕ ставить** галочку «Secret access token» — иначе префикс будет `sk.`, а нам нужен public.
+4. Scopes: только `STYLES:READ`, `FONTS:READ`, `DATASETS:READ`, `VISION:READ`. **НЕ добавлять** `OFFLINE:READ` / `TILESETS:READ` / `DOWNLOADS:READ` (secret-scopes сломаны на public-токене — урок P0-A-01).
+5. **Restrictions** (см. ADR-0006 §Митигации):
+   - **(A) Available**: iOS Bundle ID `com.runningecosystem.mobile` + Android SHA-256 fingerprint (debug + production keystores).
+   - **(B) Partial**: применить доступный subset.
+   - **(C) Unavailable**: оставить без restrictions, полагаясь на scope minimization + 6-month rotation schedule (auto-tracked в §«История ротаций»).
+6. **Create token** → скопировать `pk.…` (показывается **один раз**).
+
+### Шаг 2. Обновить SOPS
+
+```bash
+EDITOR=vim sops .secrets/<env>/mapbox.yaml
+# Под ключом EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN: вставить новое pk. значение, save.
+```
+
+См. `docs/RUNBOOKS/sops-edit.md` §2 «Edit existing encrypted file».
+
+### Шаг 3. Deploy
+
+См. `docs/RUNBOOKS/sops-edit.md` §9 «Deploy sequence (SCP-based prod deploy)». Для mobile-side EAS Build (Phase 11/12 deferred) — env-var inject через `eas secret:create`.
+
+### Шаг 4. Validation
+
+```bash
+PK_NEW=$(sops -d --extract '["EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN"]' .secrets/<env>/mapbox.yaml)
+curl -sS -o /dev/null -w "%{http_code}\n" \
+  "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12?access_token=$PK_NEW"
+unset PK_NEW
+# Expected: 200 (или 403 если применена Bundle ID restriction — это SUCCESS, не failure:
+# curl делает запрос не из бандла, поэтому Bundle ID-restricted токен 403'ится — то и нужно).
+```
+
+После validation — **revoke старый `pk.`** в dashboard (`Delete` button); дописать запись в §«История ротаций» (дата, кто, причина).
+
+---
+
+## Rotation Playbook — POSTGRES_PASSWORD (4 шага)
+
+Запускается при подозрении на утечку (попадание в чат / log / dump) **или** по плановому графику (раз в 12 месяцев) **или** при увольнении dev'а, имевшего SSH-доступ к VPS.
+
+### Шаг 1. Создать новый пароль
+
+```bash
+# Сгенерировать 32-byte random (base64-safe):
+NEW_PG_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/' | head -c 32)
+# НЕ echo $NEW_PG_PASSWORD — сразу пайпить в next step.
+```
+
+### Шаг 2. Обновить Postgres через `ALTER USER`
+
+```bash
+# На VPS (или через SSH tunnel):
+psql -h <pg-host> -U postgres -d postgres \
+  -c "ALTER USER sport_app WITH PASSWORD '$NEW_PG_PASSWORD';"
+```
+
+⚠️ **НЕ** запускать с `-W` (prompt-for-password) или с `PGPASSWORD=` в shell history — sensitive. Использовать `~/.pgpass` file (mode 600) для auth.
+
+### Шаг 3. Обновить SOPS
+
+```bash
+EDITOR=vim sops .secrets/prod/shared.yaml
+# Под POSTGRES_PASSWORD: вставить $NEW_PG_PASSWORD значение.
+# Если per-service *_DB_URL содержит пароль (postgres://user:PWD@host/db) —
+# обновить и эти ключи (IDENTITY_DB_URL, FEED_DB_URL, ...).
+```
+
+См. `docs/RUNBOOKS/sops-edit.md` §2.
+
+Не забыть `unset NEW_PG_PASSWORD` после успешного SOPS-write.
+
+### Шаг 4. Deploy + validation
+
+```bash
+# Deploy per docs/RUNBOOKS/sops-edit.md §9.
+# Validation — каждый Go-сервис должен переподключиться к Postgres с новым паролем:
+ssh deploy@<vps> 'docker logs sport_identity 2>&1 | tail -20 | grep "db connected"'
+# Если видим "db connected" — миграция прошла.
+# Если "password authentication failed" — откатиться (psql ALTER USER на старый пароль)
+# и debug.
+```
+
+После validation — **отозвать старый пароль** (Postgres не имеет revoke per se; `ALTER USER` уже заменил его). Записать в §«История ротаций».
+
+---
+
+## Rotation Playbook — JWT_SECRET (4 шага)
+
+Запускается при подозрении на утечку **или** по плановому графику (раз в 12 месяцев).
+
+⚠️ **Последствие ротации:** все signed JWTs становятся invalid → все mobile-users re-login forced (refresh tokens не работают, потому что Identity service не сможет verify их подпись).
+
+### Шаг 1. Сгенерировать новый ≥32-байтный secret
+
+```bash
+# 32 bytes (64 hex chars) — минимум по pkg/auth/jwt.go:43-46 (≥32 bytes):
+NEW_JWT_SECRET=$(openssl rand -hex 32)
+```
+
+### Шаг 2. Обновить SOPS
+
+```bash
+EDITOR=vim sops .secrets/prod/shared.yaml
+# Под IDENTITY_JWT_SECRET: вставить $NEW_JWT_SECRET значение.
+```
+
+См. `docs/RUNBOOKS/sops-edit.md` §2. `unset NEW_JWT_SECRET` после.
+
+### Шаг 3. Deploy
+
+См. `docs/RUNBOOKS/sops-edit.md` §9. **Координация:** все 8 backend-сервисов используют тот же `IDENTITY_JWT_SECRET` для verify (см. PATTERNS.md per-service migration list) — deploy ВСЕХ сервисов одновременно во избежание split-state (часть сервисов на старом secret, часть на новом → JWT verification fail случайным образом).
+
+### Шаг 4. Validation
+
+```bash
+# Smoke: запросить /auth/request-code → /auth/verify-code → получить access token →
+# обратиться к protected endpoint (например, /api/v1/me):
+curl -sS -X POST https://<api>/auth/request-code -d '{"email":"smoke@example.com"}'
+# затем verify-code, затем authenticated /me request.
+# Если /me возвращает 200 — новый JWT_SECRET работает.
+# Если 401 на любом сервисе — split-state; redeploy всех сразу.
+```
+
+После validation — **forced logout всех users** (frontend получит 401 от /me на старом access token; refresh-token flow вернёт 401 от refresh endpoint; user перенаправляется на login screen). Записать в §«История ротаций».
+
+---
+
+## Rotation Playbook — MINIO_ROOT_USER + MINIO_ROOT_PASSWORD (paired, 5 шагов)
+
+Запускается при подозрении на утечку **или** по плановому графику (раз в 12 месяцев). **Paired rotation** — обе credentials меняются вместе (одно без другого не имеет смысла).
+
+### Шаг 1. Сгенерировать новые credentials
+
+```bash
+NEW_MINIO_USER="sport_minio_$(openssl rand -hex 4)"     # e.g., sport_minio_a3f9
+NEW_MINIO_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/' | head -c 32)
+```
+
+### Шаг 2. Обновить MinIO
+
+**Вариант A — MinIO admin API** (preferred, no downtime):
+
+```bash
+# Подключиться существующим mc (MinIO Client) к серверу:
+mc alias set sport-minio https://<minio-host> <OLD_USER> <OLD_PASSWORD>
+# Создать новый root-like service-account:
+mc admin user add sport-minio "$NEW_MINIO_USER" "$NEW_MINIO_PASSWORD"
+mc admin policy attach sport-minio consoleAdmin --user "$NEW_MINIO_USER"
+# Verify новый user работает:
+mc alias set sport-minio-new https://<minio-host> "$NEW_MINIO_USER" "$NEW_MINIO_PASSWORD"
+mc admin info sport-minio-new
+# Только после verify — удалить старого:
+mc admin user remove sport-minio <OLD_USER>
+```
+
+**Вариант B — Container restart** (downtime ~30s):
+
+```bash
+# Обновить SOPS (Шаг 3 ниже), затем:
+docker-compose -f services/backend/docker-compose.prod.yml \
+  --env-file /run/sport.env restart minio
+# При restart MinIO видит новые MINIO_ROOT_USER + MINIO_ROOT_PASSWORD env-vars и пересоздаёт root user.
+```
+
+⚠️ **Внимание:** при варианте B существующие presigned URLs (S3 signed URLs для media uploads) остаются валидными до их истечения (Media service использует presigned URLs с 15-min TTL — Phase 8/Media). Не вызывает массового re-auth для пользователей.
+
+### Шаг 3. Обновить SOPS
+
+```bash
+EDITOR=vim sops .secrets/prod/shared.yaml
+# Под MINIO_ROOT_USER: $NEW_MINIO_USER
+# Под MINIO_ROOT_PASSWORD: $NEW_MINIO_PASSWORD
+```
+
+### Шаг 4. Deploy + validation
+
+```bash
+# Deploy per docs/RUNBOOKS/sops-edit.md §9.
+# Validation — Media service должен переподключиться к MinIO:
+ssh deploy@<vps> 'docker logs sport_media 2>&1 | tail -20 | grep -i "minio\|s3"'
+# "S3 client initialized" / "bucket exists" — миграция прошла.
+```
+
+### Шаг 5. `unset` shell-variables
+
+```bash
+unset NEW_MINIO_USER NEW_MINIO_PASSWORD
+history -d $(history 1 | awk '{print $1}')  # delete last history entry (mc alias set ...)
+```
+
+Записать в §«История ротаций» (одна строка, **без значений**: «MINIO root creds rotated, paired»).
+
+---
+
+## Rotation Playbook — EXPO_ACCESS_TOKEN (4 шага)
+
+Запускается при подозрении на утечку (попадание в чат / GitHub Actions log) **или** по плановому графику (раз в 12 месяцев) **или** при смене Expo organization owner'а.
+
+⚠️ **Optional secret:** notifications service использует `${EXPO_ACCESS_TOKEN:-}` (empty default) — сервис стартует и без него (push fanout = no-op). Ротация не блокирует deploy.
+
+### Шаг 1. Регенерировать в Expo dashboard
+
+1. Открыть https://expo.dev/accounts/<org>/settings/access-tokens.
+2. **Revoke** старый token (если виден).
+3. **Create new token**. Имя: `sport-notifications-push-<YYYY-MM>`. Scope: project access (наш Expo project).
+4. Скопировать новое значение (показывается один раз).
+
+### Шаг 2. Обновить SOPS
+
+```bash
+EDITOR=vim sops .secrets/prod/shared.yaml
+# Под EXPO_ACCESS_TOKEN: вставить новое значение.
+```
+
+См. `docs/RUNBOOKS/sops-edit.md` §2.
+
+### Шаг 3. Deploy
+
+См. `docs/RUNBOOKS/sops-edit.md` §9. notifications service подхватит новый токен на restart.
+
+### Шаг 4. Validation
+
+```bash
+# Trigger тестового push-уведомления (через admin UI или dev script):
+ssh deploy@<vps> 'docker logs sport_notifications 2>&1 | tail -20 | grep -i "push\|expo"'
+# "push fanout: 1 sent" — токен работает.
+# "expo: 401 unauthorized" — токен сломан, откатиться.
+```
+
+Записать в §«История ротаций».
+
+---
+
+## Rotation Playbook — CADDY_ACME_EMAIL (3 шага)
+
+⚠️ **Не секрет, deploy-config.** CADDY_ACME_EMAIL — email-адрес для Let's Encrypt account (`tos: agreed`). Меняется при смене ops-owner'а. Playbook здесь для целостности процесса (per RESEARCH §Open Q1 — annotate "deploy config, not a secret per se").
+
+### Шаг 1. Подтвердить новый email
+
+Запросить у нового ops-owner'а email-адрес, который согласен принимать Let's Encrypt expiration alerts (за ~14 дней до cert expiry).
+
+### Шаг 2. Обновить SOPS
+
+```bash
+EDITOR=vim sops .secrets/prod/shared.yaml
+# Под CADDY_ACME_EMAIL: новый адрес.
+```
+
+См. `docs/RUNBOOKS/sops-edit.md` §2.
+
+### Шаг 3. Deploy + validation
+
+См. `docs/RUNBOOKS/sops-edit.md` §9. Caddy перезагрузит ACME account на email change (NO cert re-issue — связь между Let's Encrypt account и outstanding certs сохраняется).
+
+```bash
+ssh deploy@<vps> 'docker logs sport_caddy 2>&1 | tail -20 | grep -i "acme\|tls\|email"'
+# "ACME email updated" или silent success — обновление прошло.
+```
+
+Записать в §«История ротаций».
+
+---
+
+## Rotation Playbook — OAuth client secrets (4 шага)
+
+Покрывает: **STRAVA_CLIENT_SECRET** (HEALTH-04, Phase 11/12 active integration) + **GOOGLE_OAUTH_CLIENT_SECRET** + **APPLE_SIGN_IN_CLIENT_SECRET** (deferred v1.1+ per ADR-0003 / HEALTH-01..03).
+
+Запускается при подозрении на утечку **или** при смене OAuth provider credentials (например, Strava требует ротации при изменении redirect URI).
+
+### Шаг 1. Регенерировать в OAuth provider dashboard
+
+**Strava** (active в Phase 11/12):
+1. Открыть https://www.strava.com/settings/api.
+2. **Reset Client Secret** (генерирует новое значение, инвалидирует старое immediately).
+3. Скопировать новое `Client Secret`.
+
+**Google** (deferred v1.1):
+1. Открыть Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs.
+2. **Reset Client Secret** на нашем OAuth client.
+3. Скопировать.
+
+**Apple Sign In** (deferred v1.1):
+1. Apple Developer → Certificates, Identifiers & Profiles → Keys.
+2. Создать новый Sign In with Apple key (приватный JWT, multi-line!).
+3. Скопировать private key file (`.p8`) — **multi-line — special handling per Pitfall 1** (см. `docs/RUNBOOKS/sops-edit.md` §5).
+
+### Шаг 2. Обновить SOPS
+
+```bash
+EDITOR=vim sops .secrets/prod/oauth.yaml
+# Под соответствующим ключом — вставить новое значение.
+# Apple .p8 — multi-line; используйте YAML block scalar (|-) и НЕ декриптуйте
+# через --output-type=dotenv (см. Pitfall 1).
+```
+
+См. `docs/RUNBOOKS/sops-edit.md` §2.
+
+### Шаг 3. Deploy
+
+См. `docs/RUNBOOKS/sops-edit.md` §9. **Last-mile координация:** sessions, использующие OAuth-link (например, Strava-connected accounts), сохраняются — `client_secret` используется только при initial OAuth code-exchange. Existing refresh-tokens продолжают работать.
+
+### Шаг 4. Validation
+
+```bash
+# Smoke: trigger новый OAuth flow (например, "Connect Strava" в mobile UI):
+# 1. User clicks Connect Strava
+# 2. Backend exchanges authorization_code via NEW client_secret
+# 3. Если backend получает access_token → ротация прошла.
+# 4. Если backend получает "invalid_client" → новый client_secret не подхвачен.
+ssh deploy@<vps> 'docker logs sport_identity 2>&1 | tail -20 | grep -i "strava\|oauth"'
+```
+
+Записать в §«История ротаций».
+
+---
+
+## Rotation Playbook — SOPS_AGE_KEY (recipient rotation, 5 шагов)
+
+Запускается при:
+- Уходе dev'а из проекта (его recipient key больше не должен иметь access).
+- Подозрении на компрометацию dev workstation (age private key мог утечь).
+- Добавлении нового dev'а или CI-runner'а (Phase 4 wires CI key).
+- По плановому графику (раз в 24 месяца — long cycle, потому что age key — long-lived material).
+
+⚠️ **Pitfall 8 trigger:** используйте `sops updatekeys` для **recipient rotation** (re-wrap data-encryption key без изменения value-блоков). НЕ запускайте `sops -r --in-place` (полный re-encrypt) — это создаст огромный diff и может стереть значения при ошибке.
+
+### Шаг 1. Сгенерировать новый age key (для нового dev'а или для замены утёкшего)
+
+Новый dev (или affected dev при замене):
+
+```bash
+# См. docs/RUNBOOKS/sops-edit.md §1.2:
+mkdir -p ~/.config/sops/age
+age-keygen -o ~/.config/sops/age/keys.txt
+chmod 600 ~/.config/sops/age/keys.txt
+# Скопировать публичный age1... — передать project owner'у через защищённый канал.
+```
+
+### Шаг 2. Обновить `.sops.yaml` recipient list
+
+```bash
+$EDITOR .sops.yaml
+# Добавить новый age1... ключ в creation_rules / age: array;
+# ИЛИ удалить старый ключ (при уходе dev'а или утечке).
+```
+
+### Шаг 3. Запустить `sops updatekeys`
+
+```bash
+# Re-wrap data-encryption key против нового recipient list ВО ВСЕХ encrypted-файлах:
+find .secrets -name '*.yaml' -exec sops updatekeys -y {} \;
+```
+
+См. `docs/RUNBOOKS/sops-edit.md` §6.
+
+### Шаг 4. Diff check
+
+```bash
+git diff .secrets/
+# Должен показать ТОЛЬКО изменения recipient stanzas (раздел `sops:` в конце каждого
+# encrypted-файла). НЕ value-блоки. Если каждая enc: строка изменилась — был запущен
+# full re-encrypt по ошибке → откатиться (git checkout .secrets/) + повторить с updatekeys.
+```
+
+### Шаг 5. Commit + verify-from-new-recipient
+
+```bash
+git add .secrets/ .sops.yaml
+git commit -m "chore(secrets): rotate SOPS recipients (add/remove <DEV>)"
+```
+
+Передать новому recipient'у: попросить запустить `sops -d .secrets/dev/shared.yaml | head -3` — должен вернуть plaintext (не error). Если decrypt-fail — recipient stanza не была обновлена; повторить §3.
+
+### Special case — insider-threat (compromised dev needs FULL revoke)
+
+Для v1.0 closed-beta с 2 devs и без terminations — `sops updatekeys` достаточен. Если в будущем нужен **полный data-key rotation** (например, dev ушёл со злоумышлением, имея доступ к past versions через git history): дополнительно к §3 запустить:
+
+```bash
+find .secrets -name '*.yaml' -exec sops --rotate --in-place {} \;
+# Это создаст новый data-encryption key для каждого файла → past-versions в git
+# по-прежнему decrypt'ятся со старого ключа compromised-dev, но любой commit ПОСЛЕ
+# rotation defeats his decrypt.
+```
+
+⚠️ Это **destructive** — past plaintext через git history всё равно доступен compromised-dev'у. Полный response = ротация ВСЕХ затронутых секретов (Postgres, JWT, MinIO, OAuth — каждый по своему playbook'у) + revoke его SSH key на VPS.
+
+Записать в §«История ротаций».
+
+---
+
+## Rotation Playbook — NATS auth (deferred v1.1)
+
+**Статус:** Out of scope — v1.1.
+
+**Текущее состояние (v1.0 closed-beta):** NATS-брокер открыт на Docker network (`docker-compose.prod.yml` service `nats`) без AuthN. Internal-only доступность через Docker network принята для v1.0 single-VPS deploy (RESEARCH §«Architectural Responsibility Map» + CONTEXT D-20).
+
+**Чем закрыта attack surface (v1.0):**
+- Docker network isolation — NATS не expose'нут наружу VPS (no `ports:` mapping в compose).
+- Firewall на VPS уровне (`ufw` / `iptables`) — внешние подключения к Docker internal IP заблокированы.
+- Все 8 backend-сервисов на той же VPS — нет cross-VPS NATS-трафика для перехвата.
+
+**Когда reactivate playbook (v1.1 triggers):**
+- Multi-region deploy lands (NATS-трафик идёт через WAN).
+- Любой сервис уезжает с единого VPS (cross-host NATS).
+- Public NATS endpoint появляется (для third-party integrations).
+
+**Шаги playbook'а (v1.1, скетч для будущего себя):**
+1. Сгенерировать NATS auth token (`openssl rand -base64 32`) **или** NATS NKey/user JWT (см. nats-server `auth` config).
+2. Обновить `.secrets/{dev,staging,prod}/shared.yaml` под новым ключом `NATS_AUTH_TOKEN`.
+3. Обновить `services/backend/nats.conf` с `authorization: { token: "$NATS_AUTH_TOKEN" }`.
+4. Обновить ВСЕ Go-сервисы: `nats.Connect(url, nats.Token("$NATS_AUTH_TOKEN"))`.
+5. Deploy ВСЕХ сервисов одновременно (split-state = service-bus down).
+6. Validation: проверить, что producers + consumers всех 8 сервисов подключаются успешно.
+
+**Сейчас (v1.0):** ничего не делать; NATS работает как unauth'd internal bus. Если в Phase 21 soak surfaces что-то требующее изоляции — flag в Incident Log + создать v1.1 phase для NATS auth migration.
 
 ---
 
