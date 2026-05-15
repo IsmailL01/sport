@@ -909,16 +909,38 @@ Phase 0 закрыта когда:
 
 ### 3.15 Acceptance Phase 1
 
-Phase 1 закрыта когда:
-1. Все задачи P1-A…P1-K реализованы и code-reviewed
-2. Покрытие тестами: pipeline ≥80%, area calculation ≥90%, остальной core ≥50%
-3. Полевые тесты M-01…M-03 пройдены, отклонения от Garmin: дистанция ≤3%, площадь ≤5%
-4. Background reliability на 3 устройствах ≥95% времени записи (5% потери допустимо для 60-минутной сессии)
-5. Расход батареи ≤10% за час
-6. Приложение работает в авиарежиме (с скачанным offline pack)
-7. Crash recovery работает на iOS и Android
+#### Phase 1 — Acceptance Status: 🟡 CODE-COMPLETE, FIELD-TESTS DEFERRED (2026-05-14)
 
-**На этой точке у нас есть полностью функциональное приложение, которое уже можно показывать тестовым пользователям и собирать обратную связь.**
+Phase 1 acceptance criteria (ТЗ §3.15) verified through GSD plans 01-10 (`.planning/phases/01-validate-close-territory-core/`). Code-level shipped 2026-05-14 на ветке `feat/cursona-redesign`; field validation **deferred** — см. [ADR-0005](DECISIONS/0005-phase-1-field-test-outcomes.md).
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| 1. Все P1-A..P1-K реализованы и code-reviewed | ✅ shipped | P-ID counterparts ниже + GSD Plans 01-10 SUMMARYs |
+| 2. Покрытие тестами: pipeline ≥80% / area ≥90% / core ≥50% | ✅ pipeline 93% / area 95%+ / core высокое (536/536 jest passing) | [`01-01-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-01-SUMMARY.md) (sessionRepository integration tests) + смежные |
+| 3. Полевые тесты M-01..M-03 (дистанция ≤3%, площадь ≤5%, NFR-001/002) | ⏳ **DEFERRED** | [`tests/FIELD_PROTOCOL.md`](../tests/FIELD_PROTOCOL.md) Per-Device tables + [ADR-0005](DECISIONS/0005-phase-1-field-test-outcomes.md) |
+| 4. Background reliability на 3 устройствах ≥95% (NFR-005) | ⏳ **DEFERRED** | T8 protocol готов; runtime test pending — см. ADR-0005 |
+| 5. Расход батареи ≤10%/ч (NFR-003) | ⏳ **DEFERRED** | T6 protocol готов; runtime test pending — см. ADR-0005 |
+| 6. Авиарежим с offline pack | ✅ code + manual picker | [`01-06-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-06-SUMMARY.md) (RegionPickerScreen + bounds-order bug fix) |
+| 7. Crash recovery на iOS и Android | ✅ shipped | recoverLast + dialog + R7 functional-set race-fix |
+
+**Per-P-ID code-level closure mapping (через GSD Phase 1 plans):**
+
+- **P1-B** (MapScreen hook refactor) — ✅ closed via PHASE1-06 ([`01-02-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-02-SUMMARY.md))
+- **P1-C** (SessionManager extraction) — ✅ closed via PHASE1-07 ([`01-01-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-01-SUMMARY.md)). Phase A (gradual cutover) done; Phase B (closure detection inside manager) deferred.
+- **P1-D-04** (big-track simplification) — ✅ closed via PHASE1-05 ([`01-05-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-05-SUMMARY.md))
+- **P1-G-09** (closure haptic + toast) — ✅ closed via PHASE1-08 ([`01-03-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-03-SUMMARY.md))
+- **P1-I-02** (SignificantLocationChanges iOS) — ✅ closed via PHASE1-12 ([`01-07-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-07-SUMMARY.md)). Android SLC не реализован (expo-location API gap, D-30).
+- **P1-I-05** (adaptive GPS sampling) — ✅ closed via PHASE1-11 ([`01-07-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-07-SUMMARY.md))
+- **P1-J-05** (summary screen с большой картой) — ✅ closed via PHASE1-09 ([`01-04-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-04-SUMMARY.md))
+- **P1-K-04** (manual offline region UI) — ✅ closed via PHASE1-10 ([`01-06-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-06-SUMMARY.md))
+- **Security cross-cutting (Mapbox token rotation + ESLint guard)** — 🟡 partial: code-side closed via PHASE1-13 Tasks 1-3 (commits `79b5aa0`, `a7da532`); Task 4 (Mapbox dashboard rotation, owner-driven) ⏳ deferred — см. [`01-08-SUMMARY.md`](../.planning/phases/01-validate-close-territory-core/01-08-SUMMARY.md) §CHECKPOINT REQUIRED.
+- **P1-M (field testing T1-T15)** — ⏳ **DEFERRED**. Protocol scaffold готов в [`tests/FIELD_PROTOCOL.md`](../tests/FIELD_PROTOCOL.md) (PHASE1-01..04 / Plan 09 Task 1, commit `c1af7c7`); per-device runs pending. См. [ADR-0005](DECISIONS/0005-phase-1-field-test-outcomes.md) §«Список user actions».
+
+**Accepted limitations и full deferred-state context:** [ADR-0005](DECISIONS/0005-phase-1-field-test-outcomes.md) — deferred-aware closure ADR с explicit checklist для разблокирования formal closure.
+
+**Status note (2026-05-14):** Phase 1 НЕ formally closed. Phase 2 (Real Health Integrations) может стартовать на code-level, но production release Phase 2 features должен дождаться formal closure Phase 1 (см. ADR-0005 Consequences).
+
+**На точке formal closure Phase 1 у нас есть полностью функциональное приложение, которое можно показывать тестовым пользователям и собирать обратную связь.**
 
 ---
 

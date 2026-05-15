@@ -4,6 +4,44 @@
 
 ## Текущая фаза
 
+**Phase 1 closeout — code-complete, field-tests pending (GSD)** 🟡 (2026-05-14) — см. [ADR-0005](docs/DECISIONS/0005-phase-1-field-test-outcomes.md), [tests/FIELD_PROTOCOL.md](tests/FIELD_PROTOCOL.md), [.planning/phases/01-validate-close-territory-core/](.planning/phases/01-validate-close-territory-core/):
+
+**Закрыто на code-level (через GSD Plans 01-10 на ветке `feat/cursona-redesign`):**
+
+- ✅ **PHASE1-05** (P1-D-04 — big-track simplification) — `@turf/simplify` dual-source активен при ≥2000 точек; LineLayer/FillLayer получают simplified, AreaCalculator/closure detection продолжают читать raw points. D-15 (HistoryTerritoryLayer simplification) **доставлено**. Commits `bf3c60a`, `23bf9b4`. См. [`01-05-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-05-SUMMARY.md).
+- ✅ **PHASE1-06** (P1-B — TrackerLive hook extraction) — `useTrackerCamera` / `useLayerVisibility` / `usePauseUI` extracted; +3 hook test files (16 tests). TDD-authored. Commit `db02e0f`. См. [`01-02-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-02-SUMMARY.md).
+- ✅ **PHASE1-07** (P1-C — SessionManager extraction) — pure-domain `SessionManager` в `src/domain/session/`; store делегирует mutating ops; real-SQLite integration tests через `better-sqlite3@12.10.0` Jest-shim (`expo-sqlite` probe outcome RED — fell back per RESEARCH Pitfall 8). 466→378 LOC в `state/activity.ts` (-19 %). Commits `16527f0`, `a9b5857`, `aaae232`. См. [`01-01-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-01-SUMMARY.md).
+- ✅ **PHASE1-08** (P1-G-09 — closure haptic + toast) — `expo-haptics@~14.1.4` (SDK 54-pinned, caret-range forbidden); in-house Animated.View Toast overlay; `useClosureFeedback` hook reagent на `closureFired` transition false→true. Commits `8327df1`, `5caf8a0`, `fc3bc67`, `4cbe759`. См. [`01-03-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-03-SUMMARY.md).
+- ✅ **PHASE1-09** (P1-J-05 — summary screen flow) — `nav.replace('RunDetails', { sessionId })` flow уже был корректен; добавлены nav-assertion test + RunDetailsScreen snapshot для блокировки от регрессии. Commits `97c17fb`, `26651a2`. См. [`01-04-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-04-SUMMARY.md).
+- ✅ **PHASE1-10** (P1-K-04 — manual offline region picker) — `RegionPickerScreen` + `RegionPickerOverlay` (draggable 4-corner rectangle); `createCustomPack` API теперь единственный owner of bounds-order invariant; **critical bounds-order bug fix в `offline.ts`**. Tile-count estimate через local Web Mercator (нет `getPackEstimateSize` в `@rnmapbox/maps@10.3.0`). Commits `c6de4e0`, `2414640`. См. [`01-06-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-06-SUMMARY.md).
+- ✅ **PHASE1-11** (P1-I-05 — adaptive sampling) — `LocationAdapter.setSamplingMode('active' | 'paused' | 'background-slc')`; SessionManager подписывается на PauseDetector transitions через constructor-injected adapter. Commits `4d3d335`, `c1dc7fa`. См. [`01-07-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-07-SUMMARY.md).
+- ✅ **PHASE1-12** (P1-I-02 — iOS SLC gap-resume) — `AppState` listener в `state/activity.ts` детектит foreground; `SessionManager.handleAppForeground()` resets pipeline при gap > `gpsGapTriggerS` (settings v6 migration, default 30 s); strict `>` comparison. Android SLC **не реализован** — `expo-location` не предоставляет API (D-30). Commit `39ba6a7`. См. [`01-07-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-07-SUMMARY.md).
+- 🟡 **PHASE1-13** (P1 security — Mapbox token rotation) — code-side complete: `docs/SECRETS.md` 139→365 строк (Inventory + Classification + 4-step Rotation Playbook + Storage Rules + Incident Response + Audit Summary + Rotation Log); ESLint мигрирован на flat-config (v9.39 требует), добавлены два `no-restricted-syntax` rules для `EXPO_PUBLIC_*_SECRET` и `sk.<…>` literals (regex `{40,}` quantifier защищает от false-positive «sk-button»). Audit grep на исторические утечки — clean. Commits `79b5aa0`, `a7da532`. См. [`01-08-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-08-SUMMARY.md). **⏳ Task 4 (owner-driven Mapbox dashboard rotation) PENDING** — см. ниже.
+- ✅ **PHASE1-14** (closure docs — этот entry + ADR-0005) — deferred-aware mode: code closeout зафиксирован, field-tests deferred с явным resumption checklist.
+
+**Phase 1 acceptance §3.15 закрытие — на code-level:**
+
+- ✅ P1-A..K реализованы и code-reviewed (см. P-ID коммиты выше + история ниже).
+- ✅ Покрытие тестами: pipeline 93 % / area 95 %+ / domain высокое. **Test count baseline jump: 305 → 536 passing** (+231 за Phase 1, в основном Plan 01 SessionManager + Plan 02 hooks + Plan 03 closure feedback + Plan 04 nav/snapshot + Plan 05 simplify + Plan 06 offline-bounds regression + Plan 07 ExpoLocationAdapter/gapResume).
+- ✅ Crash recovery (recoverLast + dialog) — работает; R7 functional-set race-fix зафиксирован в production.
+
+**⏳ DEFERRED (Phase 1 НЕ formally closed — требуются user actions):**
+
+- ⏳ **PHASE1-01..04** (полевые тесты на Pixel / iPhone / Chinese-Android: T1 / T2 / T6 / T7 / T8 / T9 — NFR-001/002/003/005/006/007) — **deferred**. Protocol scaffold готов в [`tests/FIELD_PROTOCOL.md`](tests/FIELD_PROTOCOL.md) (Plan 09 Task 1, commit `c1af7c7`); все per-device tables — `—` / `pending`. Resumption signal: выполнить runs per `01-09-SUMMARY.md` §CHECKPOINT REQUIRED, заполнить tables, commit-ить per-device. Order: Pixel → iPhone → Chinese-Android (D-02).
+- ⏳ **PHASE1-13 Task 4** (Mapbox dashboard rotation — owner-driven) — **deferred**. Полная процедура — `01-08-SUMMARY.md` §CHECKPOINT REQUIRED — Task 4 (USER ACTION). ~10 минут: создать новый `sk.<…>` в Mapbox dashboard с DOWNLOADS:READ scope; разнести по `~/.netrc` (iOS pod install) и `~/.gradle/gradle.properties` (Android gradle); удалить старые leaked tokens; обновить `docs/SECRETS.md` §«История ротаций». Это **gate** на сборку APK/IPA для PHASE1-01..04 runs (без `sk.` token-а build падает с Mapbox 401).
+
+**Resumption signals (для следующего сеанса):**
+
+1. ☐ Mapbox dashboard rotation done → `docs/SECRETS.md` rotation log entry committed.
+2. ☐ Pixel field results (T1/T2/T6/T7/T8/T9) → строки в FIELD_PROTOCOL.md + GPX в `tests/runs/pixel/<T>/<ts>.gpx` + battery photos для T6/T8.
+3. ☐ iPhone field results → аналогично, после Xcode install + Plan 08 Task 4.
+4. ☐ Chinese-Android field results — после device acquisition + OEM autostart настройки.
+5. ☐ После Pixel + iPhone runs обновить [ADR-0005](docs/DECISIONS/0005-phase-1-field-test-outcomes.md): заменить `deferred` на measured values, перевести статус на `Accepted (closed)`, обновить STATUS.md / DEVELOPMENT_PLAN.md / .planning/STATE.md / .planning/ROADMAP.md.
+
+Phase 1 maps to canonical P1-A..P1-M IDs in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md) §3. Все pending P1-* помечены ✅ или явно deferred с указанием user action.
+
+tsc clean, **jest 536/536 passing** (+231 new tests across Plans 01-07 of Phase 1: 16 hooks + 25 sessionRepository integration + 20 SessionManager + 5 closureFeedback + 3 Toast + 6 navAfterSave + 3 RunDetailsScreen snapshot + 10 simplify + 25 offlineBounds + 30 SLC/ExpoLocation/gapResume + смежные).
+
 **Review fixes R1–R8** ✅ (2026-05-06) — см. [CHANGELOG.md](CHANGELOG.md) и [docs/REVIEW_ROUNDS_1-3.md](docs/REVIEW_ROUNDS_1-3.md):
 - 🔴 R1: StravaAdapter без `client_secret` (PKCE-ready, refresh через backend-proxy).
 - 🟡 R2: `wallet_balance.coins CHECK (>= 0)` миграция v19 + `validateTransaction` + `InsufficientBalanceError`.
@@ -165,31 +203,36 @@ tsc clean, jest **305/305 passing** (+8). 8 smoke scripts. 13 коммитов �
 | Подсекция | Статус | Что готово |
 |---|---|---|
 | **P1-A** Setup | ✅ done | MapAdapter изоляция (`src/map/`), LocationAdapter interface + ExpoLocationAdapter, расширенный domain, SQLite v3 + миграции, sessionRepository, MapStore + SettingsStore с MMKV persist |
-| **P1-A-01** Lint/format/jest | ✅ done | ESLint (с no-restricted-imports `@rnmapbox/maps` вне `src/map/`) + Prettier + jest-expo. 73 unit тестов passing. |
-| **P1-B** MapScreen | 🟡 partial | App.tsx работает с MetricsBar; полный refactor (отдельный экран, hook структура) — P1-B-* в Phase 1.5 |
-| **P1-C** Recording | 🟡 partial | activity store + ingestRawPoint работает; нет class SessionManager — Phase 1.5 |
-| **P1-D** Live render | 🟡 partial | TrackLayer + ZoneLayer + CorridorLayer + HistoryTerritoryLayer работают; не реализовано: упрощение для больших треков (P1-D-04 — отложено до runtime замеров FPS на 5000+ pts) |
+| **P1-A-01** Lint/format/jest | ✅ done | ESLint v9 flat-config (с no-restricted-imports `@rnmapbox/maps` вне `src/map/` + no-restricted-syntax для `EXPO_PUBLIC_*_SECRET` + `sk.<…>` literals) + Prettier + jest-expo. 536 tests passing. |
+| **P1-B** MapScreen (P1-B-* hook structure) | ✅ done (code) | TrackerLiveScreen + extracted hooks `useTrackerCamera` / `useLayerVisibility` / `usePauseUI` (PHASE1-06). См. [`01-02-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-02-SUMMARY.md). |
+| **P1-C** Recording (P1-C SessionManager) | ✅ done (code, Phase A) | Pure-domain `SessionManager` в `src/domain/session/`; useActivityStore делегирует mutating ops; real-SQLite integration tests через better-sqlite3 shim (PHASE1-07). Phase B (closure detection + lap orchestration внутри manager) — deferred to future polish (D-09). См. [`01-01-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-01-SUMMARY.md). |
+| **P1-D** Live render (P1-D-04 simplification) | ✅ done (code) | TrackLayer + ZoneLayer + CorridorLayer + HistoryTerritoryLayer; `simplifyForDisplay` (@turf/simplify) dual-source при ≥2000 точек, dynamic tolerance `BASE * 2^(12-zoom)` (PHASE1-05). FPS gate (≥50 при ≥5000 pts) — pending field test T7. См. [`01-05-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-05-SUMMARY.md). |
 | **P1-E** Pipeline | ✅ done | Filter + Pipeline + AccuracyFilter + JumpFilter + MinSegmentFilter + KalmanFilter (2D с predict/update, q в правильных единицах) + PauseDetector. Покрытие ~93%. Интегрирован в LocationAdapter callback. |
 | **P1-F** Метрики | ✅ done | DistanceCalculator (totalDistance), SpeedCalculator (sliding 10s, FR-008), PaceCalculator (1/speed с маской < 0.5 м/с, FR-009), Calories, MetricsBar UI. Покрытие 100%. |
-| **P1-G** Closure + area | ✅ done | AreaCalculator + ClosureDetector + Douglas-Peucker + self-intersection (с проверкой closing edge polygon). Интегрирован в state: closureFired event, area + warnings. Покрытие 95%+. Нет: анимация при первом замыкании (P1-G-09 — нужен haptic + toast, отложено до runtime). |
+| **P1-G** Closure + area (P1-G-09 haptic+toast) | ✅ done (code) | AreaCalculator + ClosureDetector + Douglas-Peucker + self-intersection. Closure haptic + Toast overlay через `expo-haptics@~14.1.4` + in-house Animated.View (PHASE1-08). Покрытие 95%+. См. [`01-03-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-03-SUMMARY.md). |
 | **P1-H** Buffered corridor | ✅ done | bufferTrack через @turf/buffer, CorridorLayer (FillLayer полупрозрачный); рендерится для незамкнутых треков, сменяется ZoneLayer'ом после замыкания |
-| **P1-I** Background | 🟡 partial | foregroundService + UIBackgroundModes готовы; battery-optimization hint Alert (P1-I-04 минимум). Не реализовано: SignificantLocationChanges (P1-I-02 — нужен native module), adaptive sampling (P1-I-05) — отложено до runtime замеров |
-| **P1-J** Lifecycle | ✅ done (минус summary screen) | Recovery dialog после старта app, Stop-confirmation Alert (Save/Discard), GPX-экспорт через RN Share API. Summary screen с большой картой (P1-J-05) — отложен на post-runtime |
-| **P1-K** Offline tiles | ✅ done | downloadHomeRegion через Mapbox.offlineManager (10×10 км, zoom 12-16), автоматически вызывается при первом GPS fix через HomeRegionAutoDownload компонент. Manual region UI (P1-K-04) — отложен |
-| **P1-L** History | ✅ done | useHistoryStore (sessions + closedSessionsPoints), HistoryModal (FlatList сессий со swipe-удалением), HistoryTerritoryLayer на карте (все закрытые сессии полупрозрачным синим) |
-| **P1-M** Field testing | ⏳ TODO | T1–T15 на устройствах — на пользователя |
+| **P1-I** Background (P1-I-02 SLC, P1-I-05 adaptive) | ✅ done (code, iOS only) | foregroundService + UIBackgroundModes готовы; battery-optimization hint Alert (P1-I-04). `LocationAdapter.setSamplingMode('active'/'paused'/'background-slc')` (PHASE1-11); iOS gap-resume через AppState foreground listener + `SessionManager.handleAppForeground()` (PHASE1-12). Android SLC **не реализован** — `expo-location` не предоставляет API (D-30). См. [`01-07-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-07-SUMMARY.md). |
+| **P1-J** Lifecycle (P1-J-05 summary screen) | ✅ done | Recovery dialog после старта app, Stop-confirmation Alert (Save/Discard), GPX-экспорт через RN Share API. `RunDetailsScreen` flow verified — `nav.replace('RunDetails', { sessionId })` + nav-assertion test + snapshot (PHASE1-09). См. [`01-04-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-04-SUMMARY.md). |
+| **P1-K** Offline tiles (P1-K-04 manual picker) | ✅ done (code) | `downloadHomeRegion` через Mapbox.offlineManager (10×10 км, zoom 12-16), auto-download при первом GPS fix через HomeRegionAutoDownload. `RegionPickerScreen` (draggable 4-corner rect, tile-count estimate) + `createCustomPack` single owner of bounds-order invariant + **critical bounds-order bug fix в `offline.ts`** (PHASE1-10). См. [`01-06-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-06-SUMMARY.md). |
+| **P1-L** History | ✅ done | useHistoryStore (sessions + closedSessionsPoints), HistoryModal (FlatList сессий со swipe-удалением), HistoryTerritoryLayer на карте (все закрытые сессии полупрозрачным синим, со simplification per Plan 05 D-15) |
+| **P1-M** Field testing (PHASE1-01..04) | ⏳ **DEFERRED — user action** | Protocol scaffold готов в [`tests/FIELD_PROTOCOL.md`](tests/FIELD_PROTOCOL.md) (Plan 09 Task 1, commit `c1af7c7`); все per-device tables — `—` / `pending`. Resumption: выполнить runs per `01-09-SUMMARY.md` §CHECKPOINT REQUIRED. Order Pixel → iPhone → Chinese-Android (D-02). См. [ADR-0005](docs/DECISIONS/0005-phase-1-field-test-outcomes.md). |
+| **PHASE1-13** Mapbox token rotation | 🟡 partial (code done, Task 4 deferred) | `docs/SECRETS.md` rotation playbook + ESLint v9 flat-config guard against `EXPO_PUBLIC_*_SECRET` + `sk.<…>` literals (Tasks 1-3 done, commits `79b5aa0`, `a7da532`). **Task 4** (Mapbox dashboard rotation — generate new `sk.<…>`, store в `~/.netrc` + `~/.gradle/gradle.properties`, delete old leaked tokens) — ⏳ **DEFERRED — user action** (~10 минут, см. [`01-08-SUMMARY.md`](.planning/phases/01-validate-close-territory-core/01-08-SUMMARY.md) §CHECKPOINT REQUIRED). Это gate на сборку APK/IPA для PHASE1-01..04 runs. |
+| **PHASE1-14** Closure docs | ✅ done (deferred-aware) | STATUS.md (этот entry) + `docs/DEVELOPMENT_PLAN.md` §3.15 acceptance table + [ADR-0005](docs/DECISIONS/0005-phase-1-field-test-outcomes.md) + `.planning/STATE.md` + `.planning/ROADMAP.md` updated. См. [`01-10-PLAN-phase-1-closure-docs.md`](.planning/phases/01-validate-close-territory-core/01-10-PLAN-phase-1-closure-docs.md). |
 
 **Acceptance Phase 1** (см. ТЗ §3.15):
-- ✅ P1-A..K реализованы и code-reviewed
-- ✅ Покрытие тестами: pipeline ≥80% (93%), area ≥90% (95%+), domain/util — высокое
-- ⏳ Полевые тесты M-01..M-03 — требуют физических устройств (P1-M)
-- ⏳ Background reliability на 3 устройствах ≥95% — runtime, не code-level
-- ⏳ Расход батареи ≤10%/ч — runtime
-- ⏳ Авиарежим работает с offline pack — runtime (auto-download реализован)
+- ✅ P1-A..K реализованы и code-reviewed (через GSD Plans 01-10)
+- ✅ Покрытие тестами: pipeline ≥80% (93%), area ≥90% (95%+), domain/util — высокое. Test baseline: 536 passing.
+- ⏳ Полевые тесты M-01..M-03 — **DEFERRED** (требуют физических устройств + Mapbox token rotation Task 4). См. [`tests/FIELD_PROTOCOL.md`](tests/FIELD_PROTOCOL.md) Per-Device Result Tables + [ADR-0005](docs/DECISIONS/0005-phase-1-field-test-outcomes.md).
+- ⏳ Background reliability на 3 устройствах ≥95% — **DEFERRED** (T8 runtime test pending)
+- ⏳ Расход батареи ≤10%/ч — **DEFERRED** (T6 runtime test pending)
+- ⏳ Авиарежим работает с offline pack — runtime (auto-download реализован + manual picker готов; runtime verify pending)
 - ✅ Crash recovery работает (recoverLast + dialog)
 
+**Phase 1 formal closure unblocked when:** см. [ADR-0005](docs/DECISIONS/0005-phase-1-field-test-outcomes.md) §«Список user actions для разблокирования formal closure» (3-step checklist).
+
 Старт: 2026-05-06
-Целевое окончание: _TBD_
+Code-complete: 2026-05-14
+Formal closure: _pending_ (gated on user actions)
 
 ## Задачи Phase 0
 
