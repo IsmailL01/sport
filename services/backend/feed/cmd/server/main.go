@@ -1,4 +1,11 @@
 // feed/cmd/server — Phase C: stories. Phase D: posts/likes/comments + home feed.
+//
+// Конфиг через ENV:
+//   FEED_HTTP_ADDR        OPTIONAL  :8085
+//   FEED_DB_URL           REQUIRED  postgres://... (содержит пароль)
+//   IDENTITY_JWT_SECRET   REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//   NATS_URL              OPTIONAL  nats://localhost:4222
+//   REDIS_URL             OPTIONAL  redis://localhost:6379/0 (ratelimit)
 package main
 
 import (
@@ -39,8 +46,10 @@ func run() error {
 	slog.SetDefault(logger)
 
 	addr := envOr("FEED_HTTP_ADDR", ":8085")
-	dbURL := envOr("FEED_DB_URL", "postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable")
-	jwtSecret := []byte(envOr("IDENTITY_JWT_SECRET", "dev-secret-must-be-at-least-32-bytes-long!!"))
+	// REQUIRED — содержит пароль Postgres
+	dbURL := envRequire("FEED_DB_URL")
+	// REQUIRED — JWT signing key (длина ≥32 enforced в pkg/auth/jwt.go:43-46)
+	jwtSecret := []byte(envRequire("IDENTITY_JWT_SECRET"))
 	natsURL := envOr("NATS_URL", "nats://localhost:4222")
 	redisURL := envOr("REDIS_URL", "redis://localhost:6379/0")
 
@@ -137,4 +146,16 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envRequire возвращает значение переменной окружения или завершает процесс
+// через os.Exit(1), если переменная отсутствует или пустая.
+// Phase 2 / SEC-09: fail-fast при отсутствии секрета.
+func envRequire(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		slog.Error("required env var missing", "key", key)
+		os.Exit(1)
+	}
+	return v
 }
