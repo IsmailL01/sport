@@ -9,9 +9,12 @@ export { ZoneLayer } from './components/ZoneLayer';
 export { CorridorLayer } from './components/CorridorLayer';
 export { HistoryTerritoryLayer } from './components/HistoryTerritoryLayer';
 export {
+  createCustomPack,
   deleteHomeRegion,
   deleteOfflinePack,
   downloadHomeRegion,
+  estimatePackSize,
   listOfflinePacks,
+  TILE_CAP_HEADROOM,
   type OfflinePack,
 } from './offline';
