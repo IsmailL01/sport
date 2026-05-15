@@ -1,11 +1,12 @@
 // notifications/cmd/server — Expo push fanout + in-app notifications.
 //
 // Конфиг через ENV:
-//   NOTIFICATIONS_HTTP_ADDR  :8087
-//   NOTIFICATIONS_DB_URL     postgres://...
-//   IDENTITY_JWT_SECRET      общий с identity для verify
-//   NATS_URL                 nats://nats:4222
-//   EXPO_ACCESS_TOKEN        опц. — для Expo Push API rate limit (auth)
+//   NOTIFICATIONS_HTTP_ADDR  OPTIONAL  :8087
+//   NOTIFICATIONS_DB_URL     REQUIRED  postgres://... (содержит пароль)
+//   IDENTITY_JWT_SECRET      REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//   NATS_URL                 OPTIONAL  nats://nats:4222
+//   EXPO_ACCESS_TOKEN        OPTIONAL  v1.0 — empty => push fanout no-ops per
+//                                      docker-compose.prod.yml line 177 ${VAR:-}
 package main
 
 import (
@@ -44,10 +45,18 @@ func run() error {
 	slog.SetDefault(logger)
 
 	addr := envOr("NOTIFICATIONS_HTTP_ADDR", ":8087")
-	dbURL := envOr("NOTIFICATIONS_DB_URL", "postgres://re:re_dev@localhost:5432/running_ecosystem?sslmode=disable")
-	jwtSecret := []byte(envOr("IDENTITY_JWT_SECRET", "dev-secret-must-be-at-least-32-bytes-long!!"))
+	// REQUIRED — содержит пароль Postgres
+	dbURL := envRequire("NOTIFICATIONS_DB_URL")
+	// REQUIRED — JWT signing key (длина ≥32 enforced в pkg/auth/jwt.go:43-46)
+	jwtSecret := []byte(envRequire("IDENTITY_JWT_SECRET"))
 	natsURL := envOr("NATS_URL", "nats://localhost:4222")
+	// OPTIONAL v1.0 — empty => push fanout no-ops per docker-compose.prod.yml
+	// line 177 ${EXPO_ACCESS_TOKEN:-} empty-default semantics. Phase 11/12
+	// populates the prod value when HEALTH-04 Strava push is wired.
 	expoToken := os.Getenv("EXPO_ACCESS_TOKEN")
+	if expoToken == "" {
+		logger.Warn("push fanout disabled — EXPO_ACCESS_TOKEN empty (v1.0 expected behavior)")
+	}
 
 	signer, err := auth.NewSigner(jwtSecret)
 	if err != nil {
@@ -159,4 +168,16 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envRequire возвращает значение переменной окружения или завершает процесс
+// через os.Exit(1), если переменная отсутствует или пустая.
+// Phase 2 / SEC-09: fail-fast при отсутствии секрета.
+func envRequire(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		slog.Error("required env var missing", "key", key)
+		os.Exit(1)
+	}
+	return v
 }
