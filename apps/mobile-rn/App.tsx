@@ -24,6 +24,7 @@ import { setSpeechAdapter } from './src/util/speech';
 import { expoSpeechAdapter } from './src/util/expoSpeechAdapter';
 import { ThemeProvider } from './src/design';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { ToastProvider } from './src/ui/Toast';
 
 // === Module-level side effects ===
 
@@ -72,13 +73,18 @@ export default function App() {
     <ErrorBoundary>
       <SafeAreaProvider>
         <ThemeProvider>
-          <StatusBar style="light" />
-          {mapboxInitError ? (
-            <Text style={{ position: 'absolute', top: 50, left: 16, color: '#FFB020', fontSize: 11 }}>
-              ⚠ Mapbox: {mapboxInitError}
-            </Text>
-          ) : null}
-          <RootNavigator />
+          {/* PHASE1-08: ToastProvider внутри ThemeProvider (для useTheme()),
+              снаружи RootNavigator (чтобы любой screen мог вызывать
+              useToast().show(...)). */}
+          <ToastProvider>
+            <StatusBar style="light" />
+            {mapboxInitError ? (
+              <Text style={{ position: 'absolute', top: 50, left: 16, color: '#FFB020', fontSize: 11 }}>
+                ⚠ Mapbox: {mapboxInitError}
+              </Text>
+            ) : null}
+            <RootNavigator />
+          </ToastProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </ErrorBoundary>

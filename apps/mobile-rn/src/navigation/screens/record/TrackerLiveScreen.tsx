@@ -37,6 +37,7 @@ import { currentPace, currentSpeed } from '../../../domain/metrics';
 import { bestPaceForDistance } from '../../../domain/records';
 import { totalDistance } from '../../../util/geo';
 import { formatDistance, formatDuration, formatPace } from '../../../ui/format';
+import { useClosureFeedback } from './hooks/useClosureFeedback';
 import { useLayerVisibility } from './hooks/useLayerVisibility';
 import { usePauseUI } from './hooks/usePauseUI';
 import { useTrackerCamera } from './hooks/useTrackerCamera';
@@ -54,6 +55,9 @@ export function TrackerLiveScreen() {
   const { cameraProps } = useTrackerCamera();
   const layerFlags = useLayerVisibility();
   const pauseUi = usePauseUI();
+  // PHASE1-08: haptic + toast feedback при первом замыкании зоны в сессии.
+  // Hook — fire-and-forget, ничего не возвращает. См. CONTEXT.md D-16..D-19.
+  useClosureFeedback();
 
   const points = useActivityStore((s) => s.points);
   const startedAt = useActivityStore((s) => s.startedAt);
