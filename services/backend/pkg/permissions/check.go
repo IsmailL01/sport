@@ -127,7 +127,9 @@ func Check(subject Subject, cap Capability, ctx ResourceContext) Decision {
 			CapStoryDeleteOthers,
 			CapCommentDeleteOthers,
 			CapAdminListReports,
-			CapReportResolve:
+			CapReportResolve,
+			// Phase 1 / REL-03: feature flag toggle gated на same global role.
+			CapFeatureFlagToggle:
 			return allow()
 		}
 	}
@@ -272,7 +274,7 @@ func Check(subject Subject, cap Capability, ctx ResourceContext) Decision {
 		return allow()
 
 	// --- Admin-only ---
-	case CapAdminListReports, CapReportResolve:
+	case CapAdminListReports, CapReportResolve, CapFeatureFlagToggle:
 		if !IsModerator(subject.GlobalRole) {
 			return deny("admin_required")
 		}

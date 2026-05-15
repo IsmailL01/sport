@@ -65,4 +65,9 @@ const (
 	CapReportSubmit     Capability = "report.submit"
 	CapReportResolve    Capability = "report.resolve"
 	CapAdminListReports Capability = "admin.list_reports"
+
+	// === Feature flags (Phase 1 / REL-03) ===
+	// Toggle / set rollout percent для записи в таблице featureflags.
+	// Gated на global admin / moderator role через IsModerator() в check.go.
+	CapFeatureFlagToggle Capability = "featureflag.toggle"
 )
