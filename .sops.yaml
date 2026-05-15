@@ -1,0 +1,24 @@
+# SOPS configuration — Phase 2 / SEC-02 / CONTEXT D-01..D-05
+# Encrypts `.secrets/**/*.yaml` against the developer age public-key list below.
+#
+# Backend: age (X25519 + ChaCha20-Poly1305) — NOT PGP/GPG, NOT cloud KMS.
+# Reason (D-01): zero infra dependency, offline rotation, simple multi-recipient
+# semantics, master keys stay on developer workstations + sealed backup (D-04).
+#
+# Rotation command (non-destructive — re-wraps DEK against new recipient list,
+# does NOT re-encrypt plaintext values):
+#     sops updatekeys .secrets/<env>/*.yaml
+#
+# Pitfall 5 mitigation: see .gitattributes for the `-text` rule that disables
+# git's 3-way merge driver on encrypted ciphertext.
+creation_rules:
+  - path_regex: \.secrets/.*\.yaml$
+    age: >-
+      age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my
+      # TODO(DEV_B): append second developer's age public key here once provided.
+      # Until then, .secrets/<env>/*.yaml decrypts only with DEV_A's key — single
+      # point of failure for bus factor (T-02-04). Rotate via:
+      #     sops updatekeys .secrets/<env>/*.yaml
+      # after appending the second pubkey above. Operation is non-destructive
+      # (re-wraps the data-encryption key against the new recipient list).
+      # CI deploy key (Phase 4) appended here once issued.

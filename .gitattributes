@@ -1,0 +1,6 @@
+# Phase 2 / SEC-02 — disable 3-way merge driver on SOPS-encrypted ciphertext.
+# Git's text merge corrupts the MAC/IV blocks at conflict boundaries, producing
+# files that decrypt-fail silently (RESEARCH Pitfall 5). Treating these paths
+# as `-text` forces conflicts to surface as "binary differ" prompts, which the
+# `docs/RUNBOOKS/sops-edit.md` playbook (Plan 02-04) walks through.
+.secrets/**/*.yaml -text
