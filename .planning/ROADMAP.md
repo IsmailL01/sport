@@ -72,7 +72,12 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 5. 12-factor config split for every Go service — no hardcoded URLs/keys/tokens in code; all via env vars sourced from SOPS
 6. Rotation playbooks in `docs/SECRETS.md` for all 10 secret types
 7. Pre-commit hook scanning for AWS/AKIA/GitHub PAT/Mapbox `sk.` patterns
-**Plans**: TBD
+**Plans**: 4 plans across 3 waves
+- [ ] `02-01-PLAN-sops-scaffold.md` — SOPS+age scaffold + 9 encrypted .secrets/<env>/{shared,mapbox,oauth}.yaml + Pitfall-1 round-trip smoke (SEC-02) — Wave 1 — autonomous=false (Task 0 needs per-dev age keys)
+- [ ] `02-02-PLAN-envrequire-and-devmode.md` — envRequire across 8 services + IDENTITY_DEV_MODE flip + isLocalDBURL prod-detection + smoke_otp.py SMOKE_DEV_MODE flip (SEC-05, SEC-06, SEC-09) — Wave 1 — autonomous (independent of 02-01)
+- [ ] `02-03-PLAN-scanners-and-precommit.md` — .gitleaks.toml + custom Mapbox rules + .pre-commit-config.yaml + Makefile scan-secrets + init-pre-commit.sh + one-time full-history scan (SEC-01, SEC-08) — Wave 2 (depends on 02-01 for .secrets/** path coverage)
+- [ ] `02-04-PLAN-mapbox-incident-and-docs.md` — ADR-0006 + sops-edit RUNBOOK + 10-playbook SECRETS.md extension + Mapbox dashboard rotation USER ACTION + SOPS-populate new tokens (SEC-03, SEC-04, SEC-07) — Wave 3 — autonomous=false (Tasks 1+3 are user-action checkpoints)
+**Maps to existing plan**: New scope (v1.0 hardening); no pre-v1.0 P-IDs apply. SEC-03/04 inherit context from pre-v1.0 archive 01-08-SUMMARY.md (Mapbox token chat-leak inventory).
 
 ### Phase 3: Infrastructure as code
 **Workstream:** `backend` (STRICT after Phase 2 — no parallelization with Phase 2 per user redline)
