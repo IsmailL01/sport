@@ -1,9 +1,10 @@
 // realtime-gw/cmd/server — WebSocket terminus.
 //
 // Конфиг через ENV:
-//   REALTIME_GW_HTTP_ADDR  :8090
-//   IDENTITY_JWT_SECRET    общий с identity для verify
-//   NATS_URL               nats://nats:4222
+//   REALTIME_GW_HTTP_ADDR  OPTIONAL  :8090
+//   IDENTITY_JWT_SECRET    REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//   NATS_URL               OPTIONAL  nats://nats:4222
+//   REALTIME_GW_DB_URL     OPTIONAL  если задан — featureflags подключаются
 package main
 
 import (
@@ -38,7 +39,8 @@ func run() error {
 	slog.SetDefault(logger)
 
 	addr := envOr("REALTIME_GW_HTTP_ADDR", ":8090")
-	jwtSecret := []byte(envOr("IDENTITY_JWT_SECRET", "dev-secret-must-be-at-least-32-bytes-long!!"))
+	// REQUIRED — JWT signing key (длина ≥32 enforced в pkg/auth/jwt.go:43-46)
+	jwtSecret := []byte(envRequire("IDENTITY_JWT_SECRET"))
 	natsURL := envOr("NATS_URL", "nats://localhost:4222")
 	// Phase 1 / REL-03: realtime-gw historically не использовал Postgres
 	// (state-less WS terminus). Pool теперь нужен ТОЛЬКО для featureflags
@@ -144,4 +146,16 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envRequire возвращает значение переменной окружения или завершает процесс
+// через os.Exit(1), если переменная отсутствует или пустая.
+// Phase 2 / SEC-09: fail-fast при отсутствии секрета.
+func envRequire(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		slog.Error("required env var missing", "key", key)
+		os.Exit(1)
+	}
+	return v
 }
