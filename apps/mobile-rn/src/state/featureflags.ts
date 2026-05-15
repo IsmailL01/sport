@@ -15,6 +15,7 @@
 // values (не reset на defaults).  Defaults применяются только когда мы
 // никогда не успешно загрузили (server-side null).
 
+import { AppState, type AppStateStatus } from 'react-native';
 import { createMMKV } from 'react-native-mmkv';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
@@ -69,6 +70,14 @@ const mmkvStorage = {
     mmkv.remove(name);
   },
 };
+
+// AppState foreground refresh — when app returns to active state we trigger
+// refresh().  Store internally guards via loading + TTL, so spurious foreground
+// transitions are bounded by the 5-min TTL.  Mirror'ит pattern из
+// state/activity.ts (gap-resume listener); module-init listener живёт весь
+// процесс — unsubscribe не нужен.
+//
+// Listener регистрируется ниже после декларации store.
 
 export const useFeatureFlagsStore = create<FeatureFlagsStore>()(
   persist(
@@ -129,3 +138,15 @@ export const useFeatureFlagsStore = create<FeatureFlagsStore>()(
     },
   ),
 );
+
+// Phase 1 / REL-03: register AppState foreground listener.  Fires on every
+// active-resume; refresh() internal TTL guard bounds frequency to 5min.
+// AppState может отсутствовать в test env — wrap в try чтобы не падать.
+try {
+  AppState.addEventListener('change', (next: AppStateStatus) => {
+    if (next !== 'active') return;
+    void useFeatureFlagsStore.getState().refresh();
+  });
+} catch (e) {
+  console.warn('[featureflags] AppState listener registration failed', e);
+}

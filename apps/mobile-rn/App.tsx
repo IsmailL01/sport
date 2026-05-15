@@ -26,6 +26,7 @@ import { ThemeProvider } from './src/design';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { ToastProvider } from './src/ui/Toast';
 import { ForceUpdateScreen } from './src/ui/screens/ForceUpdateScreen';
+import { useFeatureFlagsStore } from './src/state/featureflags';
 
 // === Module-level side effects ===
 
@@ -36,6 +37,11 @@ const mapboxInitError: string | null = MAPBOX_TOKEN
 
 // Real TTS — must run before any speech call.
 setSpeechAdapter(expoSpeechAdapter);
+
+// Phase 1 / REL-03: kick a feature-flag refresh on app launch.
+// Module-level fire-and-forget — store internally handles TTL guard +
+// network error fallback (offline-first). Doesn't block UI startup.
+void useFeatureFlagsStore.getState().refresh();
 
 // === Error boundary ===
 

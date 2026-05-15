@@ -2,6 +2,22 @@ import { create } from 'zustand';
 
 import { apiClient } from '../auth/apiClient';
 
+// Phase 1 / REL-03: helper для refresh feature flags после auth events.
+// Dynamic import per CONVENTIONS.md §State Mgmt — избегаем circular dep на
+// этапе модуля.  Best-effort: failure is swallowed inside refresh().
+async function refreshFeatureFlags(): Promise<void> {
+  try {
+    const { useFeatureFlagsStore } = await import('./featureflags');
+    // Force через сброс TTL marker чтобы первый login refresh не был
+    // no-op из-за TTL guard (мы знаем что переключение user => нужно
+    // обновить сейчас).
+    useFeatureFlagsStore.setState({ lastFetchedAt: null });
+    await useFeatureFlagsStore.getState().refresh();
+  } catch (e) {
+    console.warn('[auth] featureflags refresh failed', e);
+  }
+}
+
 export type AuthUser = {
   id: string;
   email: string;
@@ -98,6 +114,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
       }
       await apiClient.setTokens(body.accessToken, body.refreshToken);
       set({ state: 'authenticated', user: body.user, error: null });
+      // Phase 1 / REL-03: refresh feature flags после успешного register.
+      void refreshFeatureFlags();
     } catch (e) {
       set({
         state: 'unauthenticated',
@@ -169,6 +187,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
         error: null,
         needsOnboarding: body.isNew === true,
       });
+      // Phase 1 / REL-03: refresh feature flags so per-user rollout
+      // resolution kicks in immediately (don't wait for first protected
+      // request).  Best-effort — failure is swallowed inside refresh().
+      void refreshFeatureFlags();
       return true;
     } catch (e) {
       set({
@@ -204,6 +226,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
       }
       await apiClient.setTokens(body.accessToken, body.refreshToken);
       set({ state: 'authenticated', user: body.user, error: null });
+      // Phase 1 / REL-03: refresh feature flags после успешного login.
+      void refreshFeatureFlags();
     } catch (e) {
       set({
         state: 'unauthenticated',
