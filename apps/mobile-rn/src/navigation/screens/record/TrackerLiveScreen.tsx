@@ -37,6 +37,9 @@ import { currentPace, currentSpeed } from '../../../domain/metrics';
 import { bestPaceForDistance } from '../../../domain/records';
 import { totalDistance } from '../../../util/geo';
 import { formatDistance, formatDuration, formatPace } from '../../../ui/format';
+import { useLayerVisibility } from './hooks/useLayerVisibility';
+import { usePauseUI } from './hooks/usePauseUI';
+import { useTrackerCamera } from './hooks/useTrackerCamera';
 import type { RecordStackParamList } from '../../types';
 
 type Nav = NativeStackNavigationProp<RecordStackParamList, 'TrackerLive'>;
@@ -45,11 +48,15 @@ export function TrackerLiveScreen() {
   const t = useTheme();
   const nav = useNavigation<Nav>();
 
+  // PHASE1-06: camera / layer-visibility / pause-UI логика вынесена в hooks.
+  // Селекторы ниже остались для метрик / Stop+Save flow / lap controls —
+  // их move в hooks выйдет за scope этого плана (см. CONTEXT.md D-06).
+  const { cameraProps } = useTrackerCamera();
+  const layerFlags = useLayerVisibility();
+  const pauseUi = usePauseUI();
+
   const points = useActivityStore((s) => s.points);
   const startedAt = useActivityStore((s) => s.startedAt);
-  const isPaused = useActivityStore((s) => s.isPaused);
-  const closureFired = useActivityStore((s) => s.closureFired);
-  const setPaused = useActivityStore((s) => s.setPaused);
   const stopActivity = useActivityStore((s) => s.stop);
   const resetActivity = useActivityStore((s) => s.reset);
   const markLap = useActivityStore((s) => s.markLap);
@@ -86,10 +93,6 @@ export function TrackerLiveScreen() {
       nav.goBack();
     }
   }, [nav]);
-
-  const handlePause = () => {
-    setPaused(!isPaused);
-  };
 
   const handleStop = () => {
     Alert.alert(
@@ -140,16 +143,19 @@ export function TrackerLiveScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <MapboxView followUserLocation followZoomLevel={16}>
+      <MapboxView
+        followUserLocation={cameraProps.followUserLocation}
+        followZoomLevel={cameraProps.followZoomLevel}
+      >
         <LocationPuckLayer />
         <HistoryTerritoryLayer closedSessionsPoints={closedSessionsPoints} />
-        {!closureFired && <CorridorLayer points={points} />}
-        <TrackLayer points={points} />
-        {closureFired && <ZoneLayer points={points} />}
+        {layerFlags.showCorridor && <CorridorLayer points={points} />}
+        {layerFlags.showTrack && <TrackLayer points={points} />}
+        {layerFlags.showZone && <ZoneLayer points={points} />}
       </MapboxView>
 
       {/* Тусклая карта на паузе — overlay поверх MapboxView. */}
-      {isPaused ? (
+      {layerFlags.dimOverlay ? (
         <View
           pointerEvents="none"
           style={{
@@ -223,7 +229,7 @@ export function TrackerLiveScreen() {
           <View style={{ flex: 1 }} />
         </View>
 
-        {isPaused ? (
+        {pauseUi.isPaused ? (
           <Text style={{ marginTop: 10, color: t.warn, fontSize: 13, fontWeight: '700', fontFamily: t.font }}>
             ⏸ Пауза
           </Text>
@@ -243,7 +249,7 @@ export function TrackerLiveScreen() {
       >
         <Pressable
           onPress={markLap}
-          disabled={isPaused || points.length < 2}
+          disabled={pauseUi.isPaused || points.length < 2}
           style={({ pressed }) => ({
             width: 64,
             height: 64,
@@ -251,7 +257,7 @@ export function TrackerLiveScreen() {
             backgroundColor: t.surface,
             alignItems: 'center',
             justifyContent: 'center',
-            opacity: pressed ? 0.85 : isPaused || points.length < 2 ? 0.4 : 1,
+            opacity: pressed ? 0.85 : pauseUi.isPaused || points.length < 2 ? 0.4 : 1,
           })}
         >
           <Icon name="stopwatch" size={22} color={t.text} />
@@ -272,7 +278,7 @@ export function TrackerLiveScreen() {
         </Pressable>
 
         <Pressable
-          onPress={handlePause}
+          onPress={pauseUi.toggle}
           style={({ pressed }) => ({
             flex: 1,
             height: 64,
@@ -285,9 +291,9 @@ export function TrackerLiveScreen() {
             opacity: pressed ? 0.85 : 1,
           })}
         >
-          <Icon name={isPaused ? 'play' : 'pause'} size={22} color={t.text} />
+          <Icon name={pauseUi.isPaused ? 'play' : 'pause'} size={22} color={t.text} />
           <Text style={{ color: t.text, fontSize: 15 * t.fontScale, fontWeight: '700', fontFamily: t.font }}>
-            {isPaused ? 'ПРОДОЛЖИТЬ' : 'ПАУЗА'}
+            {pauseUi.pauseLabel}
           </Text>
         </Pressable>
 
