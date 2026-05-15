@@ -38,7 +38,7 @@ jest.mock('../ui/Toast', () => ({
   useToast: () => ({ show: mockShow }),
 }));
 
-const mockHaptics = jest.fn(() => Promise.resolve());
+const mockHaptics = jest.fn((..._args: unknown[]) => Promise.resolve());
 jest.mock('expo-haptics', () => ({
   notificationAsync: (...args: unknown[]) => mockHaptics(...args),
   NotificationFeedbackType: { Success: 'success' },
