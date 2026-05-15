@@ -1,0 +1,94 @@
+openapi: 3.1.0
+info:
+  title: Running Ecosystem — Realtime Gateway Service
+  description: |
+    WebSocket gateway: подписка на user-scoped события (новые сообщения,
+    реакции, push-уведомления, fanout stories/posts). Phase 1 / REL-01.
+
+    **Транспорт.** Подключение через `GET /ws` с `Authorization: Bearer <JWT>`
+    в заголовке Upgrade-запроса. После Upgrade — JSON-кадры по envelope-схеме
+    ниже.
+
+    **Scope v1.0.** OpenAPI документирует только HTTP-uplift и envelope
+    верхнего уровня. Полная JSON Schema для каждого `type` (например
+    `message.new`, `reaction.added`, `notification.fanout`) — задача v1.1
+    (см. ADR-0007 §Сценарии пересмотра и `01-CONTEXT.md` §Deferred).
+  version: 0.1.0
+servers:
+  - url: http://localhost:8090
+    description: Local dev (ws://localhost:8090/ws)
+  - url: https://api-staging.runningecosystem.app
+    description: Staging (wss://...)
+
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      tags: [system]
+      security: []
+      responses:
+        '200': { description: OK }
+
+  /ws:
+    get:
+      summary: WebSocket upgrade
+      description: |
+        Стандартный HTTP→WebSocket upgrade (RFC 6455). Сервер требует:
+        - `Authorization: Bearer <JWT>` (валидный access-токен; иначе 401).
+        - `X-Client-Version` для compat-check (см. ADR-0007 §2; 426 при too-old).
+        - `Upgrade: websocket` + `Connection: Upgrade` + `Sec-WebSocket-Key`.
+
+        После Upgrade сервер шлёт server-frames (см. envelope ниже), а клиент
+        может отправлять `ping` envelope для keepalive. Ping/pong RFC 6455
+        обрабатывается на уровне websocket-library (не на envelope-уровне).
+      tags: [realtime]
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket established)
+        '401':
+          $ref: './_shared/responses.yaml#/components/responses/Unauthorized'
+        '426':
+          $ref: './_shared/responses.yaml#/components/responses/UpgradeRequired'
+        '429':
+          $ref: './_shared/responses.yaml#/components/responses/RateLimited'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Envelope:
+      type: object
+      description: |
+        Верхний уровень кадра. Поле `data` — JSON документация на `type`
+        (полные схемы — v1.1 deferred).
+      required: [type, data]
+      properties:
+        type:
+          type: string
+          description: |
+            Discriminator. v1.0 known set:
+            `message.new`, `message.edited`, `message.deleted`,
+            `reaction.added`, `reaction.removed`,
+            `notification.fanout`, `presence.changed`, `ping`, `pong`.
+          example: message.new
+        data:
+          description: |
+            Per-`type` payload (см. соответствующие schemas в messaging/notifications
+            при v1.1 codification).
+          oneOf:
+            - { type: object, additionalProperties: true }
+            - { type: 'null' }
+        serverTs:
+          type: string
+          format: date-time
+          description: Серверный timestamp для ordering и debug.
+        traceId:
+          type: string
+          description: Opaque trace id для корреляции с REST-логами.

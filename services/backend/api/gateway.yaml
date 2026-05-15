@@ -1,0 +1,239 @@
+openapi: 3.1.0
+info:
+  title: Running Ecosystem — Edge Gateway (Caddy)
+  description: |
+    **Это не Go-сервис.** Phase 1 / REL-01.
+
+    `services/backend/gateway/` — Caddy-only reverse proxy (`Caddyfile` +
+    `Caddyfile.prod` + admin static HTML). Документ описывает публичную
+    path-routing поверхность Caddy и куда роутятся запросы, **а не** новый
+    исполняемый API. Per-service OpenAPI specs ниже — источник правды.
+
+    См. ADR-0007 §1 (контракт mobile↔backend) и `docs/API-CONTRACT-v1.0.md` (index).
+  version: 0.1.0
+servers:
+  - url: https://api.runningecosystem.app
+    description: Production edge
+  - url: https://api-staging.runningecosystem.app
+    description: Staging edge
+  - url: http://localhost
+    description: Local dev (Caddy на :80; backend сервисы на 8081..8090)
+
+externalDocs:
+  description: Per-service OpenAPI specs (источник правды для каждой группы маршрутов).
+  url: ./
+
+# Edge gateway documents path-routing surface only; per-operation auth is
+# enforced at the downstream service (см. ADR-0007 §1). Root-level
+# bearerAuth declared чтобы redocly security-defined rule был happy;
+# отдельные операции (healthz, static admin UI) переопределяют через `security: []`.
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Edge liveness (Caddy самопровер)
+      tags: [system]
+      security: []
+      responses:
+        '200': { description: OK }
+
+  /auth/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Routed to identity service
+      tags: [routing]
+      security: []
+      description: |
+        Caddy reverse-proxies на `identity:8081`. Источник правды:
+        [api/identity.yaml](./identity.yaml).
+      responses:
+        '200': { description: Passthrough }
+    post:
+      summary: Routed to identity service
+      tags: [routing]
+      security: []
+      responses:
+        '200': { description: Passthrough }
+
+  /me:
+    get:
+      summary: Routed to identity service (см. api/identity.yaml)
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /sessions:
+    get:
+      summary: Routed to activity-sync (см. api/activity-sync.yaml)
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+    post:
+      summary: Routed to activity-sync
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /stories:
+    get:
+      summary: Routed to feed (см. api/feed.yaml)
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+    post:
+      summary: Routed to feed
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /posts:
+    post:
+      summary: Routed to feed (см. api/feed.yaml)
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /feed/home:
+    get:
+      summary: Routed to feed (см. api/feed.yaml)
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /profiles/{user_id}:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Routed to social-graph (см. api/social-graph.yaml)
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /follows/{user_id}:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Routed to social-graph
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /search/users:
+    get:
+      summary: Routed to social-graph
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /conversations:
+    get:
+      summary: Routed to messaging (см. api/messaging.yaml)
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+    post:
+      summary: Routed to messaging
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /ws:
+    get:
+      summary: WebSocket upgrade — routed to realtime-gw (см. api/realtime-gw.yaml)
+      tags: [routing]
+      description: |
+        Caddy reverse-proxies на `realtime-gw:8090` с включённым WebSocket
+        passthrough. `X-Client-Version` пробрасывается без изменений (см. D-08 revised).
+      responses:
+        '101': { description: Switching Protocols (passthrough) }
+
+  /notifications:
+    get:
+      summary: Routed to notifications (см. api/notifications.yaml)
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /devices:
+    post:
+      summary: Routed to notifications
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /preferences:
+    get:
+      summary: Routed to notifications
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /media/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Routed to media (см. api/media.yaml)
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /uploads:
+    post:
+      summary: Routed to media
+      tags: [routing]
+      responses:
+        '200': { description: Passthrough }
+
+  /featureflags:
+    get:
+      summary: Routed to any service hosting pkg/featureflags (mobile-facing read)
+      tags: [routing]
+      security: []
+      description: |
+        Public feature flags read endpoint. Реализуется в Plan 03 одним из
+        сервисов с примонтированным `pkg/featureflags`. См. ADR-0007 §3.
+      responses:
+        '200': { description: Passthrough }
+
+  /admin/featureflags:
+    get:
+      summary: Routed to admin handler (placeholder — Plan 03)
+      tags: [routing, admin]
+      responses:
+        '200': { description: Passthrough (admin/moderator only) }
+
+  /admin/:
+    get:
+      summary: Caddy static — admin UI (vanilla HTML+JS)
+      description: |
+        `gateway/admin/index.html` обслуживается Caddy как статика.
+        Phase 8/L precedent. Расширения (feature flag UI) — Plan 03.
+      tags: [routing, admin]
+      security: []
+      responses:
+        '200':
+          description: HTML
+          content:
+            text/html: {}
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

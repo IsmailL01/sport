@@ -1,0 +1,79 @@
+# Shared OpenAPI 3.1.0 responses.
+# Phase 1 / REL-01. См. ADR-0007 §2 (version negotiation, 426 shape).
+#
+# Cross-file $ref:
+#   '../<service>.yaml' --> './_shared/responses.yaml#/components/responses/<Name>'
+openapi: 3.1.0
+info:
+  title: Running Ecosystem — Shared Responses
+  description: |
+    Общие HTTP-ответы (401, 403, 404, 426, 429). Phase 1 / REL-01.
+    426 UpgradeRequired — канонический формат версионного перерастания
+    клиента (см. ADR-0007 §2).
+  version: 0.1.0
+paths: {}
+components:
+  responses:
+    Unauthorized:
+      description: Bearer-токен отсутствует / невалиден / expired.
+      content:
+        application/json:
+          schema:
+            $ref: './schemas.yaml#/components/schemas/Error'
+
+    Forbidden:
+      description: Доступ запрещён (не та роль / чужой ресурс).
+      content:
+        application/json:
+          schema:
+            $ref: './schemas.yaml#/components/schemas/Error'
+
+    NotFound:
+      description: Ресурс не найден.
+      content:
+        application/json:
+          schema:
+            $ref: './schemas.yaml#/components/schemas/Error'
+
+    UpgradeRequired:
+      description: |
+        Версия клиента ниже `min_supported_version` сервера. Mobile должен
+        показать ForceUpdateScreen и направить на store/manifest URL.
+        См. ADR-0007 §2 (Version negotiation).
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, min_version]
+            properties:
+              error:
+                type: string
+                example: client_too_old
+              min_version:
+                type: string
+                example: "1.0.0"
+                description: Минимальная поддерживаемая semver-версия.
+              force_update_url_android:
+                type: string
+                format: uri
+                description: |
+                  Self-hosted Android manifest URL (см. Phase 18 AND-DIST-01).
+                  Пустая строка если эта платформа не поддерживается на сервере.
+              force_update_url_ios:
+                type: string
+                format: uri
+                description: |
+                  App Store / TestFlight URL (см. Phase 19 IOS-DIST-01).
+
+    RateLimited:
+      description: |
+        Rate limit превышен (см. `pkg/ratelimit`). Заголовок `Retry-After`
+        указывает сколько секунд до следующей разрешённой попытки.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Секунды до следующего разрешённого запроса.
+      content:
+        application/json:
+          schema:
+            $ref: './schemas.yaml#/components/schemas/Error'

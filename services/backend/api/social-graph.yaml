@@ -1,0 +1,403 @@
+openapi: 3.1.0
+info:
+  title: Running Ecosystem — Social Graph Service
+  description: |
+    Профили, follow/unfollow, blocks, поиск пользователей, репорты,
+    admin moderation (ABAC + audit). Phase 1 / REL-01.
+
+    Все endpoint'ы кроме `/healthz` требуют Bearer JWT.
+    Admin endpoint'ы дополнительно гейтятся через `pkg/permissions` —
+    отвечают 403 если global_role не admin/moderator.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8084
+    description: Local dev
+  - url: https://api-staging.runningecosystem.app
+    description: Staging (P3+)
+
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      tags: [system]
+      security: []
+      responses:
+        '200': { description: OK }
+
+  /profiles/{user_id}:
+    get:
+      summary: Получить публичный профиль пользователя
+      tags: [profiles]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/userId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+
+  /profiles/me:
+    patch:
+      summary: Обновить свой профиль
+      tags: [profiles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfilePatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /profiles/bulk:
+    post:
+      summary: Получить профили пачкой (для feed-render)
+      tags: [profiles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds]
+              properties:
+                userIds:
+                  type: array
+                  items: { type: string, format: uuid }
+                  maxItems: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /search/users:
+    get:
+      summary: Поиск пользователей по displayName / handle
+      tags: [search]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - $ref: './_shared/parameters.yaml#/components/parameters/limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '429': { $ref: './_shared/responses.yaml#/components/responses/RateLimited' }
+
+  /relations/{user_id}:
+    get:
+      summary: Состояние отношений с пользователем (follow / blocked / muted)
+      tags: [relations]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/userId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Relation' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /follows/{user_id}:
+    post:
+      summary: Подписаться (idempotent)
+      tags: [follows]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/userId'
+      responses:
+        '204': { description: Followed }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+    delete:
+      summary: Отписаться
+      tags: [follows]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/userId'
+      responses:
+        '204': { description: Unfollowed }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /follows/me/followers:
+    get:
+      summary: Список своих подписчиков
+      tags: [follows]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Profile' }
+                  nextCursor:
+                    oneOf:
+                      - { type: string }
+                      - { type: 'null' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /follows/me/following:
+    get:
+      summary: На кого я подписан
+      tags: [follows]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Profile' }
+                  nextCursor:
+                    oneOf:
+                      - { type: string }
+                      - { type: 'null' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /blocks/{user_id}:
+    post:
+      summary: Заблокировать пользователя
+      tags: [blocks]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/userId'
+      responses:
+        '204': { description: Blocked }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+    delete:
+      summary: Разблокировать
+      tags: [blocks]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/userId'
+      responses:
+        '204': { description: Unblocked }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /blocks/me:
+    get:
+      summary: Список своих блок-листов
+      tags: [blocks]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /reports:
+    post:
+      summary: Пожаловаться на пользователя / контент
+      tags: [reports]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Report' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '429': { $ref: './_shared/responses.yaml#/components/responses/RateLimited' }
+
+  /reports/me:
+    get:
+      summary: Свои отправленные жалобы
+      tags: [reports]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Report' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /admin/reports:
+    get:
+      summary: Очередь жалоб (admin/moderator only)
+      tags: [admin]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [open, resolved, dismissed] }
+        - $ref: './_shared/parameters.yaml#/components/parameters/cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Report' }
+                  nextCursor:
+                    oneOf:
+                      - { type: string }
+                      - { type: 'null' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './_shared/responses.yaml#/components/responses/Forbidden' }
+
+  /admin/reports/{id}/resolve:
+    post:
+      summary: Закрыть жалобу (resolve/dismiss + audit)
+      tags: [admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution]
+              properties:
+                resolution: { type: string, enum: [resolved, dismissed] }
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '204': { description: Resolved (audit-logged) }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './_shared/responses.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+
+  /admin/audit:
+    get:
+      summary: Audit log просмотр (admin only)
+      tags: [admin]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/cursor'
+        - $ref: './_shared/parameters.yaml#/components/parameters/limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEntry' }
+                  nextCursor:
+                    oneOf:
+                      - { type: string }
+                      - { type: 'null' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './_shared/responses.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Profile:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        displayName: { type: string }
+        handle: { type: [string, 'null'] }
+        avatarUrl:
+          oneOf:
+            - { type: string, format: uri }
+            - { type: 'null' }
+        bio: { type: [string, 'null'] }
+        followersCount: { type: integer }
+        followingCount: { type: integer }
+        followedByMe: { type: boolean }
+        blockedByMe: { type: boolean }
+
+    ProfilePatch:
+      type: object
+      properties:
+        displayName: { type: string, maxLength: 80 }
+        handle: { type: string, pattern: '^[a-z0-9_]{3,32}$' }
+        avatarUrl: { type: string, format: uri }
+        bio: { type: string, maxLength: 500 }
+
+    Relation:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        followedByMe: { type: boolean }
+        followsMe: { type: boolean }
+        blockedByMe: { type: boolean }
+        mutedByMe: { type: boolean }
+
+    Report:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reporterUserId: { type: string, format: uuid }
+        targetKind: { type: string, enum: [user, post, story, message, comment] }
+        targetId: { type: string }
+        reason: { type: string }
+        status: { type: string, enum: [open, resolved, dismissed] }
+        createdAt: { type: string, format: date-time }
+
+    ReportCreate:
+      type: object
+      required: [targetKind, targetId, reason]
+      properties:
+        targetKind: { type: string, enum: [user, post, story, message, comment] }
+        targetId: { type: string }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actorUserId:
+          oneOf:
+            - { type: string, format: uuid }
+            - { type: 'null' }
+        capability: { type: string, example: report.resolve }
+        action: { type: string }
+        targetKind: { type: string }
+        targetId: { type: string }
+        createdAt: { type: string, format: date-time }
+        metadata: { type: object, additionalProperties: true }

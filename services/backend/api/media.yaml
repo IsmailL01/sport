@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: Running Ecosystem — Media Service
+  description: |
+    Загрузка media (фото / видео / голосовых) через presigned S3 URL,
+    GET по id, удаление. Phase 1 / REL-01.
+    Все endpoint'ы кроме `/healthz` требуют Bearer JWT.
+
+    **Flow.** Клиент: `POST /uploads` → получает `uploadUrl` + `mediaId` →
+    PUT тело на S3 (внешний URL, не через этот сервис) → `POST /uploads/{id}/complete`.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8086
+    description: Local dev
+  - url: https://api-staging.runningecosystem.app
+    description: Staging (P3+)
+
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      tags: [system]
+      security: []
+      responses:
+        '200': { description: OK }
+
+  /uploads:
+    post:
+      summary: Инициировать upload — получить presigned PUT URL
+      tags: [uploads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UploadInit' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadTicket' }
+        '400': { description: Невалидный mimeType / sizeBytes }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '429': { $ref: './_shared/responses.yaml#/components/responses/RateLimited' }
+
+  /uploads/{id}/complete:
+    post:
+      summary: Подтвердить завершение upload (после PUT на S3)
+      tags: [uploads]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK (media теперь доступен через GET /media/{id})
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Media' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+
+  /media/{id}:
+    get:
+      summary: Метаданные + presigned GET URL
+      tags: [media]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Media' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+    delete:
+      summary: Удалить media (только владелец)
+      tags: [media]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './_shared/responses.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    UploadInit:
+      type: object
+      required: [mimeType, sizeBytes]
+      properties:
+        mimeType:
+          type: string
+          example: image/jpeg
+          description: Whitelist на сервере (image/jpeg, image/png, video/mp4, audio/mpeg).
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 104857600
+          description: До 100 MB.
+        kind:
+          type: string
+          enum: [photo, video, audio]
+
+    UploadTicket:
+      type: object
+      properties:
+        id: { type: string, format: uuid, description: mediaId }
+        uploadUrl:
+          type: string
+          format: uri
+          description: Presigned S3 PUT URL (≤24h TTL).
+        method: { type: string, enum: [PUT] }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Headers которые клиент обязан переслать (например Content-Type).
+        expiresAt: { type: string, format: date-time }
+
+    Media:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        mimeType: { type: string }
+        sizeBytes: { type: integer }
+        kind: { type: string, enum: [photo, video, audio] }
+        url:
+          type: string
+          format: uri
+          description: Presigned GET URL (≤24h TTL; см. DB-05 в REQUIREMENTS).
+        createdAt: { type: string, format: date-time }

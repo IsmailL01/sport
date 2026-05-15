@@ -20,6 +20,7 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"github.com/runningecosystem/backend/pkg/auth"
+	"github.com/runningecosystem/backend/pkg/clientversion"
 	"github.com/runningecosystem/backend/realtime-gw/internal/gw"
 )
 
@@ -66,9 +67,23 @@ func run() error {
 	registry := gw.NewRegistry()
 	handler := gw.NewHandler(ctx, signer, nc, registry, logger)
 
+	// === Outermost middleware stanza (Plan 01-02 / REL-02) ===
+	// Constructor order: nc → handler → versionPolicy → versionedMux.
+	// Plan 01-03 (Wave 2) will insert flagStore between nc and handler.
+	// Realtime-gw — единственный WS-сервис; clientversion.Middleware безопасен
+	// над WebSocket upgrade: Upgrade handshake — обычный HTTP-запрос, и если
+	// клиент слишком старый, 426 отдаётся до Upgrade'a (это правильное поведение).
+	versionPolicy := clientversion.Policy{
+		MinSupported:          envOr("CLIENT_MIN_VERSION", "1.0.0"),
+		ForceUpdateURLAndroid: envOr("FORCE_UPDATE_URL_ANDROID", ""),
+		ForceUpdateURLiOS:     envOr("FORCE_UPDATE_URL_IOS", ""),
+		SkipPaths:             []string{"/healthz", "/metrics"},
+	}
+	versionedMux := clientversion.Middleware(handler.Routes(), versionPolicy, logger)
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           handler.Routes(),
+		Handler:           versionedMux,
 		ReadHeaderTimeout: 5 * time.Second,
 		// Длинные timeouts для WebSocket (не блокируют upgrade).
 		ReadTimeout:  0,

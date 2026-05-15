@@ -1,0 +1,371 @@
+openapi: 3.1.0
+info:
+  title: Running Ecosystem — Feed Service
+  description: |
+    Stories (24h-эфемерные посты с просмотрами) и Posts (длинный feed
+    с лайками и комментариями). Phase 1 / REL-01.
+
+    Все endpoint'ы кроме `/healthz` требуют Bearer JWT, выпущенный identity-сервисом.
+    См. ADR-0007 §1 (API contract format) и `services/backend/api/_shared/` для
+    переиспользуемых ответов (401/426/429).
+  version: 0.1.0
+servers:
+  - url: http://localhost:8085
+    description: Local dev
+  - url: https://api-staging.runningecosystem.app
+    description: Staging (P3+)
+
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      tags: [system]
+      security: []
+      responses:
+        '200': { description: OK }
+
+  /stories:
+    post:
+      summary: Опубликовать story (24h эфемерная)
+      tags: [stories]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoryCreate' }
+      responses:
+        '201':
+          description: Story создан
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Story' }
+        '400': { description: Невалидный body }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '426': { $ref: './_shared/responses.yaml#/components/responses/UpgradeRequired' }
+        '429': { $ref: './_shared/responses.yaml#/components/responses/RateLimited' }
+
+  /stories/feed:
+    get:
+      summary: Лента stories от подписок
+      tags: [stories]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/cursor'
+        - $ref: './_shared/parameters.yaml#/components/parameters/limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Story' }
+                  nextCursor:
+                    oneOf:
+                      - { type: string }
+                      - { type: 'null' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /stories/me:
+    get:
+      summary: Свои stories (включая истёкшие за последние 24h, для просмотра)
+      tags: [stories]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Story' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /stories/{id}/views:
+    get:
+      summary: Кто просмотрел story (виден только автору)
+      tags: [stories]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StoryView' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './_shared/responses.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+    post:
+      summary: Отметить story как просмотренную
+      tags: [stories]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Marked viewed (idempotent) }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+
+  /stories/{id}:
+    delete:
+      summary: Удалить свой story
+      tags: [stories]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './_shared/responses.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+
+  /posts:
+    post:
+      summary: Опубликовать пост
+      tags: [posts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PostCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Post' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '429': { $ref: './_shared/responses.yaml#/components/responses/RateLimited' }
+
+  /posts/{id}:
+    get:
+      summary: Получить пост по id
+      tags: [posts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Post' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+    delete:
+      summary: Удалить свой пост
+      tags: [posts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './_shared/responses.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+
+  /posts/{id}/likes:
+    post:
+      summary: Лайкнуть пост (idempotent)
+      tags: [posts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Liked }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+    delete:
+      summary: Убрать лайк
+      tags: [posts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Unliked }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /posts/{id}/comments:
+    get:
+      summary: Список комментариев к посту
+      tags: [posts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: './_shared/parameters.yaml#/components/parameters/cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Comment' }
+                  nextCursor:
+                    oneOf:
+                      - { type: string }
+                      - { type: 'null' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+    post:
+      summary: Добавить комментарий
+      tags: [posts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Comment' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+        '429': { $ref: './_shared/responses.yaml#/components/responses/RateLimited' }
+
+  /posts/{postId}/comments/{commentId}:
+    delete:
+      summary: Удалить свой комментарий
+      tags: [posts]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: commentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './_shared/responses.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './_shared/responses.yaml#/components/responses/NotFound' }
+
+  /feed/home:
+    get:
+      summary: Home-лента (cursor pagination)
+      tags: [feed]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/cursor'
+        - $ref: './_shared/parameters.yaml#/components/parameters/limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Post' }
+                  nextCursor:
+                    oneOf:
+                      - { type: string }
+                      - { type: 'null' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Story:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        authorId: { type: string, format: uuid }
+        mediaUrl: { type: string, format: uri }
+        caption: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        viewCount: { type: integer }
+
+    StoryCreate:
+      type: object
+      required: [mediaUrl]
+      properties:
+        mediaUrl: { type: string, format: uri }
+        caption: { type: string, maxLength: 280 }
+
+    StoryView:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        viewedAt: { type: string, format: date-time }
+
+    Post:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        authorId: { type: string, format: uuid }
+        body: { type: string }
+        mediaUrls:
+          type: array
+          items: { type: string, format: uri }
+        likeCount: { type: integer }
+        commentCount: { type: integer }
+        likedByMe: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    PostCreate:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 4000 }
+        mediaUrls:
+          type: array
+          items: { type: string, format: uri }
+          maxItems: 10
+
+    Comment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        postId: { type: string, format: uuid }
+        authorId: { type: string, format: uuid }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    CommentCreate:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 1000 }

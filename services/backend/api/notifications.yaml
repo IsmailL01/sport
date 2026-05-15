@@ -1,0 +1,187 @@
+openapi: 3.1.0
+info:
+  title: Running Ecosystem — Notifications Service
+  description: |
+    Регистрация push-устройств (Expo / FCM / APNs), inbox уведомлений,
+    user preferences. Phase 1 / REL-01.
+    Все endpoint'ы кроме `/healthz` требуют Bearer JWT.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8087
+    description: Local dev
+  - url: https://api-staging.runningecosystem.app
+    description: Staging (P3+)
+
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      tags: [system]
+      security: []
+      responses:
+        '200': { description: OK }
+
+  /devices:
+    post:
+      summary: Зарегистрировать device push-token (idempotent по token)
+      tags: [devices]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceRegister' }
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Device' }
+        '200':
+          description: Already registered (no-op refresh)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Device' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /devices/{token}:
+    delete:
+      summary: Удалить device по token (logout / unregister)
+      tags: [devices]
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string, maxLength: 512 }
+      responses:
+        '204': { description: Deleted (idempotent) }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /notifications:
+    get:
+      summary: Inbox уведомлений (newest first, cursor pagination)
+      tags: [notifications]
+      parameters:
+        - $ref: './_shared/parameters.yaml#/components/parameters/cursor'
+        - $ref: './_shared/parameters.yaml#/components/parameters/limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Notification' }
+                  nextCursor:
+                    oneOf:
+                      - { type: string }
+                      - { type: 'null' }
+                  unreadCount: { type: integer }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /notifications/read:
+    post:
+      summary: Отметить все уведомления как прочитанные
+      tags: [notifications]
+      responses:
+        '204': { description: Marked }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+  /preferences:
+    get:
+      summary: Получить настройки уведомлений
+      tags: [preferences]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+    patch:
+      summary: Обновить настройки уведомлений
+      tags: [preferences]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Preferences' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '401': { $ref: './_shared/responses.yaml#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    DeviceRegister:
+      type: object
+      required: [token, platform]
+      properties:
+        token:
+          type: string
+          maxLength: 512
+          description: Expo push token / FCM / APNs device token.
+        platform:
+          type: string
+          enum: [ios, android, expo]
+        appVersion:
+          type: string
+          description: Соответствует `X-Client-Version` (см. ADR-0007 §2).
+          example: "1.0.0"
+        locale:
+          type: string
+          example: ru
+
+    Device:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        token: { type: string }
+        platform: { type: string, enum: [ios, android, expo] }
+        registeredAt: { type: string, format: date-time }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind:
+          type: string
+          example: message.new
+          description: Discriminator события.
+        title: { type: string }
+        body: { type: string }
+        readAt:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: 'null' }
+        createdAt: { type: string, format: date-time }
+        data:
+          type: object
+          additionalProperties: true
+          description: Per-kind payload (deep-link routing, ids).
+
+    Preferences:
+      type: object
+      properties:
+        pushEnabled: { type: boolean }
+        emailEnabled: { type: boolean }
+        kinds:
+          type: object
+          additionalProperties: { type: boolean }
+          description: |
+            Per-kind opt-in/out (например `message.new`, `like.added`,
+            `follower.new`).

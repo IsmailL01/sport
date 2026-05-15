@@ -25,6 +25,7 @@ import (
 	"github.com/runningecosystem/backend/messaging/internal/repository/postgres"
 	"github.com/runningecosystem/backend/messaging/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
+	"github.com/runningecosystem/backend/pkg/clientversion"
 	"github.com/runningecosystem/backend/pkg/ratelimit"
 )
 
@@ -95,9 +96,20 @@ func run() error {
 	// Outbox publisher sidecar.
 	go outbox.Run(ctx, outboxRepo, nc, logger)
 
+	// === Outermost middleware stanza (Plan 01-02 / REL-02) ===
+	// Constructor order: pool → handler → versionPolicy → versionedMux.
+	// Plan 01-03 (Wave 2) will insert flagStore between pool and handler.
+	versionPolicy := clientversion.Policy{
+		MinSupported:          envOr("CLIENT_MIN_VERSION", "1.0.0"),
+		ForceUpdateURLAndroid: envOr("FORCE_UPDATE_URL_ANDROID", ""),
+		ForceUpdateURLiOS:     envOr("FORCE_UPDATE_URL_IOS", ""),
+		SkipPaths:             []string{"/healthz", "/metrics"},
+	}
+	versionedMux := clientversion.Middleware(h.Routes(), versionPolicy, logger)
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           h.Routes(),
+		Handler:           versionedMux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

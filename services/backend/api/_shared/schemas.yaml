@@ -1,0 +1,63 @@
+# Shared OpenAPI 3.1.0 schemas.
+# Phase 1 / REL-01.
+#
+# Cross-file $ref target. См. ADR-0007 §1 (API contract format).
+# Cross-file $ref: '../api/<service>.yaml' --> './_shared/schemas.yaml#/components/schemas/<Name>'
+#
+# Owned by phase 1; v1.0.x cleanup will retrofit identity.yaml and
+# activity-sync.yaml to consume from here instead of their inline copies.
+openapi: 3.1.0
+info:
+  title: Running Ecosystem — Shared Schemas
+  description: |
+    Общие OpenAPI 3.1.0 schemas, переиспользуемые всеми сервисами.
+    Phase 1 / REL-01. См. ADR-0007.
+  version: 0.1.0
+paths: {}
+components:
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Машинно-читаемый код ошибки.
+          example: invalid_request
+        message:
+          type: string
+          description: Human-readable пояснение (опционально).
+
+    User:
+      type: object
+      description: Минимальный shape пользователя.
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        locale: { type: string, example: ru }
+        timezone: { type: string, example: UTC }
+
+    Cursor:
+      type: string
+      description: |
+        Непрозрачный курсор для пагинации. Получаем в `nextCursor` ответа,
+        передаём в `cursor` следующего запроса. Сервер кодирует timestamp+id;
+        формат непрозрачный для клиента.
+      example: "eyJ0cyI6IjIwMjYtMDUtMTVUMTI6MDA6MDBaIn0="
+
+    Pagination:
+      type: object
+      description: Стандартная обёртка для cursor-paginated списков.
+      properties:
+        nextCursor:
+          oneOf:
+            - { $ref: '#/components/schemas/Cursor' }
+            - { type: 'null' }
+          description: Курсор следующей страницы. `null` если это последняя.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+          description: Применённый предел (может быть меньше запрошенного).
