@@ -1,0 +1,1056 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`RunDetailsScreen — snapshot regression (PHASE1-09) renders closed-zone summary with area tile, splits, and GPX share button (D-21 + D-22) 1`] = `
+<RCTScrollView
+  contentContainerStyle={
+    {
+      "paddingBottom": 40,
+    }
+  }
+  style={
+    {
+      "backgroundColor": "#0A0A0A",
+      "flex": 1,
+    }
+  }
+>
+  <View>
+    <View
+      style={
+        {
+          "paddingBottom": 12,
+          "paddingHorizontal": 20,
+          "paddingTop": 56,
+        }
+      }
+    >
+      <Text
+        style={
+          {
+            "color": "#FFFFFF",
+            "fontFamily": "system",
+            "fontSize": 32,
+            "fontWeight": "800",
+            "letterSpacing": -1,
+          }
+        }
+      >
+        Готово
+      </Text>
+      <Text
+        style={
+          {
+            "color": "#9A9A9A",
+            "fontFamily": "system",
+            "fontSize": 14,
+            "marginTop": 4,
+          }
+        }
+      >
+        2023-11-14, 22:13:20 (UTC)
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "paddingHorizontal": 20,
+          "paddingTop": 6,
+        }
+      }
+    >
+      <Text
+        style={
+          {
+            "color": "#5E5E5E",
+            "fontFamily": "system",
+            "fontSize": 11,
+            "letterSpacing": 0.5,
+          }
+        }
+      >
+        ДИСТАНЦИЯ
+      </Text>
+      <Text
+        style={
+          {
+            "color": "#FFFFFF",
+            "fontFamily": "system",
+            "fontSize": 64,
+            "fontStyle": "italic",
+            "fontWeight": "800",
+            "letterSpacing": -2,
+          }
+        }
+      >
+        648 м
+      </Text>
+      <View
+        style={
+          {
+            "flexDirection": "row",
+            "flexWrap": "wrap",
+            "gap": 18,
+            "marginTop": 6,
+          }
+        }
+      >
+        <View>
+          <Text
+            style={
+              {
+                "color": "#5E5E5E",
+                "fontFamily": "system",
+                "fontSize": 10,
+                "letterSpacing": 0.5,
+              }
+            }
+          >
+            ВРЕМЯ
+          </Text>
+          <View
+            style={
+              {
+                "alignItems": "baseline",
+                "flexDirection": "row",
+                "gap": 4,
+                "marginTop": 2,
+              }
+            }
+          >
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "system",
+                  "fontSize": 20,
+                  "fontStyle": "italic",
+                  "fontWeight": "800",
+                }
+              }
+            >
+              5:00
+            </Text>
+          </View>
+        </View>
+        <View>
+          <Text
+            style={
+              {
+                "color": "#5E5E5E",
+                "fontFamily": "system",
+                "fontSize": 10,
+                "letterSpacing": 0.5,
+              }
+            }
+          >
+            ТЕМП
+          </Text>
+          <View
+            style={
+              {
+                "alignItems": "baseline",
+                "flexDirection": "row",
+                "gap": 4,
+                "marginTop": 2,
+              }
+            }
+          >
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "system",
+                  "fontSize": 20,
+                  "fontStyle": "italic",
+                  "fontWeight": "800",
+                }
+              }
+            >
+              7:43
+            </Text>
+            <Text
+              style={
+                {
+                  "color": "#9A9A9A",
+                  "fontFamily": "system",
+                  "fontSize": 10,
+                }
+              }
+            >
+              /км
+            </Text>
+          </View>
+        </View>
+        <View>
+          <Text
+            style={
+              {
+                "color": "#5E5E5E",
+                "fontFamily": "system",
+                "fontSize": 10,
+                "letterSpacing": 0.5,
+              }
+            }
+          >
+            ПУЛЬС
+          </Text>
+          <View
+            style={
+              {
+                "alignItems": "baseline",
+                "flexDirection": "row",
+                "gap": 4,
+                "marginTop": 2,
+              }
+            }
+          >
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "system",
+                  "fontSize": 20,
+                  "fontStyle": "italic",
+                  "fontWeight": "800",
+                }
+              }
+            >
+              140
+            </Text>
+            <Text
+              style={
+                {
+                  "color": "#9A9A9A",
+                  "fontFamily": "system",
+                  "fontSize": 10,
+                }
+              }
+            >
+              уд/мин
+            </Text>
+          </View>
+        </View>
+        <View>
+          <Text
+            style={
+              {
+                "color": "#5E5E5E",
+                "fontFamily": "system",
+                "fontSize": 10,
+                "letterSpacing": 0.5,
+              }
+            }
+          >
+            КАЛОРИИ
+          </Text>
+          <View
+            style={
+              {
+                "alignItems": "baseline",
+                "flexDirection": "row",
+                "gap": 4,
+                "marginTop": 2,
+              }
+            }
+          >
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "system",
+                  "fontSize": 20,
+                  "fontStyle": "italic",
+                  "fontWeight": "800",
+                }
+              }
+            >
+              350 ккал
+            </Text>
+          </View>
+        </View>
+        <View>
+          <Text
+            style={
+              {
+                "color": "#5E5E5E",
+                "fontFamily": "system",
+                "fontSize": 10,
+                "letterSpacing": 0.5,
+              }
+            }
+          >
+            ПЛОЩАДЬ
+          </Text>
+          <View
+            style={
+              {
+                "alignItems": "baseline",
+                "flexDirection": "row",
+                "gap": 4,
+                "marginTop": 2,
+              }
+            }
+          >
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "system",
+                  "fontSize": 20,
+                  "fontStyle": "italic",
+                  "fontWeight": "800",
+                }
+              }
+            >
+              5.00 га
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "backgroundColor": "#2A2A2A",
+          "borderRadius": 20,
+          "height": 280,
+          "marginHorizontal": 20,
+          "marginTop": 20,
+          "overflow": "hidden",
+        }
+      }
+    />
+    <View
+      style={
+        {
+          "marginTop": 20,
+          "paddingHorizontal": 20,
+        }
+      }
+    >
+      <Text
+        style={
+          {
+            "color": "#5E5E5E",
+            "fontFamily": "system",
+            "fontSize": 11,
+            "letterSpacing": 0.6,
+            "marginBottom": 10,
+            "textTransform": "uppercase",
+          }
+        }
+      >
+        Круги
+      </Text>
+      <View
+        style={
+          {
+            "paddingHorizontal": 14,
+            "paddingVertical": 4,
+          }
+        }
+        testID="card-stub"
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "borderBottomColor": "rgba(255,255,255,0.06)",
+              "borderBottomWidth": 1,
+              "flexDirection": "row",
+              "paddingVertical": 10,
+            }
+          }
+        >
+          <Text
+            style={
+              {
+                "color": "#9A9A9A",
+                "fontFamily": "system",
+                "fontSize": 13,
+                "fontWeight": "700",
+                "width": 36,
+              }
+            }
+          >
+            1
+          </Text>
+          <Text
+            style={
+              {
+                "color": "#FFFFFF",
+                "flex": 1,
+                "fontFamily": "system",
+                "fontSize": 14,
+                "fontStyle": "italic",
+                "fontWeight": "700",
+              }
+            }
+          >
+            5:00
+          </Text>
+          <Text
+            style={
+              {
+                "color": "#9A9A9A",
+                "fontFamily": "system",
+                "fontSize": 12,
+                "marginRight": 12,
+              }
+            }
+          >
+            1.00 км
+          </Text>
+          <Text
+            style={
+              {
+                "color": "#C6F560",
+                "fontFamily": "system",
+                "fontSize": 14,
+                "fontStyle": "italic",
+                "fontWeight": "700",
+              }
+            }
+          >
+            5:00/км
+          </Text>
+        </View>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "borderBottomColor": "rgba(255,255,255,0.06)",
+              "borderBottomWidth": 0,
+              "flexDirection": "row",
+              "paddingVertical": 10,
+            }
+          }
+        >
+          <Text
+            style={
+              {
+                "color": "#9A9A9A",
+                "fontFamily": "system",
+                "fontSize": 13,
+                "fontWeight": "700",
+                "width": 36,
+              }
+            }
+          >
+            2
+          </Text>
+          <Text
+            style={
+              {
+                "color": "#FFFFFF",
+                "flex": 1,
+                "fontFamily": "system",
+                "fontSize": 14,
+                "fontStyle": "italic",
+                "fontWeight": "700",
+              }
+            }
+          >
+            5:10
+          </Text>
+          <Text
+            style={
+              {
+                "color": "#9A9A9A",
+                "fontFamily": "system",
+                "fontSize": 12,
+                "marginRight": 12,
+              }
+            }
+          >
+            1.00 км
+          </Text>
+          <Text
+            style={
+              {
+                "color": "#FFB020",
+                "fontFamily": "system",
+                "fontSize": 14,
+                "fontStyle": "italic",
+                "fontWeight": "700",
+              }
+            }
+          >
+            5:10/км
+          </Text>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "gap": 10,
+          "marginTop": 24,
+          "paddingHorizontal": 20,
+        }
+      }
+    >
+      <View
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        testID="button-stub"
+      >
+        <Text>
+          Экспорт GPX
+        </Text>
+      </View>
+      <View
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "opacity": 1,
+            "paddingVertical": 14,
+          }
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#FF3B30",
+              "fontFamily": "system",
+              "fontSize": 14,
+              "fontWeight": "600",
+            }
+          }
+        >
+          Удалить пробежку
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "marginTop": 18,
+          "paddingHorizontal": 20,
+        }
+      }
+    >
+      <View
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        testID="button-stub"
+      >
+        <Text>
+          Готово
+        </Text>
+      </View>
+    </View>
+  </View>
+</RCTScrollView>
+`;
+
+exports[`RunDetailsScreen — snapshot regression (PHASE1-09) renders open (non-closure) summary without area tile but with GPX button (D-22) 1`] = `
+<RCTScrollView
+  contentContainerStyle={
+    {
+      "paddingBottom": 40,
+    }
+  }
+  style={
+    {
+      "backgroundColor": "#0A0A0A",
+      "flex": 1,
+    }
+  }
+>
+  <View>
+    <View
+      style={
+        {
+          "paddingBottom": 12,
+          "paddingHorizontal": 20,
+          "paddingTop": 56,
+        }
+      }
+    >
+      <Text
+        style={
+          {
+            "color": "#FFFFFF",
+            "fontFamily": "system",
+            "fontSize": 32,
+            "fontWeight": "800",
+            "letterSpacing": -1,
+          }
+        }
+      >
+        Готово
+      </Text>
+      <Text
+        style={
+          {
+            "color": "#9A9A9A",
+            "fontFamily": "system",
+            "fontSize": 14,
+            "marginTop": 4,
+          }
+        }
+      >
+        2023-11-14, 22:13:20 (UTC)
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "paddingHorizontal": 20,
+          "paddingTop": 6,
+        }
+      }
+    >
+      <Text
+        style={
+          {
+            "color": "#5E5E5E",
+            "fontFamily": "system",
+            "fontSize": 11,
+            "letterSpacing": 0.5,
+          }
+        }
+      >
+        ДИСТАНЦИЯ
+      </Text>
+      <Text
+        style={
+          {
+            "color": "#FFFFFF",
+            "fontFamily": "system",
+            "fontSize": 64,
+            "fontStyle": "italic",
+            "fontWeight": "800",
+            "letterSpacing": -2,
+          }
+        }
+      >
+        383 м
+      </Text>
+      <View
+        style={
+          {
+            "flexDirection": "row",
+            "flexWrap": "wrap",
+            "gap": 18,
+            "marginTop": 6,
+          }
+        }
+      >
+        <View>
+          <Text
+            style={
+              {
+                "color": "#5E5E5E",
+                "fontFamily": "system",
+                "fontSize": 10,
+                "letterSpacing": 0.5,
+              }
+            }
+          >
+            ВРЕМЯ
+          </Text>
+          <View
+            style={
+              {
+                "alignItems": "baseline",
+                "flexDirection": "row",
+                "gap": 4,
+                "marginTop": 2,
+              }
+            }
+          >
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "system",
+                  "fontSize": 20,
+                  "fontStyle": "italic",
+                  "fontWeight": "800",
+                }
+              }
+            >
+              5:00
+            </Text>
+          </View>
+        </View>
+        <View>
+          <Text
+            style={
+              {
+                "color": "#5E5E5E",
+                "fontFamily": "system",
+                "fontSize": 10,
+                "letterSpacing": 0.5,
+              }
+            }
+          >
+            ТЕМП
+          </Text>
+          <View
+            style={
+              {
+                "alignItems": "baseline",
+                "flexDirection": "row",
+                "gap": 4,
+                "marginTop": 2,
+              }
+            }
+          >
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "system",
+                  "fontSize": 20,
+                  "fontStyle": "italic",
+                  "fontWeight": "800",
+                }
+              }
+            >
+              13:03
+            </Text>
+            <Text
+              style={
+                {
+                  "color": "#9A9A9A",
+                  "fontFamily": "system",
+                  "fontSize": 10,
+                }
+              }
+            >
+              /км
+            </Text>
+          </View>
+        </View>
+        <View>
+          <Text
+            style={
+              {
+                "color": "#5E5E5E",
+                "fontFamily": "system",
+                "fontSize": 10,
+                "letterSpacing": 0.5,
+              }
+            }
+          >
+            ПУЛЬС
+          </Text>
+          <View
+            style={
+              {
+                "alignItems": "baseline",
+                "flexDirection": "row",
+                "gap": 4,
+                "marginTop": 2,
+              }
+            }
+          >
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "system",
+                  "fontSize": 20,
+                  "fontStyle": "italic",
+                  "fontWeight": "800",
+                }
+              }
+            >
+              140
+            </Text>
+            <Text
+              style={
+                {
+                  "color": "#9A9A9A",
+                  "fontFamily": "system",
+                  "fontSize": 10,
+                }
+              }
+            >
+              уд/мин
+            </Text>
+          </View>
+        </View>
+        <View>
+          <Text
+            style={
+              {
+                "color": "#5E5E5E",
+                "fontFamily": "system",
+                "fontSize": 10,
+                "letterSpacing": 0.5,
+              }
+            }
+          >
+            КАЛОРИИ
+          </Text>
+          <View
+            style={
+              {
+                "alignItems": "baseline",
+                "flexDirection": "row",
+                "gap": 4,
+                "marginTop": 2,
+              }
+            }
+          >
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "system",
+                  "fontSize": 20,
+                  "fontStyle": "italic",
+                  "fontWeight": "800",
+                }
+              }
+            >
+              350 ккал
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "backgroundColor": "#2A2A2A",
+          "borderRadius": 20,
+          "height": 280,
+          "marginHorizontal": 20,
+          "marginTop": 20,
+          "overflow": "hidden",
+        }
+      }
+    />
+    <View
+      style={
+        {
+          "gap": 10,
+          "marginTop": 24,
+          "paddingHorizontal": 20,
+        }
+      }
+    >
+      <View
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        testID="button-stub"
+      >
+        <Text>
+          Экспорт GPX
+        </Text>
+      </View>
+      <View
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "opacity": 1,
+            "paddingVertical": 14,
+          }
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#FF3B30",
+              "fontFamily": "system",
+              "fontSize": 14,
+              "fontWeight": "600",
+            }
+          }
+        >
+          Удалить пробежку
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "marginTop": 18,
+          "paddingHorizontal": 20,
+        }
+      }
+    >
+      <View
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        testID="button-stub"
+      >
+        <Text>
+          Готово
+        </Text>
+      </View>
+    </View>
+  </View>
+</RCTScrollView>
+`;
