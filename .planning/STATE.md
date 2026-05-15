@@ -112,9 +112,9 @@ Items acknowledged and carried forward:
 
 Last session: 2026-05-15 — Plan 01-03 (Feature Flags) executed end-to-end on `feat/cursona-redesign`. 5 commits 9d70f01..1e78ee0. Migration 0021 + pkg/featureflags + identity admin endpoints + 8-service flagStore wiring + admin UI Feature flags section + mobile Zustand+MMKV store with auth-aware refresh/clearAll lifecycle. 33 new tests; backend pkg/featureflags + clientversion + permissions all green; mobile 567 tests + tsc clean.
 Stopped at: Phase 1 code-complete. Three follow-ups deferred to v1.0.x or deployment: (1) migration apply on running stack at 148-253-214-156.sslip.io, (2) OpenAPI YAML extension with `/featureflags` paths in identity.yaml, (3) live curl smoke against running admin endpoints.
-Resume file: `.planning/phases/01-release-contract-and-version-baseline/01-03-SUMMARY.md`.
+Resume file: `.planning/phases/02-secrets-and-config-hardening/02-CONTEXT.md` (Phase 2 context gathered 2026-05-15 in autonomous mode; 20 decisions D-01..D-20 across 15 gray areas).
 
-**Next action**: `/gsd-plan-phase 1` to break Phase 1 into atomic plans. Researcher should investigate: OpenAPI 3.1.0 best practices for service-per-file pattern, Go 1.22+ mux extraction patterns for CI route-spec drift check, percentage-rollout hash function selection (FNV-1a vs xxhash for `(user_id, flag)` determinism), `expo-application` version-stamping hook placement in `apiClient.ts`.
+**Next action**: `/gsd-plan-phase 2` to break Phase 2 into atomic plans. Researcher should investigate: `age` v1.x + SOPS v3.x current state + multi-recipient key rotation; gitleaks ruleset for Mapbox `sk.`/`pk.` patterns + entropy-detection tuning; trufflehog vs gitleaks complementary CI strategy; `sops --output-type=dotenv` integration with `docker-compose --env-file`; pre-commit hook performance benchmarks (<5s budget on staged-files-only scope); SOPS edit workflow (`EDITOR=vim sops .secrets/prod/shared.yaml`).
 
 ## Artifacts Created (cumulative)
 
