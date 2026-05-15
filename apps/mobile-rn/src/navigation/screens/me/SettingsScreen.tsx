@@ -227,6 +227,45 @@ export function SettingsScreen() {
         </Section>
       ) : null}
 
+      {/* Offline карта — PHASE1-10 / P1-K-04 */}
+      <Section title="Офлайн-карта" t={t}>
+        <Pressable onPress={() => nav.navigate('RegionPicker')}>
+          {({ pressed }) => (
+            <View
+              style={{
+                paddingVertical: 14,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                opacity: pressed ? 0.6 : 1,
+              }}
+            >
+              <Text
+                style={{
+                  color: t.text,
+                  fontSize: 15 * t.fontScale,
+                  fontWeight: '600',
+                  fontFamily: t.font,
+                }}
+              >
+                Загрузить регион
+              </Text>
+              <Icon name="forward" size={20} color={t.text3} />
+            </View>
+          )}
+        </Pressable>
+        <Text
+          style={{
+            color: t.text3,
+            fontSize: 12 * t.fontScale,
+            fontFamily: t.font,
+            paddingBottom: 8,
+          }}
+        >
+          Выбрать произвольную область карты для офлайн-доступа.
+        </Text>
+      </Section>
+
       {/* About */}
       <Section title="О приложении" t={t}>
         <Row label="Версия" value={APP_VERSION} t={t} />

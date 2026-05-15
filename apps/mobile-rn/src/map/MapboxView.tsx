@@ -16,6 +16,10 @@ export type MapboxViewProps = {
   /** Если true — камера следует за пользователем (zoom = 16 по умолчанию). */
   followUserLocation?: boolean;
   followZoomLevel?: number;
+  /** Начальная позиция камеры (lng, lat). Игнорируется если followUserLocation=true. */
+  centerCoordinate?: [number, number];
+  /** Начальный zoom-уровень при followUserLocation=false. По умолчанию 13. */
+  zoomLevel?: number;
   /** Произвольное содержимое (наши Layer-компоненты из ./components/). */
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
@@ -31,6 +35,8 @@ export function MapboxView({
   styleUrl,
   followUserLocation = true,
   followZoomLevel = 16,
+  centerCoordinate,
+  zoomLevel = 13,
   children,
   style,
 }: MapboxViewProps) {
@@ -48,6 +54,13 @@ export function MapboxView({
       <Camera
         followUserLocation={followUserLocation}
         followZoomLevel={followZoomLevel}
+        // При followUserLocation=false camera центрируется на centerCoordinate.
+        // Mapbox v10 Camera принимает defaultSettings для начальной позиции.
+        defaultSettings={
+          !followUserLocation && centerCoordinate
+            ? { centerCoordinate, zoomLevel }
+            : undefined
+        }
       />
       {children}
     </MapView>

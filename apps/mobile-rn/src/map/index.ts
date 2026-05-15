@@ -8,6 +8,8 @@ export { TrackLayer } from './components/TrackLayer';
 export { ZoneLayer } from './components/ZoneLayer';
 export { CorridorLayer } from './components/CorridorLayer';
 export { HistoryTerritoryLayer } from './components/HistoryTerritoryLayer';
+export { RegionPickerOverlay, rectanglePolygon } from './components/RegionPickerOverlay';
+export type { Corner, CornerCoord } from './components/regionPickerTypes';
 export {
   createCustomPack,
   deleteHomeRegion,

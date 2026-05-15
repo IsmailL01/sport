@@ -27,6 +27,7 @@ import { RecordsScreen } from './screens/me/RecordsScreen';
 import { StatsScreen } from './screens/me/StatsScreen';
 import { WalletScreen } from './screens/me/WalletScreen';
 import { ShopScreen } from './screens/me/ShopScreen';
+import { RegionPickerScreen } from './screens/me/RegionPickerScreen';
 
 // Chats stack — Phase M9 real screens.
 import { ChatsListScreen } from './screens/chats/ChatsListScreen';
@@ -102,6 +103,7 @@ function MeStackNav() {
       <MStack.Screen name="Stats" component={StatsScreen} />
       <MStack.Screen name="Wallet" component={WalletScreen} />
       <MStack.Screen name="Shop" component={ShopScreen} />
+      <MStack.Screen name="RegionPicker" component={RegionPickerScreen} />
     </MStack.Navigator>
   );
 }

@@ -89,6 +89,8 @@ export type MeStackParamList = {
   Wallet: undefined;
   /** Магазин (траты валюты — Round 3 scaffold). */
   Shop: undefined;
+  /** PHASE1-10: manual offline tile-region picker (см. CONTEXT.md D-23..D-26). */
+  RegionPicker: undefined;
 };
 
 // === Screen props helpers ===
