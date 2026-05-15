@@ -123,6 +123,11 @@ tests/gpx/
 !tests/gpx/reference/*.gpx
 !tests/runs/**/*.gpx
 
+# ===== Python (smoke scripts) =====
+__pycache__/
+*.pyc
+*.pyo
+
 # ===== Прочее =====
 *.tsbuildinfo
 .cache/
