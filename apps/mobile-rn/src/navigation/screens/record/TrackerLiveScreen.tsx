@@ -302,6 +302,7 @@ export function TrackerLiveScreen() {
         </Pressable>
 
         <Pressable
+          testID="tracker-stop-button"
           onPress={handleStop}
           style={({ pressed }) => ({
             flex: 1,
