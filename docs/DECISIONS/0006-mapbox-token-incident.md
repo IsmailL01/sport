@@ -142,17 +142,23 @@ Chain-of-custody через chat с AI-ассистентом **не отзыв�
   - 2FA на Mapbox-аккаунте — рекомендация владельцу проекта.
   - Credentials аккаунта (`iassd` / `dragon2015516@gmail.com`) хранятся в 1Password — out-of-scope SOPS, но cross-referenced.
 
-### Phase B (PENDING USER VERIFICATION — Plan 02-04 Task 3)
+### Phase B — VERIFIED 2026-05-16 (Plan 02-04 Task 1 closeout)
 
-⚠️ **PENDING USER VERIFICATION в Phase B (Task 3 этого плана):** статус Bundle ID + Android SHA-256 restriction UI в Mapbox dashboard на 2026-05 имеет **MEDIUM confidence** (RESEARCH Pitfall 9). Mapbox public docs (`docs.mapbox.com/help/dive-deeper/access-tokens/`) на дату 2026-05-15 описывают URL restrictions, но НЕ Bundle ID / SHA-256 restrictions как публично-документированную фичу. Pre-v1.0 `docs/SECRETS.md` (line 219) задокументировал, что restriction БЫЛА применена к `prod-public` в 2026-05, значит фича существовала на тот момент.
+✅ **Verdict (A) — Available as documented.** Bundle ID + Android SHA-256 restriction UI подтверждена user'ом 2026-05-16 в `https://account.mapbox.com/access-tokens` → **Create a token** → Restrictions section:
 
-Возможные verdicts user'а после открытия dashboard:
+- iOS Bundle ID field: present (text input, формат reverse-DNS — будет выставлен `com.runningecosystem.mobile`)
+- Android Application Restrictions field: present (text input, accepts SHA-256 fingerprint — будут выставлены debug + production keystore SHA-256)
 
-- **(A) Available as documented** — Bundle ID `com.runningecosystem.mobile` + Android SHA-256 fingerprint UI присутствует. **Apply on new pk. tokens.** ADR этого ADR-trail обновляется с дополнительной записью «(A) confirmed 2026-05-16».
-- **(B) Partial** — присутствует только iOS Bundle ID ИЛИ только Android SHA-256. **Apply available; document missing platform.** Fallback для missing-platform = URL restrictions (если домен есть) + scope minimization.
-- **(C) Unavailable** — только URL restrictions выставлены в UI. **Fallback:** scope minimization (см. Phase A выше) + 6-month rotation schedule + repo-wide pre-commit + CI gitleaks + ESLint v9 guard.
+**Применение в Task 3 этого плана:** все три новых runtime-pk. токена (`sport-mobile-runtime-pk-prod-2026-05`, `sport-mobile-runtime-pk-staging-2026-05`, `sport-mobile-runtime-pk-dev-2026-05`) создаются с обоими restrictions включёнными. Build-time `sk.` токен — без URL/Bundle restrictions (sk. живёт только в CI/build environment).
 
-Выбранный verdict записывается в `02-04-SUMMARY.md` Phase B closeout + обновляется в `docs/SECRETS.md` §«Текущий стейт токенов».
+**Закрытие Pitfall 9 (RESEARCH §Pitfall 9):** MEDIUM confidence flipped to **HIGH confidence** на дату 2026-05-16. Fallback ветви (B/C) больше не активны для v1.0 — но остаются документированными ниже на случай, если Mapbox изменит UI в будущем (тогда — `Сценарии пересмотра` ниже).
+
+**Архив отброшенных fallback-ов** (для historical context, на случай UI-deprecation):
+
+- _(B) Partial fallback (NOT APPLIED):_ только одна из двух платформ имеет restriction → URL fallback для missing-платформы.
+- _(C) No-restriction fallback (NOT APPLIED):_ только scope minimization + 6-month calendar rotation + Phase 4 CI gitleaks + ESLint v9 guard.
+
+Verdict + дата записаны в `02-04-SUMMARY.md` Phase B closeout. `docs/SECRETS.md` §«Текущий стейт токенов» отражает статус restrictions после Task 4 завершения.
 
 ## Сценарии пересмотра
 
