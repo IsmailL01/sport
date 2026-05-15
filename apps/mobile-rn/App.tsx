@@ -25,6 +25,7 @@ import { expoSpeechAdapter } from './src/util/expoSpeechAdapter';
 import { ThemeProvider } from './src/design';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { ToastProvider } from './src/ui/Toast';
+import { ForceUpdateScreen } from './src/ui/screens/ForceUpdateScreen';
 
 // === Module-level side effects ===
 
@@ -84,6 +85,10 @@ export default function App() {
               </Text>
             ) : null}
             <RootNavigator />
+            {/* REL-02: блокирующий полноэкранный Modal активируется когда
+                useForceUpdateStore.required = true (выставляется apiClient
+                на HTTP 426). При required=false компонент возвращает null. */}
+            <ForceUpdateScreen />
           </ToastProvider>
         </ThemeProvider>
       </SafeAreaProvider>

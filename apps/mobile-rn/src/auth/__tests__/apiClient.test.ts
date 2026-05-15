@@ -64,7 +64,8 @@ describe('ApiClient — X-Client-Version stamping + 426 handling', () => {
     await apiClient.api('/test', { method: 'GET' });
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const callArgs = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    const init = callArgs[1];
     const headers = init.headers as Headers;
     expect(headers.get('X-Client-Version')).toBe('1.0.0 (42)');
   });

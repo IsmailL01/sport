@@ -1,6 +1,20 @@
 // HTTP-клиент с автоматическим refresh access-токена при 401.
 // Не использует axios — fetch достаточен.
+//
+// Phase 1 / REL-02 additions:
+//   - X-Client-Version header стампится на каждом outbound запросе
+//     (значение читается через src/util/version.ts → expo-application).
+//   - HTTP 426 (Upgrade Required) перехватывается на низком уровне (doFetch,
+//     ДО 401-refresh-retry path), потому что слишком старый клиент НЕ
+//     сможет обновить JWT — refresh бы тоже вернул 426 и завёл бы пользователя
+//     в круг. Перехват срабатывает один раз → useForceUpdateStore.set(...)
+//     → ForceUpdateScreen рендерится поверх всего и блокирует UX.
+//   - 426 response отдаётся caller'у БЕЗ изменений (не throw, не swallow).
 
+import { Platform } from 'react-native';
+
+import { useForceUpdateStore } from '../state/forceUpdate';
+import { getClientVersionHeader } from '../util/version';
 import { clearTokens, loadTokens, saveTokens } from './tokenStorage';
 
 const IDENTITY_BASE =
@@ -30,6 +44,39 @@ export function parseRateLimit(resp: Response): { retryAfterS: number } | null {
   const h = resp.headers.get('Retry-After') ?? resp.headers.get('retry-after');
   const n = h !== null ? parseInt(h, 10) : NaN;
   return { retryAfterS: Number.isFinite(n) && n > 0 ? n : 60 };
+}
+
+/**
+ * REL-02: разобрать 426 Upgrade Required body и активировать
+ * useForceUpdateStore. Безопасен к unparseable body — fallback на пустые
+ * строки + console.warn.
+ *
+ * Тело сервера соответствует api/_shared/responses.yaml#/UpgradeRequired:
+ *   { error: "client_too_old", min_version, force_update_url_android, force_update_url_ios }
+ */
+async function handleUpgradeRequired(resp: Response): Promise<void> {
+  type Body = {
+    error?: string;
+    min_version?: string;
+    force_update_url_android?: string;
+    force_update_url_ios?: string;
+  };
+  let body: Body | null = null;
+  try {
+    // Клонируем — оригинал отдадим caller'у с не-вычитанным body.
+    body = (await resp.clone().json()) as Body;
+  } catch (e) {
+    console.warn('[apiClient] 426 body unparseable', e);
+  }
+  const url =
+    Platform.OS === 'ios'
+      ? body?.force_update_url_ios ?? ''
+      : body?.force_update_url_android ?? '';
+  useForceUpdateStore.getState().set({
+    required: true,
+    minVersion: body?.min_version ?? '',
+    forceUpdateUrl: url,
+  });
 }
 
 export class ApiClient {
@@ -114,7 +161,18 @@ export class ApiClient {
     if (init.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
-    return fetch(`${base}${path}`, { ...init, headers });
+    // REL-02: каждый outbound запрос несёт X-Client-Version.
+    headers.set('X-Client-Version', getClientVersionHeader());
+
+    const resp = await fetch(`${base}${path}`, { ...init, headers });
+
+    // REL-02: HTTP 426 → активируем ForceUpdateScreen. Делаем это в doFetch
+    // (ниже 401-refresh-retry), потому что слишком старый клиент не сможет
+    // обновить JWT — 426 обоим. См. ADR-0007 §2.
+    if (resp.status === 426) {
+      await handleUpgradeRequired(resp);
+    }
+    return resp;
   }
 
   private async tryRefresh(): Promise<boolean> {
