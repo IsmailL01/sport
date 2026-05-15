@@ -75,7 +75,7 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 **Plans**: 4 plans across 3 waves
 - [ ] `02-01-PLAN-sops-scaffold.md` — SOPS+age scaffold + 9 encrypted .secrets/<env>/{shared,mapbox,oauth}.yaml + Pitfall-1 round-trip smoke (SEC-02) — Wave 1 — autonomous=false (Task 0 needs per-dev age keys)
 - [ ] `02-02-PLAN-envrequire-and-devmode.md` — envRequire across 8 services + IDENTITY_DEV_MODE flip + isLocalDBURL prod-detection + smoke_otp.py SMOKE_DEV_MODE flip (SEC-05, SEC-06, SEC-09) — Wave 1 — autonomous (independent of 02-01)
-- [ ] `02-03-PLAN-scanners-and-precommit.md` — .gitleaks.toml + custom Mapbox rules + .pre-commit-config.yaml + Makefile scan-secrets + init-pre-commit.sh + one-time full-history scan (SEC-01, SEC-08) — Wave 2 (depends on 02-01 for .secrets/** path coverage)
+- [x] `02-03-PLAN-scanners-and-precommit.md` — .gitleaks.toml + custom Mapbox rules + .pre-commit-config.yaml + Makefile scan-secrets + init-pre-commit.sh + one-time full-history scan (SEC-01, SEC-08) — Wave 2 (depends on 02-01 for .secrets/** path coverage) — **DONE 2026-05-16, commits 28acb2d..9c101a4, 0 findings in full-history scan**
 - [ ] `02-04-PLAN-mapbox-incident-and-docs.md` — ADR-0006 + sops-edit RUNBOOK + 10-playbook SECRETS.md extension + Mapbox dashboard rotation USER ACTION + SOPS-populate new tokens (SEC-03, SEC-04, SEC-07) — Wave 3 — autonomous=false (Tasks 1+3 are user-action checkpoints)
 **Maps to existing plan**: New scope (v1.0 hardening); no pre-v1.0 P-IDs apply. SEC-03/04 inherit context from pre-v1.0 archive 01-08-SUMMARY.md (Mapbox token chat-leak inventory).
 

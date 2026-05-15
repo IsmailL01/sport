@@ -20,14 +20,14 @@ Total: **96 REQ-IDs across 21 phases**.
 
 ### Phase 2 — Secrets & Config Hardening (SEC)
 
-- [ ] **SEC-01**: `gitleaks` + `trufflehog` run on full clone (`--no-shallow`) report zero findings
+- [ ] **SEC-01**: `gitleaks` + `trufflehog` run on full clone (`--no-shallow`) report zero findings — configs + one-time scan DONE 2026-05-16 (Plan 02-03, 0 findings across 160 commits); CI invocation deferred to Phase 4 / CICD-01
 - [ ] **SEC-02**: SOPS-encrypted secrets in `.secrets/` for all 10 secret types (Mapbox public, Mapbox secret, Postgres, NATS, MinIO, Expo Push, Google OAuth, Apple OAuth, Strava OAuth, Caddy ACME)
 - [ ] **SEC-03**: Mapbox token **incident reset** — rotate BOTH deferred `pk.→sk.` CI token AND production runtime `pk.*` token; old tokens REVOKED in dashboard
 - [ ] **SEC-04**: `docs/DECISIONS/0006-mapbox-token-incident.md` documents the rotation as treated-as-compromise incident
 - [ ] **SEC-05**: `IDENTITY_DEV_MODE=true` default removed from identity service (CONCERNS.md P0)
 - [ ] **SEC-06**: 12-factor config split — no hardcoded URLs/keys/tokens in code; all via env vars sourced from SOPS
 - [ ] **SEC-07**: Rotation playbooks in `docs/SECRETS.md` for all 10 secret types
-- [ ] **SEC-08**: Pre-commit hook scanning for AWS/AKIA/GitHub PAT/Mapbox `sk.` patterns
+- [x] **SEC-08**: Pre-commit hook scanning for AWS/AKIA/GitHub PAT/Mapbox `sk.` patterns — DONE 2026-05-16 (Plan 02-03, commits 28acb2d..9c101a4)
 - [ ] **SEC-09**: Secret loading audit: every Go service starts with SOPS-decrypt-on-boot, never with inline values
 
 ### Phase 3 — Infrastructure as Code (INFRA)

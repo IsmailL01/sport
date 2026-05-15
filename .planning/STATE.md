@@ -14,11 +14,11 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 ## Current Position
 
 Phase: **2 of 21** (Secrets & config hardening) — `backend` workstream
-Plan: 02-01 (SOPS+age scaffold) executed + 02-02 (envRequire + DEV_MODE) executed; 02-03 (scanners + pre-commit) and 02-04 (Mapbox incident + docs) pending
-Status: Phase 2 substrate complete — SOPS encryption + envRequire fail-fast both shipped. Remaining work: gitleaks/trufflehog/pre-commit wiring (02-03) and ADR-0006 + Mapbox dashboard rotation (02-04).
-Last activity: 2026-05-15 — Plan 02-01 executed: `.sops.yaml` + 9 encrypted `.secrets/<env>/{shared,mapbox,oauth}.yaml` slot files + `verify_sops_roundtrip.sh` smoke test (Pitfall 1 guard). DEV_A age recipient registered; DEV_B pending pubkey delivery (TODO in `.sops.yaml`, `sops updatekeys` rotation playbook in `.secrets/README.md`). 3 atomic commits 5e73162..04f44b8.
+Plan: 02-01 (SOPS+age scaffold) + 02-02 (envRequire + DEV_MODE) + 02-03 (scanners + pre-commit) executed; 02-04 (Mapbox incident + docs) pending
+Status: Phase 2 substrate + scanners complete — SOPS encryption + envRequire fail-fast + gitleaks/trufflehog/pre-commit all shipped. Remaining work: ADR-0006 + Mapbox dashboard rotation (02-04, requires user action).
+Last activity: 2026-05-16 — Plan 02-03 executed: `.gitleaks.toml` (extends default + 2 custom Mapbox rules + 4 allowlists), `.pre-commit-config.yaml` (pinned v8.30.1), `.trufflehog/config.yaml`, `make scan-secrets` Makefile target, `init-pre-commit.sh` idempotent installer, full-history scan (160 commits, ZERO findings via gitleaks + trufflehog), `docs/SECRETS.md ## Incident Log` skeleton. 3 atomic commits 28acb2d..9c101a4. SEC-08 closed; SEC-01 partial (CI wiring deferred to Phase 4 / CICD-01).
 
-Progress: [▓░░░░░░░░░] ~7% of new v1.0 scope (REL-01..05 + SEC-02-substrate + SEC-05/06/09 delivered; 7-of-96 REQ-IDs complete, SEC-02 substrate-only pending 02-03/02-04 closure)
+Progress: [▓░░░░░░░░░] ~9% of new v1.0 scope (REL-01..05 + SEC-02-substrate + SEC-05/06/08/09 delivered; 8-of-96 REQ-IDs complete, SEC-01 partial pending Phase 4 CI wiring, SEC-02 substrate-only pending 02-04 closure)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
 
 **Next phase (gated):** Phase 2 (Secrets & config hardening) — `backend` workstream. NON-NEGOTIABLE prerequisite for all subsequent phases. **Strict no-parallelization with Phase 3** per user redline.
@@ -34,14 +34,16 @@ Progress: [▓░░░░░░░░░] ~7% of new v1.0 scope (REL-01..05 + S
 | Phase | Plans | Total       | Avg/Plan |
 |-------|-------|-------------|----------|
 | 1     | 3     | ~3.5h total | ~70 min  |
-| 2     | 2/4   | ~22 min so far | ~11 min  |
+| 2     | 3/4   | ~27 min so far | ~9 min   |
 
 Plan 01-03 actual: ~75 min (single executor pass, 5 commits, 33 new tests).
 Plan 02-01 actual: ~12 min (single executor pass, 3 commits, 14 created files, Pitfall 1 round-trip smoke green for dev/staging/prod).
 Plan 02-02 actual: ~10 min (per 02-02-SUMMARY metrics).
+Plan 02-03 actual: ~5 min (single executor pass, 3 commits 28acb2d..9c101a4; 6 created files + 2 modified; full-history scan ZERO findings).
 
 **Recent Trend:**
-- Last activity: 2026-05-15 — Plan 02-01 SOPS+age scaffold shipped (SEC-02 substrate; commits 5e73162..04f44b8).
+- Last activity: 2026-05-16 — Plan 02-03 scanners + pre-commit shipped (SEC-08 closed; SEC-01 partial pending Phase 4 CI; commits 28acb2d..9c101a4).
+- 2026-05-15 — Plan 02-01 SOPS+age scaffold shipped (SEC-02 substrate; commits 5e73162..04f44b8).
 - 2026-05-15 — Plan 02-02 envRequire + DEV_MODE shipped (SEC-05/06/09; 8 services migrated, 10 new test cases).
 - 2026-05-15 — Plan 01-03 Feature Flags end-to-end shipped (REL-03); Phase 1 code-complete.
 - 2026-05-15 — Plan 01-02 Version Negotiation (REL-02) shipped (8 services + mobile X-Client-Version).
@@ -115,11 +117,11 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-15 — Plan 01-03 (Feature Flags) executed end-to-end on `feat/cursona-redesign`. 5 commits 9d70f01..1e78ee0. Migration 0021 + pkg/featureflags + identity admin endpoints + 8-service flagStore wiring + admin UI Feature flags section + mobile Zustand+MMKV store with auth-aware refresh/clearAll lifecycle. 33 new tests; backend pkg/featureflags + clientversion + permissions all green; mobile 567 tests + tsc clean.
-Stopped at: Phase 1 code-complete. Three follow-ups deferred to v1.0.x or deployment: (1) migration apply on running stack at 148-253-214-156.sslip.io, (2) OpenAPI YAML extension with `/featureflags` paths in identity.yaml, (3) live curl smoke against running admin endpoints.
-Resume file: `.planning/phases/02-secrets-and-config-hardening/02-CONTEXT.md` (Phase 2 context gathered 2026-05-15 in autonomous mode; 20 decisions D-01..D-20 across 15 gray areas).
+Last session: 2026-05-16 — Plan 02-03 (Scanners + Pre-commit) closed end-to-end. 3 atomic commits `28acb2d..9c101a4`. Custom Mapbox `sk.`/`pk.` gitleaks rules close RESEARCH Pitfall 2; pre-commit pinned to v8.30.1; `make scan-secrets` Makefile target + `init-pre-commit.sh` idempotent installer; full-history scan via gitleaks `--log-opts="--all"` + trufflehog `--only-verified` → ZERO findings across 160 commits / 5.55 MB; `docs/SECRETS.md ## Incident Log` skeleton in place. Smoke tests: synthetic `sk.…` literal blocked (exit 1); allowlisted lint-fixture passes (exit 0); `pre-commit run gitleaks --all-files` PASSED on real repo; auto-hook fired on Task 2 + Task 3 commits, both passed.
+Stopped at: 02-03 complete. SEC-08 closed. SEC-01 partial (configs + clean history scan; CI invocation deferred to Phase 4 / CICD-01). Plan 02-04 (Mapbox dashboard rotation — `autonomous: false`) is the next user-action checkpoint.
+Resume file: `.planning/phases/02-secrets-and-config-hardening/02-04-PLAN-*.md` (next plan).
 
-**Next action**: `/gsd-plan-phase 2` to break Phase 2 into atomic plans. Researcher should investigate: `age` v1.x + SOPS v3.x current state + multi-recipient key rotation; gitleaks ruleset for Mapbox `sk.`/`pk.` patterns + entropy-detection tuning; trufflehog vs gitleaks complementary CI strategy; `sops --output-type=dotenv` integration with `docker-compose --env-file`; pre-commit hook performance benchmarks (<5s budget on staged-files-only scope); SOPS edit workflow (`EDITOR=vim sops .secrets/prod/shared.yaml`).
+**Next action**: Surface 02-04 user_setup requirements (Mapbox dashboard token rotation — 5 tokens treated as compromised due to Phase 0 chat-leak) as Wave 3 checkpoint via `/gsd-execute-phase 2`.
 
 ## Artifacts Created (cumulative)
 
