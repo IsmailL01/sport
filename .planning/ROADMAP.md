@@ -37,7 +37,22 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. After Stop+Save, the user lands on a Summary screen with a full-map territory render; user can open a manual offline-region picker UI and download a custom region; closure of a zone triggers haptic + toast.
   4. Mapbox `server-secret` is a real `sk.…` token with Android SHA-256 fingerprint restriction; no secret token strings remain in chat history or `.env` checked into git; ESLint guard rejects `EXPO_PUBLIC_*_SECRET`.
   5. `STATUS.md` and `docs/DEVELOPMENT_PLAN.md` mark Phase 1 as closed; ADR captures any field-test surprises or deferred follow-ups.
-**Plans**: TBD
+**Plans**: 10 plans
+- [ ] 01-01-PLAN-refactor-session-manager.md — SessionManager extraction + real-SQLite tests (PHASE1-07)
+- [ ] 01-02-PLAN-tracker-hooks.md — extract useTrackerCamera/useLayerVisibility/usePauseUI (PHASE1-06)
+- [ ] 01-03-PLAN-closure-feedback.md — expo-haptics + Toast + closure feedback hook (PHASE1-08)
+- [ ] 01-04-PLAN-summary-screen-verify.md — nav verify + RunDetailsScreen snapshot (PHASE1-09)
+- [ ] 01-05-PLAN-big-track-simplify.md — turf/simplify dual-source for TrackLayer + History (PHASE1-05)
+- [ ] 01-06-PLAN-offline-region-picker.md — fix offline.ts bounds bug + RegionPickerScreen (PHASE1-10)
+- [ ] 01-07-PLAN-adaptive-sampling-slc.md — setSamplingMode + iOS gap-resume (PHASE1-11, PHASE1-12)
+- [ ] 01-08-PLAN-token-rotation-lint.md — SECRETS.md + ESLint guard + rotation checkpoint (PHASE1-13)
+- [ ] 01-09-PLAN-field-test-execution.md — field protocol T1/T2/T6/T7/T8/T9 on 3 OEMs (PHASE1-01..04)
+- [ ] 01-10-PLAN-phase-1-closure-docs.md — STATUS + DEV_PLAN + STATE + ROADMAP + ADR-0005 (PHASE1-14)
+**Wave structure**:
+  - **Wave 1** (4 plans, fully parallel): 01, 02, 06, 08
+  - **Wave 2** (4 plans): 03 (deps 02), 04 (deps 02), 05 (deps 02), 07 (deps 01)
+  - **Wave 3** (1 plan): 09 (deps 01–08)
+  - **Wave 4** (1 plan): 10 (deps 01–09)
 **Maps to existing plan**: `P1-B` (MapScreen refactor), `P1-C` (SessionManager extraction), `P1-D-04` (big-track simplification), `P1-G-09` (closure haptic + toast), `P1-I-02` (SignificantLocationChanges), `P1-I-05` (adaptive sampling), `P1-J-05` (summary screen with big map), `P1-K-04` (manual offline region UI), `P1-M T1..T15` (field protocol).
 **Concerns to address (from `.planning/codebase/CONCERNS.md`)**: token rotation (`docs/SECRETS.md` TODOs); split `useActivityStore` god-store as part of P1-C SessionManager extraction; add SQLite real-DB integration tests (R5) alongside any storage changes; resume-from-crash path (R: recoverLast).
 **UI hint**: no
@@ -153,7 +168,7 @@ Phase 8 (GDPR & Compliance) must complete before public launch but may start in 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Validate & Close Territory Core | 0/TBD | Not started | - |
+| 1. Validate & Close Territory Core | 0/10 | Planned | - |
 | 2. Real Health Integrations | 0/TBD | Not started | - |
 | 3. Cursona Redesign Wrap | 0/TBD | Not started | - |
 | 4. Privacy Zones & Visibility | 0/TBD | Not started | - |
