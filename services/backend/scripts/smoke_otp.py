@@ -22,10 +22,13 @@ import urllib.request
 import uuid
 
 BASE = os.environ.get("BASE_URL", "https://148-253-214-156.sslip.io")
-# Phase M9.5: identity service в IDENTITY_DEV_MODE=true принимает ЛЮБОЙ
-# 6-значный код (для тестов с APK без email). Smoke в этом режиме
-# пропускает шаги, проверяющие strict-OTP (reuse-401, wrong-401).
-DEV_MODE = os.environ.get("SMOKE_DEV_MODE", "true") == "true"
+# Phase M9.5 → Phase 2 / SEC-05: default flipped to false to match identity
+# service default. Set SMOKE_DEV_MODE=true explicitly for local-only OTP-relaxed
+# smoke (against a localhost identity service with IDENTITY_DEV_MODE=true).
+# Russian context: identity-service в IDENTITY_DEV_MODE=true принимает ЛЮБОЙ
+# 6-значный код (для тестов с APK без email); этот smoke в strict-режиме теперь
+# включён по умолчанию (проверяет reuse-401, wrong-401).
+DEV_MODE = os.environ.get("SMOKE_DEV_MODE", "false") == "true"
 
 
 def req(method, path, *, token=None, body=None):
