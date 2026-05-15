@@ -13,7 +13,9 @@ jest.mock('@rnmapbox/maps', () => ({
   },
 }));
 
+// eslint-disable-next-line import/first -- jest.mock is hoisted; import must follow it.
 import { offlineManager } from '@rnmapbox/maps';
+// eslint-disable-next-line import/first
 import {
   createCustomPack,
   estimatePackSize,
