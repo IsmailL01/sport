@@ -107,11 +107,11 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-15 — Milestone v1.0 redefined; ROADMAP.md / REQUIREMENTS.md rewritten; PROJECT.md / MILESTONES.md / STATE.md updated; old Phase 1 planning dir archived; new Phase 16 CONTEXT skeleton seeded with inherited Pixel field-test acceptance criteria.
-Stopped at: All v1.0 planning artifacts written and ready for atomic commit. Phase 1 ready to discuss.
-Resume file: `.planning/ROADMAP.md` §Phase 1 (Release contract & version baseline).
+Last session: 2026-05-15 — Milestone v1.0 redefined (commit `bf511fc`); Phase 1 context gathered in autonomous mode (CONTEXT.md + DISCUSSION-LOG.md written for `01-release-contract-and-version-baseline`).
+Stopped at: Phase 1 CONTEXT.md complete with 14 gray-area decisions (D-01..D-22) covering OpenAPI 3.1.0 hand-written YAML extension to 7 services, `X-Client-Version` HTTP header + HTTP 426 force-update, `pkg/featureflags` Postgres-backed boolean + percentage-rollout flags with offline-first mobile defaults, `docs/v1.0-SCOPE.md` markdown table, comprehensive ADR-0007. Phase 18 wording correction (VPS-direct vs Storage Box) flagged in CONTEXT.md D-22 for `/gsd-discuss-phase 18`.
+Resume file: `.planning/phases/01-release-contract-and-version-baseline/01-CONTEXT.md`.
 
-**Next action**: `/gsd-discuss-phase 1` to refine Phase 1 scope (release contract, version negotiation, feature flag matrix, v1.0 IN/OUT freeze).
+**Next action**: `/gsd-plan-phase 1` to break Phase 1 into atomic plans. Researcher should investigate: OpenAPI 3.1.0 best practices for service-per-file pattern, Go 1.22+ mux extraction patterns for CI route-spec drift check, percentage-rollout hash function selection (FNV-1a vs xxhash for `(user_id, flag)` determinism), `expo-application` version-stamping hook placement in `apiClient.ts`.
 
 ## Artifacts Created (cumulative)
 
