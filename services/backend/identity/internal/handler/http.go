@@ -11,9 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/runningecosystem/backend/identity/internal/domain"
 	"github.com/runningecosystem/backend/identity/internal/service"
+	"github.com/runningecosystem/backend/pkg/audit"
 	"github.com/runningecosystem/backend/pkg/auth"
+	"github.com/runningecosystem/backend/pkg/featureflags"
 )
 
 const requestTimeout = 10 * time.Second
@@ -27,10 +31,32 @@ type AuthHandler struct {
 	// (для smoke-тестов и dev-окружения). В production — false (тогда
 	// единственный канал доставки — SMTP/stdout-log).
 	DevMode bool
+
+	// Phase 1 / REL-03: feature flag plumbing.  flags exposes /featureflags
+	// (public read) + /admin/featureflags (admin CRUD).  audit пишет
+	// admin writes в shared audit_log table.  pool используется для
+	// profiles.global_role lookup в admin gate (см. featureflags.go).
+	//
+	// Все три могут быть nil — handler деградирует с 503 на flag endpoints,
+	// но обычные auth endpoints (register/login/refresh) работают.
+	flags *featureflags.Store
+	audit *audit.Logger
+	pool  *pgxpool.Pool
 }
 
 func NewAuthHandler(svc *service.AuthService, otp *service.OtpService, signer *auth.Signer, log *slog.Logger, devMode bool) *AuthHandler {
 	return &AuthHandler{svc: svc, otp: otp, signer: signer, log: log, DevMode: devMode}
+}
+
+// WithFeatureFlags wires в обновлённую Phase 1 / REL-03 поверхность:
+// feature-flag store + audit logger + pool (для admin role lookup).
+// Возвращает handler с обогащёнными полями (fluent-style).  Caller
+// (cmd/server/main.go) делает chained call после NewAuthHandler.
+func (h *AuthHandler) WithFeatureFlags(store *featureflags.Store, auditLogger *audit.Logger, pool *pgxpool.Pool) *AuthHandler {
+	h.flags = store
+	h.audit = auditLogger
+	h.pool = pool
+	return h
 }
 
 // Routes возвращает router c всеми handler'ами identity-сервиса.
@@ -46,6 +72,15 @@ func (h *AuthHandler) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/request-code", h.requestCode)
 	mux.HandleFunc("POST /auth/login-with-code", h.loginWithCode)
 	mux.HandleFunc("GET /me", h.requireAuth(h.me))
+
+	// Phase 1 / REL-03: feature flags.
+	// Public read (auth optional; per-user rollout если authenticated).
+	mux.HandleFunc("GET /featureflags", h.listFlags)
+	// Admin read + write — requireAuth обязателен; внутри adminGate
+	// перепроверяет global_role через pkg/permissions.
+	mux.HandleFunc("GET /admin/featureflags", h.requireAuth(h.adminListFlags))
+	mux.HandleFunc("PUT /admin/featureflags/{flag_name}", h.requireAuth(h.adminPutFlag))
+
 	return loggingMiddleware(h.log)(mux)
 }
 

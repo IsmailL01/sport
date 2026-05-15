@@ -26,6 +26,7 @@ import (
 	"github.com/runningecosystem/backend/activity-sync/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
+	"github.com/runningecosystem/backend/pkg/featureflags"
 )
 
 func main() {
@@ -84,6 +85,13 @@ func run() error {
 		}
 	}
 
+	// Phase 1 / REL-03: feature flag store (Plan 03).  Construct между pool и
+	// handler чтобы будущие плановые задачи могли передать flagStore в handler
+	// constructor без re-wiring.  В activity-sync пока нет flag-driven
+	// branching — _ = flagStore маркер reserved-for-future.
+	flagStore := featureflags.NewPostgresStore(pool, 30*time.Second)
+	_ = flagStore
+
 	opts := []service.Option{service.WithXP(xpRepo)}
 	if nc != nil {
 		opts = append(opts, service.WithNATS(nc))
@@ -92,8 +100,8 @@ func run() error {
 	h := handler.NewSyncHandler(syncSvc, signer, logger)
 
 	// === Outermost middleware stanza (Plan 01-02 / REL-02) ===
-	// Constructor order: pool → handler → versionPolicy → versionedMux.
-	// Plan 01-03 (Wave 2) will insert flagStore between pool and handler.
+	// Constructor order: pool → flagStore (Plan 03 / REL-03) → handler →
+	// versionPolicy → versionedMux.
 	versionPolicy := clientversion.Policy{
 		MinSupported:          envOr("CLIENT_MIN_VERSION", "1.0.0"),
 		ForceUpdateURLAndroid: envOr("FORCE_UPDATE_URL_ANDROID", ""),

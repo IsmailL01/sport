@@ -32,6 +32,7 @@ import (
 	"github.com/runningecosystem/backend/media/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
+	"github.com/runningecosystem/backend/pkg/featureflags"
 )
 
 func main() {
@@ -82,11 +83,16 @@ func run() error {
 
 	repo := postgres.NewMediaRepo(pool)
 	svc := service.New(repo, s3client)
+
+	// Phase 1 / REL-03: feature flag store (Plan 03).  Reserved-for-future.
+	flagStore := featureflags.NewPostgresStore(pool, 30*time.Second)
+	_ = flagStore
+
 	h := handler.New(svc, signer, logger)
 
 	// === Outermost middleware stanza (Plan 01-02 / REL-02) ===
-	// Constructor order: pool → handler → versionPolicy → versionedMux.
-	// Plan 01-03 (Wave 2) will insert flagStore between pool and handler.
+	// Constructor order: pool → flagStore (Plan 03 / REL-03) → handler →
+	// versionPolicy → versionedMux.
 	versionPolicy := clientversion.Policy{
 		MinSupported:          envOr("CLIENT_MIN_VERSION", "1.0.0"),
 		ForceUpdateURLAndroid: envOr("FORCE_UPDATE_URL_ANDROID", ""),

@@ -17,10 +17,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
+	"github.com/runningecosystem/backend/pkg/featureflags"
 	"github.com/runningecosystem/backend/realtime-gw/internal/gw"
 )
 
@@ -38,6 +40,12 @@ func run() error {
 	addr := envOr("REALTIME_GW_HTTP_ADDR", ":8090")
 	jwtSecret := []byte(envOr("IDENTITY_JWT_SECRET", "dev-secret-must-be-at-least-32-bytes-long!!"))
 	natsURL := envOr("NATS_URL", "nats://localhost:4222")
+	// Phase 1 / REL-03: realtime-gw historically не использовал Postgres
+	// (state-less WS terminus). Pool теперь нужен ТОЛЬКО для featureflags
+	// shared store — IsEnabled lookups через 30s in-memory cache.  Если
+	// REALTIME_GW_DB_URL не выставлен → пропускаем construction; service
+	// продолжает работу без flags (IsEnabled = false для всех).
+	dbURL := envOr("REALTIME_GW_DB_URL", "")
 
 	signer, err := auth.NewSigner(jwtSecret)
 	if err != nil {
@@ -64,12 +72,34 @@ func run() error {
 	defer nc.Drain()
 	logger.Info("nats connected", "url", natsURL)
 
+	// Phase 1 / REL-03: feature flag store — opt-in, only if DB URL provided.
+	// realtime-gw isn't traditionally postgres-bound; we connect lazily here
+	// so IsEnabled works for future flag-driven WS gating (e.g. opt-in
+	// debug logging per OBS-08).
+	var flagStore *featureflags.Store
+	if dbURL != "" {
+		pool, err := pgxpool.New(ctx, dbURL)
+		if err != nil {
+			logger.Warn("featureflags: db connect failed; flags disabled", "error", err)
+		} else {
+			defer pool.Close()
+			if err := pool.Ping(ctx); err != nil {
+				logger.Warn("featureflags: db ping failed; flags disabled", "error", err)
+				pool.Close()
+			} else {
+				flagStore = featureflags.NewPostgresStore(pool, 30*time.Second)
+				logger.Info("featureflags ready")
+			}
+		}
+	}
+	_ = flagStore
+
 	registry := gw.NewRegistry()
 	handler := gw.NewHandler(ctx, signer, nc, registry, logger)
 
 	// === Outermost middleware stanza (Plan 01-02 / REL-02) ===
-	// Constructor order: nc → handler → versionPolicy → versionedMux.
-	// Plan 01-03 (Wave 2) will insert flagStore between nc and handler.
+	// Constructor order: nc → flagStore (Plan 03 / REL-03, optional) →
+	// handler → versionPolicy → versionedMux.
 	// Realtime-gw — единственный WS-сервис; clientversion.Middleware безопасен
 	// над WebSocket upgrade: Upgrade handshake — обычный HTTP-запрос, и если
 	// клиент слишком старый, 426 отдаётся до Upgrade'a (это правильное поведение).

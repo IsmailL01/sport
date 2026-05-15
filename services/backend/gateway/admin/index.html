@@ -123,6 +123,13 @@
       <button id="refresh-audit">↻ Обновить</button>
       <div id="audit-area" style="margin-top:12px"></div>
     </section>
+
+    <!-- Phase 1 / REL-03: Feature flags admin (CRUD over /admin/featureflags). -->
+    <section>
+      <h2>Feature flags (v1.0)</h2>
+      <button id="refresh-flags">↻ Обновить</button>
+      <div id="flags-area" style="margin-top:12px"></div>
+    </section>
   </main>
 </div>
 
@@ -195,6 +202,7 @@ async function bootstrap() {
     show("app");
     await loadReports();
     await loadAudit();
+    await loadFlags();
   } catch (e) {
     if (e.status === 401) { logout(); return; }
     alert("Bootstrap failed: " + e.message);
@@ -305,6 +313,77 @@ async function loadAudit() {
   }
 }
 
+// Phase 1 / REL-03: feature flag admin UI.
+async function loadFlags() {
+  const area = document.getElementById("flags-area");
+  area.innerHTML = "<p class='empty'>Загрузка…</p>";
+  try {
+    const list = await api("GET", "/admin/featureflags");
+    if (!list || list.length === 0) {
+      area.innerHTML = "<p class='empty'>Флагов нет</p>";
+      return;
+    }
+    const table = document.createElement("table");
+    table.innerHTML = `
+      <thead><tr>
+        <th>Flag</th><th>Description</th><th>Enabled</th>
+        <th>Rollout %</th><th>Updated</th><th></th>
+      </tr></thead><tbody></tbody>`;
+    const tbody = table.querySelector("tbody");
+    for (const f of list) {
+      const tr = document.createElement("tr");
+      const enabledChecked = f.enabled ? "checked" : "";
+      const desc = (f.description || "").replace(/[<>&]/g,
+        c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+      const updatedBy = f.updatedByUserId
+        ? `<span class="meta">${f.updatedByUserId.slice(0,8)}…</span>`
+        : "<span class='meta'>—</span>";
+      tr.innerHTML = `
+        <td><code>${f.name}</code></td>
+        <td>${desc}</td>
+        <td><input type="checkbox" data-flag="${f.name}" class="ff-enabled" ${enabledChecked}></td>
+        <td><input type="number" min="0" max="100" step="1" value="${f.rolloutPercent}"
+                   data-flag="${f.name}" class="ff-percent" style="width:64px"></td>
+        <td class="meta">${new Date(f.updatedAt).toLocaleString('ru-RU')}<br>${updatedBy}</td>
+        <td></td>`;
+      const td = tr.lastChild;
+      const saveBtn = document.createElement("button");
+      saveBtn.textContent = "Сохранить";
+      saveBtn.classList.add("primary");
+      saveBtn.onclick = async () => {
+        const enabledEl = tr.querySelector(`.ff-enabled[data-flag="${f.name}"]`);
+        const percentEl = tr.querySelector(`.ff-percent[data-flag="${f.name}"]`);
+        const enabled = enabledEl.checked;
+        const percent = parseInt(percentEl.value, 10);
+        if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+          alert("Rollout % must be 0-100");
+          return;
+        }
+        try {
+          await api("PUT", "/admin/featureflags/" + encodeURIComponent(f.name),
+            { enabled, percent });
+          await loadFlags();
+          await loadAudit();
+        } catch (e) {
+          alert("Save failed: " + (e.data?.message || e.message));
+        }
+      };
+      td.appendChild(saveBtn);
+      tbody.appendChild(tr);
+    }
+    area.innerHTML = "";
+    area.appendChild(table);
+  } catch (e) {
+    if (e.status === 403) {
+      area.innerHTML = "<p class='err'>403: нужна global_role admin/moderator</p>";
+    } else if (e.status === 503) {
+      area.innerHTML = "<p class='err'>Feature flag store недоступен на этом сервисе</p>";
+    } else {
+      area.innerHTML = "<p class='err'>" + (e.data?.message || e.message) + "</p>";
+    }
+  }
+}
+
 document.getElementById("login-btn").onclick = async () => {
   const email = document.getElementById("login-email").value.trim();
   const password = document.getElementById("login-password").value;
@@ -323,6 +402,7 @@ document.getElementById("login-btn").onclick = async () => {
 document.getElementById("logout-btn").onclick = logout;
 document.getElementById("refresh-reports").onclick = loadReports;
 document.getElementById("refresh-audit").onclick = loadAudit;
+document.getElementById("refresh-flags").onclick = loadFlags;
 for (const btn of document.querySelectorAll(".tab")) {
   btn.onclick = async () => {
     document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));

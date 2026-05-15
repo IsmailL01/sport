@@ -23,6 +23,7 @@ import (
 
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
+	"github.com/runningecosystem/backend/pkg/featureflags"
 	"github.com/runningecosystem/backend/pkg/ratelimit"
 	"github.com/runningecosystem/backend/social-graph/internal/handler"
 	"github.com/runningecosystem/backend/social-graph/internal/repository/postgres"
@@ -78,11 +79,15 @@ func run() error {
 		logger.Info("rate limiter ready")
 	}
 
+	// Phase 1 / REL-03: feature flag store (Plan 03).  Reserved-for-future.
+	flagStore := featureflags.NewPostgresStore(pool, 30*time.Second)
+	_ = flagStore
+
 	h := handler.New(svc, signer, limiter, logger)
 
 	// === Outermost middleware stanza (Plan 01-02 / REL-02) ===
-	// Constructor order: pool → handler → versionPolicy → versionedMux.
-	// Plan 01-03 (Wave 2) will insert flagStore between pool and handler.
+	// Constructor order: pool → flagStore (Plan 03 / REL-03) → handler →
+	// versionPolicy → versionedMux.
 	versionPolicy := clientversion.Policy{
 		MinSupported:          envOr("CLIENT_MIN_VERSION", "1.0.0"),
 		ForceUpdateURLAndroid: envOr("FORCE_UPDATE_URL_ANDROID", ""),

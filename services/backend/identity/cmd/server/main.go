@@ -25,8 +25,10 @@ import (
 	"github.com/runningecosystem/backend/identity/internal/handler"
 	"github.com/runningecosystem/backend/identity/internal/repository/postgres"
 	"github.com/runningecosystem/backend/identity/internal/service"
+	"github.com/runningecosystem/backend/pkg/audit"
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
+	"github.com/runningecosystem/backend/pkg/featureflags"
 )
 
 func main() {
@@ -65,17 +67,24 @@ func run() error {
 	}
 	logger.Info("db connected", "url", redactPassword(dbURL))
 
+	// Phase 1 / REL-03: feature flag store + audit logger constructed BEFORE
+	// handler — handler reads/writes flags + writes audit on admin actions.
+	// 30s TTL per CONTEXT D-11 (cross-service cache invalidation via TTL).
+	flagStore := featureflags.NewPostgresStore(pool, 30*time.Second)
+	auditLogger := audit.New(pool)
+
 	userRepo := postgres.NewUserRepo(pool)
 	tokenRepo := postgres.NewRefreshTokenRepo(pool)
 	otpRepo := postgres.NewOtpRepo(pool)
 	authSvc := service.NewAuthService(userRepo, tokenRepo, signer)
 	otpSvc := service.NewOtpService(otpRepo, userRepo, tokenRepo, authSvc)
-	h := handler.NewAuthHandler(authSvc, otpSvc, signer, logger, devMode)
+	h := handler.NewAuthHandler(authSvc, otpSvc, signer, logger, devMode).
+		WithFeatureFlags(flagStore, auditLogger, pool)
 	logger.Info("identity ready", "devMode", devMode)
 
 	// === Outermost middleware stanza (Plan 01-02 / REL-02) ===
-	// Constructor order: pool → handler → versionPolicy → versionedMux.
-	// Plan 01-03 (Wave 2) will insert flagStore between pool and handler.
+	// Constructor order: pool → flagStore (Plan 03 / REL-03) → handler →
+	// versionPolicy → versionedMux.
 	versionPolicy := clientversion.Policy{
 		MinSupported:          envOr("CLIENT_MIN_VERSION", "1.0.0"),
 		ForceUpdateURLAndroid: envOr("FORCE_UPDATE_URL_ANDROID", ""),

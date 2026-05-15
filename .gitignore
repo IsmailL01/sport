@@ -98,6 +98,8 @@ services/**/dist/
 services/**/*.test
 services/**/coverage.out
 services/**/vendor/
+# `go build ./<svc>/cmd/server/` dumps a `server` binary into the cwd.
+services/backend/server
 
 # ===== Тестовые артефакты, отчёты =====
 # Phase 1 field-test runs (PHASE1-01..04) commit GPX exports + battery photos.
