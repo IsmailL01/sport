@@ -129,11 +129,11 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-16 — **Phase 2 closed**. Plan 02-04 Tasks 1+3+4 SOPS-write side: ADR-0006 §Митигации flipped to verdict (A) (commit `58b15eb`); 6 sops --set calls non-interactive (3 envs × 2 keys) for new Mapbox `pk.` runtime + `sk.` build tokens with single-token strategy (commit `881f912`); curl smoke against Mapbox styles API → HTTP 200; Incident Log rotation row + (b)-class closeout + 02-04-SUMMARY (commit `d6fe1f3`). Old `dev-public` / `prod-public` / `server-secret` revoked at Mapbox dashboard by user. 5 deviations recorded in 02-04-SUMMARY (schema mismatch from 02-01, single-token strategy, prefix-mismatch HALT, macOS sops age-key path, chat-history tokens). 5 follow-ups carried forward to Phase 2 backlog.
-Stopped at: **Phase 2 (Secrets & Config Hardening) DONE — 4/4 plans complete.** Strict no-parallelization gate (Phase 2 → Phase 3) is now lifted.
-Resume file: `.planning/ROADMAP.md §Phase 3` (Infrastructure as Code — not yet planned).
+Last session: 2026-05-16 — Phase 3 CONTEXT gathered (autonomous mode, mirrors Phase 2 posture). 21 decisions auto-resolved (D-01..D-21) covering IaC tool split (Ansible + Terraform), topology (3 VPS: existing prod-app-01 imported + new staging-app-01 + sentry-01), container strategy (docker-compose-on-systemd umbrella unit per D-04 — deviation from literal ROADMAP wording flagged for planner), SOPS-decrypt-via-delegate_to:localhost (preserves Phase 2 D-04 master-key strategy), Caddy hand-rolled role, sslip.io DNS for v1.0 closed-beta, Hetzner Cloud Firewall, narrow `deploy` user sudoers. 4 items deferred to researcher (TF state backend on Hetzner, Sentry sizing 2026, NATS exposure verification, private network topology). 8 deferred ideas captured. 2 anticipated user-action checkpoints (Hetzner API token + DEV_B pubkeys). Commits: `99209d0`.
+Stopped at: Phase 3 context-ready; ready for plan_phase.
+Resume file: `.planning/phases/03-infrastructure-as-code/03-CONTEXT.md`.
 
-**Next action**: `/gsd-discuss-phase 3` to gather context for Phase 3 (Ansible + Terraform-for-cloud-resources + dev/staging/prod environments + systemd + Caddy). Phase 3 consumes SOPS-decrypted env files from Phase 2.
+**Next action**: `/gsd-plan-phase 3` (with research enabled per config — researcher resolves D-05 + verifies D-07/D-11). Planner produces 4-wave breakdown matching `<dependencies>` block in 03-CONTEXT (Wave 1: Terraform scaffold + import; Wave 2: Ansible scaffold + common/docker/caddy roles; Wave 3a: sport-stack + deploy; Wave 3b: Sentry VPS prep; Wave 4: cutover + RUNBOOK).
 
 ## Artifacts Created (cumulative)
 
