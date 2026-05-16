@@ -1,0 +1,22 @@
+# terraform.tfvars.example — placeholder values для документации (Phase 3 / 03-01).
+#
+# КОПИРОВАТЬ как `terraform.tfvars` (gitignored) и заполнить реальными
+# значениями ПЕРЕД любым `terraform plan/apply`.
+#
+# IMPORTANT:
+#   - HCLOUD_TOKEN + AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY НЕ здесь —
+#     приходят из SOPS .secrets/<env>/hetzner.yaml через tf-wrap.sh.
+#   - prod_server_id / prod_server_type / prod_location / prod_image НЕ здесь —
+#     приходят из `imported.auto.tfvars` (заполняется в Task 1 user-action из
+#     `hcloud server describe`; gitignored).
+#   - Этот файл — только dev_admin_ips + dev_ssh_pubkeys.
+
+# Список /32 IP CIDRs dev workstations (SSH source). Узнать через `curl ifconfig.me`.
+dev_admin_ips = ["YOUR_WORKSTATION_IP/32"]
+
+# Map dev_name → ssh-ed25519 public key (содержимое ~/.ssh/id_ed25519.pub).
+# DEV_B карry-over per Phase 2 follow-up #5 — добавить когда DEV_B пришлёт pubkey.
+dev_ssh_pubkeys = {
+  dev_a = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... dev_a@workstation"
+  # dev_b = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... dev_b@workstation"  # uncomment when delivered
+}
