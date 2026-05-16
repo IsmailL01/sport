@@ -17,7 +17,7 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 **Phase numbering convention:** Integer 1–21. Original draft used `9a/9b` letter-pair notation for platform-symmetric phases; these are integer-numbered here for `/gsd-execute-phase N` compatibility. Mapping in the phase list below.
 
 - [x] **Phase 1: Release contract & version baseline** — `shared` — Lock mobile↔backend wire contract, version negotiation, feature-flag matrix, v1.0 IN/OUT freeze — **Code-complete 2026-05-15** (Plans 01-01..03 shipped on `feat/cursona-redesign`; REL-01..05 all delivered. Live deployment + OpenAPI YAML extension follow-ups tracked in 01-03-SUMMARY.md).
-- [ ] **Phase 2: Secrets & config hardening** — `backend` — `gitleaks`+`trufflehog` clean, SOPS-encrypted secrets, Mapbox token incident reset, `IDENTITY_DEV_MODE` fix
+- [x] **Phase 2: Secrets & config hardening** — `backend` — `gitleaks`+`trufflehog` clean (0 findings full-history), SOPS-encrypted secrets, Mapbox token incident reset (ADR-0006), `IDENTITY_DEV_MODE` fix — **DONE 2026-05-16**, 4/4 plans, commits 5e73162..d6fe1f3
 - [ ] **Phase 3: Infrastructure as code** — `backend` — Ansible + Terraform-for-cloud-resources, dev/staging/prod environments, systemd + Caddy
 - [ ] **Phase 4: CI/CD pipeline** — `backend` — GitHub Actions matrix, signed images pinned to digests, one-button rollback **proven with real DB migration in path**
 - [ ] **Phase 5: Observability (backend)** — `backend` — Sentry self-hosted on separate VPS with separate DNS, Prom+OTLP, OTP log redaction (CONCERNS.md P0)
@@ -73,10 +73,10 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 6. Rotation playbooks in `docs/SECRETS.md` for all 10 secret types
 7. Pre-commit hook scanning for AWS/AKIA/GitHub PAT/Mapbox `sk.` patterns
 **Plans**: 4 plans across 3 waves
-- [ ] `02-01-PLAN-sops-scaffold.md` — SOPS+age scaffold + 9 encrypted .secrets/<env>/{shared,mapbox,oauth}.yaml + Pitfall-1 round-trip smoke (SEC-02) — Wave 1 — autonomous=false (Task 0 needs per-dev age keys)
-- [ ] `02-02-PLAN-envrequire-and-devmode.md` — envRequire across 8 services + IDENTITY_DEV_MODE flip + isLocalDBURL prod-detection + smoke_otp.py SMOKE_DEV_MODE flip (SEC-05, SEC-06, SEC-09) — Wave 1 — autonomous (independent of 02-01)
-- [x] `02-03-PLAN-scanners-and-precommit.md` — .gitleaks.toml + custom Mapbox rules + .pre-commit-config.yaml + Makefile scan-secrets + init-pre-commit.sh + one-time full-history scan (SEC-01, SEC-08) — Wave 2 (depends on 02-01 for .secrets/** path coverage) — **DONE 2026-05-16, commits 28acb2d..9c101a4, 0 findings in full-history scan**
-- [ ] `02-04-PLAN-mapbox-incident-and-docs.md` — ADR-0006 + sops-edit RUNBOOK + 10-playbook SECRETS.md extension + Mapbox dashboard rotation USER ACTION + SOPS-populate new tokens (SEC-03, SEC-04, SEC-07) — Wave 3 — autonomous=false (Tasks 1+3 are user-action checkpoints)
+- [x] `02-01-PLAN-sops-scaffold.md` — SOPS+age scaffold + 9 encrypted .secrets/<env>/{shared,mapbox,oauth}.yaml + Pitfall-1 round-trip smoke (SEC-02) — Wave 1 — autonomous=false (Task 0 needs per-dev age keys) — **DONE 2026-05-15, commits 5e73162..04f44b8**
+- [x] `02-02-PLAN-envrequire-and-devmode.md` — envRequire across 8 services + IDENTITY_DEV_MODE flip + isLocalDBURL prod-detection + smoke_otp.py SMOKE_DEV_MODE flip (SEC-05, SEC-06, SEC-09) — Wave 1 — autonomous (independent of 02-01) — **DONE 2026-05-15, 8 services + 10 new test cases**
+- [x] `02-03-PLAN-scanners-and-precommit.md` — .gitleaks.toml + custom Mapbox rules + .pre-commit-config.yaml + Makefile scan-secrets + init-pre-commit.sh + one-time full-history scan (SEC-01, SEC-08) — Wave 2 (depends on 02-01 for .secrets/** path coverage) — **DONE 2026-05-16, commits 28acb2d..ac2ebd5, 0 findings in full-history scan**
+- [x] `02-04-PLAN-mapbox-incident-and-docs.md` — ADR-0006 + sops-edit RUNBOOK + 10-playbook SECRETS.md extension + Mapbox dashboard rotation USER ACTION + SOPS-populate new tokens (SEC-03, SEC-04, SEC-07) — Wave 3 — autonomous=false (Tasks 1+3 are user-action checkpoints) — **DONE 2026-05-16, commits a67beb0..d6fe1f3, single-token strategy chosen for v1.0 (per-env split deferred v1.1)**
 **Maps to existing plan**: New scope (v1.0 hardening); no pre-v1.0 P-IDs apply. SEC-03/04 inherit context from pre-v1.0 archive 01-08-SUMMARY.md (Mapbox token chat-leak inventory).
 
 ### Phase 3: Infrastructure as code
