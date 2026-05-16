@@ -1,3 +1,19 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: Closure
+status: executing
+stopped_at: Pattern-mapper next, then planner (opus), then plan-checker (sonnet) revision loop, then coverage gates + commit.
+last_updated: "2026-05-16T10:39:37.492Z"
+last_activity: 2026-05-16 -- Phase 03 planning complete
+progress:
+  total_phases: 21
+  completed_phases: 1
+  total_plans: 8
+  completed_plans: 7
+  percent: 5
+---
+
 # Project State
 
 ## Project Reference
@@ -15,8 +31,8 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 Phase: **3 of 21** (Infrastructure as Code) — `backend` workstream — **NEXT, gate open**
 Plan: TBD — Phase 3 not yet planned. Ready for `/gsd-discuss-phase 3` → `/gsd-plan-phase 3`.
-Status: Phase 2 **DONE 2026-05-16**, 4/4 plans. Mapbox tokens rotated (1 sk. + 1 pk. single-token strategy, SOPS-encrypted across 3 envs, smoke green HTTP 200, old 3 dashboard tokens revoked by user). ADR-0006 + SOPS RUNBOOK + 10-playbook SECRETS.md extension all shipped. 02-04-SUMMARY documents 5 deviations + 5 follow-ups.
-Last activity: 2026-05-16 — Phase 2 closed via Plan 02-04: ADR-0006 §Митигации flipped to verdict (A) (commit `58b15eb`); SOPS-write of new tokens to .secrets/{prod,staging,dev}/mapbox.yaml with curl smoke HTTP 200 (commit `881f912`); Incident Log rotation row + (b)-class closeout + 02-04-SUMMARY (commit `d6fe1f3`). Old `dev-public` / `prod-public` / `server-secret` revoked at Mapbox dashboard by user.
+Status: Ready to execute
+Last activity: 2026-05-16 -- Phase 03 planning complete
 
 Progress: [▓▓░░░░░░░░] ~11% of new v1.0 scope (REL-01..05 + SEC-01..09 all delivered or partial; 14-of-96 REQ-IDs complete — SEC-01 still partial pending Phase 4 CI wiring; everything else in SEC-* closed)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
@@ -26,6 +42,7 @@ Progress: [▓▓░░░░░░░░] ~11% of new v1.0 scope (REL-01..05 + 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total v1.0 hardening plans completed: 7 (Plans 01-01..03 + 02-01..04)
 - Pre-v1.0 baseline (superseded scope): 10 plans (9 code-complete + 1 deferred-aware) executed 2026-05-14, ~25-35 min per plan; commits remain on `feat/cursona-redesign`
 
@@ -43,6 +60,7 @@ Plan 02-03 actual: ~5 min (single executor pass, 3 commits 28acb2d..ac2ebd5; 6 c
 Plan 02-04 actual: ~95 min spread across 2 sessions (Task 2 docs ~25 min prior session; Tasks 1+3+4 SOPS-write side + closeout ~70 min this session including prefix-mismatch halt + macOS sops age-key path diagnosis).
 
 **Recent Trend:**
+
 - Last activity: 2026-05-16 — **Phase 2 closed**. Plan 02-04 Mapbox token rotation: ADR-0006 verdict A (commit `58b15eb`), SOPS-write + smoke HTTP 200 (commit `881f912`), Incident Log complete + SUMMARY (commit `d6fe1f3`). Old tokens revoked at dashboard by user.
 - 2026-05-16 — Plan 02-04 Task 2 docs (prior session): ADR-0006 + sops-edit RUNBOOK + 10-playbook SECRETS.md extension (commits a67beb0..ccc39c1).
 - 2026-05-16 — Plan 02-03 scanners + pre-commit shipped (SEC-08 closed; SEC-01 partial pending Phase 4 CI; commits 28acb2d..ac2ebd5).
@@ -98,6 +116,7 @@ Recent / load-bearing decisions affecting current work:
 [Issues that affect future work — see `.planning/codebase/CONCERNS.md` for full list]
 
 **P0 items distributed across new v1.0 phases per user redline:**
+
 - ☑ `IDENTITY_DEV_MODE=true` default → **CLOSED** in Phase 2 SEC-05 (Plan 02-02, commit `27ad27f`)
 - ☐ Missing `/auth/*` rate-limit → **Phase 6 EDGE-01** (edge protection)
 - ☐ OTP unconditional log → **Phase 5 OBS-04** (observability — no PII in logs)
@@ -140,10 +159,12 @@ Resume file: `.planning/phases/03-infrastructure-as-code/03-RESEARCH.md` (read f
 ## Artifacts Created (cumulative)
 
 **From 2026-05-14 GSD init:**
+
 - `.planning/config.json`
 - `.planning/codebase/{STACK,INTEGRATIONS,ARCHITECTURE,STRUCTURE,CONVENTIONS,TESTING,CONCERNS}.md`
 
 **Rewritten 2026-05-15 (milestone v1.0 redefinition):**
+
 - `.planning/PROJECT.md` (Current Milestone section)
 - `.planning/REQUIREMENTS.md` (full rewrite — 96 v1.0 REQ-IDs + Deferred section)
 - `.planning/ROADMAP.md` (full rewrite — 21 phases across 5 workstreams)
@@ -151,12 +172,15 @@ Resume file: `.planning/phases/03-infrastructure-as-code/03-RESEARCH.md` (read f
 - `.planning/STATE.md` (this file)
 
 **Created 2026-05-15:**
+
 - `.planning/phases/16-background-reliability-in-release/16-CONTEXT.md` (skeleton with inherited Pixel field-test acceptance criteria)
 
 **Archived 2026-05-15:**
+
 - `.planning/phases/_archive/pre-v1.0-territory-refactors/` (was `.planning/phases/01-validate-close-territory-core/` — 14 files: CONTEXT/RESEARCH/PATTERNS/DISCUSSION-LOG + 10 PLAN.md + 10 SUMMARY.md from the superseded scope)
 
 **Future ADRs scheduled (will write as their phases execute):**
+
 - `docs/DECISIONS/0006-mapbox-token-incident.md` (Phase 2)
 - `docs/DECISIONS/0007-v1.0-release-contract.md` (Phase 1)
 - `docs/DECISIONS/0008-mapbox-sdk-11-migration.md` (Phase 13)
