@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: Closure
 status: executing
 stopped_at: Pattern-mapper next, then planner (opus), then plan-checker (sonnet) revision loop, then coverage gates + commit.
-last_updated: "2026-05-16T10:39:37.492Z"
-last_activity: 2026-05-16 -- Phase 03 planning complete
+last_updated: "2026-05-16T10:51:26.846Z"
+last_activity: 2026-05-16 -- Phase 03 execution started
 progress:
   total_phases: 21
   completed_phases: 1
@@ -23,16 +23,16 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 **Milestone:** v1.0 Production Readiness — IN PROGRESS, **REDEFINED 2026-05-15** as 21-phase hardening scope. Earlier 8-phase feature scope superseded. Feature work (privacy zones, segments, coaching, premium, GDPR) slides to v1.1+. Target close: tagged `v1.0-rc.1` after 48h staging soak with ≥8 real runners.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** **Phase 3 of v1.0 hardening — Infrastructure as Code** (`backend` workstream). Phase 2 closed 2026-05-16 (4/4 plans done; Mapbox rotation + ADR-0006 + SOPS RUNBOOK + 10-playbook SECRETS.md all shipped). Strict no-parallelization gate (Phase 2 → Phase 3) now lifted. Ready for `/gsd-discuss-phase 3`.
+**Current focus:** Phase 03 — infrastructure-as-code
 
 **Brownfield note:** Codebase remains at Phase 8 / M10 code-complete on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors landed under the superseded scope — kept as-is in git history; planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`). Pixel + iPhone field-test acceptance criteria inherited by new Phase 16 (CONTEXT skeleton seeded).
 
 ## Current Position
 
-Phase: **3 of 21** (Infrastructure as Code) — `backend` workstream — **NEXT, gate open**
-Plan: TBD — Phase 3 not yet planned. Ready for `/gsd-discuss-phase 3` → `/gsd-plan-phase 3`.
-Status: Ready to execute
-Last activity: 2026-05-16 -- Phase 03 planning complete
+Phase: 03 (infrastructure-as-code) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 03
+Last activity: 2026-05-16 -- Phase 03 execution started
 
 Progress: [▓▓░░░░░░░░] ~11% of new v1.0 scope (REL-01..05 + SEC-01..09 all delivered or partial; 14-of-96 REQ-IDs complete — SEC-01 still partial pending Phase 4 CI wiring; everything else in SEC-* closed)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
