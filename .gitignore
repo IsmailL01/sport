@@ -141,3 +141,20 @@ __pycache__/
 .cache/
 tmp/
 temp/
+
+# ===== Terraform (Phase 3 / INFRA-02..INFRA-04) =====
+# State files NEVER в репозитории (INFRA-04, T-03-01 mitigation). State лежит
+# в Hetzner Object Storage `running-ecosystem-tfstate` bucket с `use_lockfile=true`.
+# `terraform.tfvars` содержит dev/admin IP + ssh pubkeys — не secret per se, но
+# environment-specific; реальные значения через SOPS (`.secrets/<env>/hetzner.yaml`)
+# консумируются через tf-wrap.sh. `imported.auto.tfvars` (B1 fix Plan 03-01) —
+# runtime-generated в Task 1 user-action из `hcloud server describe`, содержит
+# real prod-app-01 server attrs.
+# `.terraform.lock.hcl` — НЕ ignore'ить (commitable per Terraform best practices —
+# provider version pinning разделяется между devs).
+infra/terraform/.terraform/
+infra/terraform/terraform.tfstate
+infra/terraform/terraform.tfstate.backup
+infra/terraform/terraform.tfvars
+infra/terraform/imported.auto.tfvars
+infra/terraform/*.tfplan
