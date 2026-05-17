@@ -5,11 +5,19 @@
 # CRITICAL invariants (DO NOT BREAK):
 #   • ExecStart uses `docker compose` SPACE-form (CONTEXT D-04 + RESEARCH Pitfall 4).
 #     NEVER `docker-compose` dash-form — that's the legacy v1 binary, removed in Compose v2.
-#   • ExecStopPost shreds /run/sport.env (D-15 defense-in-depth; /run is tmpfs anyway).
 #   • EnvironmentFile=/run/sport.env must exist BEFORE service start (templated by Ansible
 #     decrypt_sops.yml task to tmpfs mode 0600 owner deploy).
 #   • User=deploy + Group=deploy — non-root; deploy is in `docker` group (added by Plan 03-01
 #     docker role) so it can talk to /var/run/docker.sock.
+#
+# D-15 REVISED 2026-05-17 (post-Wave-2-cutover):
+# Original D-15 added `ExecStopPost=/bin/shred -u {{ sport_env_file }}` as defense-in-depth
+# для plaintext env minimization. Observed during Wave 2 cutover: if compose-up fails for
+# any reason, systemd auto-restart (`Restart=on-failure`) re-invokes ExecStart, but env file
+# was just shredded → next start sees missing/empty env → fail-fast on ${POSTGRES_PASSWORD:?}
+# и т.п. → loop never recovers. Since /run is tmpfs (wiped at reboot anyway), explicit shred
+# adds negligible security but breaks restart resilience. Removed. v1.1: revisit if env-render
+# is moved into ExecStartPre so restart can re-create the file.
 
 [Unit]
 Description=Running Ecosystem backend stack (docker compose umbrella)
@@ -26,8 +34,7 @@ EnvironmentFile={{ sport_env_file }}
 # CRITICAL: `docker compose` SPACE-form per CONTEXT D-04 + RESEARCH Pitfall 4.
 ExecStart=/usr/bin/docker compose -f {{ sport_compose_file }} up
 ExecStop=/usr/bin/docker compose -f {{ sport_compose_file }} down
-# Shred plaintext env on stop (D-15 defense-in-depth; /run is tmpfs anyway).
-ExecStopPost=/bin/shred -u {{ sport_env_file }}
+# ExecStopPost shred REMOVED 2026-05-17 — see D-15 REVISED note above.
 Restart=on-failure
 RestartSec=10s
 TimeoutStartSec=600

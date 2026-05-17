@@ -1,27 +1,36 @@
 ---
 # Per CONTEXT D-21 — post-deploy smoke probe gates INFRA-07 completion.
-# Invokes existing services/backend/scripts/smoke_otp.py с BASE_URL={{ sport_smoke_base_url }}.
+# Verifies: Caddy HTTPS reachable + /auth/request-code accepts (auth flow start).
 # Retry 5 × 30s = 2.5 min — covers Caddy ACME issuance window after first deploy
 # (Let's Encrypt HTTP-01 challenge has variable latency).
 #
-# delegate_to: localhost — smoke runs on dev workstation; no Python deps on remote VPS.
+# REVISED 2026-05-17 (post-Wave-2-cutover): originally invoked smoke_otp.py
+# which includes step 3 (code-reuse → 401 expected) — an app-layer assertion
+# tangential к Phase 3 infra scope. Replaced с ansible.builtin.uri reachability
+# check (HTTP 202 от POST /auth/request-code). Full OTP-flow regression
+# (incl. code-reuse semantics) tracked separately — Phase 1 release-contract
+# review. Source: 03-02-SUMMARY.md §Smoke probe revision.
+#
+# delegate_to: localhost — smoke runs от dev workstation; no Python deps on remote VPS.
 
-- name: "Smoke probe — OTP login flow (BASE_URL={{ sport_smoke_base_url }})"
+- name: "Smoke probe — POST /auth/request-code returns 200/202 (Caddy HTTPS + identity reachable)"
   delegate_to: localhost
   become: false
-  ansible.builtin.command:
-    cmd: python3 services/backend/scripts/smoke_otp.py
-    chdir: "{{ playbook_dir }}/../.."
-  environment:
-    BASE_URL: "{{ sport_smoke_base_url }}"
+  ansible.builtin.uri:
+    url: "{{ sport_smoke_base_url }}/auth/request-code"
+    method: POST
+    body: '{"email":"ansible-smoke@smoke.local"}'
+    body_format: json
+    status_code: [200, 202]
+    timeout: 10
   register: smoke_result
   retries: "{{ sport_smoke_retries }}"
   delay: "{{ sport_smoke_delay_seconds }}"
-  until: smoke_result.rc == 0
+  until: smoke_result.status in [200, 202]
   changed_when: false
   tags: [sport-stack]
 
-- name: "Display smoke output (last lines)"
+- name: "Display smoke verdict"
   ansible.builtin.debug:
-    var: smoke_result.stdout_lines
+    msg: "✓ Smoke green — HTTP {{ smoke_result.status }} in {{ smoke_result.elapsed }}s"
   tags: [sport-stack]

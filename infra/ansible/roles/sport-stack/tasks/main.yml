@@ -12,13 +12,17 @@
 #   (f) systemctl daemon-reload + enable --now sport-stack.service.
 #   (g) Smoke probe loop (D-21) — gates INFRA-07.
 
-- name: "Ensure /opt/sport directory exists with deploy ownership"
+- name: "Ensure /opt/sport directory tree exists with deploy ownership"
   ansible.builtin.file:
-    path: "{{ sport_install_dir }}"
+    path: "{{ item }}"
     state: directory
     owner: "{{ deploy_user }}"
     group: "{{ deploy_group }}"
     mode: '0755'
+  loop:
+    - "{{ sport_install_dir }}"
+    - "{{ sport_install_dir }}/services"
+    - "{{ sport_install_dir }}/services/backend"
   tags: [sport-stack]
 
 # Repo sync — rsync over SSH (controller-side source = worktree root).
