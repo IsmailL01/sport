@@ -1,0 +1,466 @@
+===============================================================================
+Phase 3 Plan 03-02 — Wave 2 timing measurement
+Date: 2026-05-17T09:31:52Z
+VPS: 148.253.214.156 (prod-app-01)
+
+MODE: check-mode (--check --diff) dry-run
+REASON FOR DEFERRAL: live deploy gated by two blockers:
+  (1) Port 443 occupied by manual /opt/running-ecosystem/ stack (13 containers
+      up; docker-proxy pid 2311522 bound to 0.0.0.0:443). Per Plan 03-02 L578
+      and Plan 03-03 Task 2 step 3.5 — explicit teardown is Plan 03-03's owner.
+  (2) SOPS slots (shared.yaml + mapbox.yaml + oauth.yaml) lack 4 compose-required
+      env vars: JWT_SECRET, POSTGRES_PASSWORD, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD,
+      EXPO_ACCESS_TOKEN. Live 'docker compose run --rm migrations' would fail at
+      ${VAR:?need …} fail-fast gate. Resolution path: extend SOPS slots OR
+      rewrite compose-file to read existing SOPS names (e.g. IDENTITY_JWT_SECRET
+      instead of JWT_SECRET). Architectural decision — Plan 03-03 owns.
+
+VERDICT BASIS: programmatic awk parse of /usr/bin/time -p 'real' line.
+===============================================================================
+
+
+PLAY [Bootstrap base packages + SSH hardening + UFW] ***************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [prod-app-01]
+
+PLAY [Deploy sport-stack to app servers] ***************************************
+
+TASK [sport-stack : Ensure /opt/sport directory exists with deploy ownership] ***
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: Importing 'to_text' from 'ansible.module_utils._text' is deprecated. This feature will be removed from ansible-core version 2.24. Use ansible.module_utils.common.text.converters instead.
+[DEPRECATION WARNING]: The `ansible.module_utils.common._collections_compat` module is deprecated. This feature will be removed from ansible-core version 2.24. Use `collections.abc` from the Python standard library instead.
+--- before
++++ after
+@@ -1,4 +1,4 @@
+ {
+     "path": "/opt/sport",
+-    "state": "absent"
++    "state": "directory"
+ }
+
+changed: [prod-app-01]
+
+TASK [sport-stack : Sync services/backend/ tree to /opt/sport/services/backend/ via rsync] ***
+[DEPRECATION WARNING]: Importing 'to_bytes' from 'ansible.module_utils._text' is deprecated. This feature will be removed from ansible-core version 2.24. Use ansible.module_utils.common.text.converters instead.
+[DEPRECATION WARNING]: Importing 'to_native' from 'ansible.module_utils._text' is deprecated. This feature will be removed from ansible-core version 2.24. Use ansible.module_utils.common.text.converters instead.
+created directory /opt/sport/services/backend
+cd+++++++ ./
+<f+++++++ .dockerignore
+<f+++++++ Makefile
+<f+++++++ README.md
+<f+++++++ docker-compose.observability.yml
+<f+++++++ docker-compose.prod.yml
+<f+++++++ docker-compose.yml
+<f+++++++ go.work
+<f+++++++ go.work.sum
+cd+++++++ activity-sync/
+<f+++++++ activity-sync/Dockerfile
+<f+++++++ activity-sync/go.mod
+<f+++++++ activity-sync/go.sum
+cd+++++++ activity-sync/cmd/
+cd+++++++ activity-sync/cmd/server/
+<f+++++++ activity-sync/cmd/server/main.go
+cd+++++++ activity-sync/internal/
+cd+++++++ activity-sync/internal/domain/
+<f+++++++ activity-sync/internal/domain/types.go
+cd+++++++ activity-sync/internal/handler/
+<f+++++++ activity-sync/internal/handler/http.go
+<f+++++++ activity-sync/internal/handler/http_test.go
+cd+++++++ activity-sync/internal/repository/
+<f+++++++ activity-sync/internal/repository/repository.go
+<f+++++++ activity-sync/internal/repository/xp.go
+cd+++++++ activity-sync/internal/repository/memory/
+<f+++++++ activity-sync/internal/repository/memory/memory.go
+cd+++++++ activity-sync/internal/repository/postgres/
+<f+++++++ activity-sync/internal/repository/postgres/point.go
+<f+++++++ activity-sync/internal/repository/postgres/session.go
+cd+++++++ activity-sync/internal/service/
+<f+++++++ activity-sync/internal/service/sync.go
+<f+++++++ activity-sync/internal/service/sync_test.go
+cd+++++++ api/
+<f+++++++ api/activity-sync.yaml
+<f+++++++ api/feed.yaml
+<f+++++++ api/gateway.yaml
+<f+++++++ api/identity.yaml
+<f+++++++ api/media.yaml
+<f+++++++ api/messaging.yaml
+<f+++++++ api/notifications.yaml
+<f+++++++ api/realtime-gw.yaml
+<f+++++++ api/redocly.yaml
+<f+++++++ api/social-graph.yaml
+cd+++++++ api/_shared/
+<f+++++++ api/_shared/parameters.yaml
+<f+++++++ api/_shared/responses.yaml
+<f+++++++ api/_shared/schemas.yaml
+cd+++++++ deploy/
+<f+++++++ deploy/README.md
+cd+++++++ deploy/helm/
+<f+++++++ deploy/helm/README.md
+cd+++++++ deploy/helm/identity/
+<f+++++++ deploy/helm/identity/.helmignore
+<f+++++++ deploy/helm/identity/Chart.yaml
+<f+++++++ deploy/helm/identity/values.yaml
+cd+++++++ deploy/helm/identity/templates/
+<f+++++++ deploy/helm/identity/templates/_helpers.tpl
+<f+++++++ deploy/helm/identity/templates/deployment.yaml
+<f+++++++ deploy/helm/identity/templates/hpa.yaml
+<f+++++++ deploy/helm/identity/templates/service.yaml
+cd+++++++ feed/
+<f+++++++ feed/Dockerfile
+<f+++++++ feed/go.mod
+<f+++++++ feed/go.sum
+cd+++++++ feed/cmd/
+cd+++++++ feed/cmd/server/
+<f+++++++ feed/cmd/server/main.go
+cd+++++++ feed/internal/
+cd+++++++ feed/internal/cleanup/
+<f+++++++ feed/internal/cleanup/cleanup.go
+cd+++++++ feed/internal/domain/
+<f+++++++ feed/internal/domain/types.go
+cd+++++++ feed/internal/handler/
+<f+++++++ feed/internal/handler/http.go
+<f+++++++ feed/internal/handler/posts.go
+cd+++++++ feed/internal/repository/
+cd+++++++ feed/internal/repository/postgres/
+<f+++++++ feed/internal/repository/postgres/posts.go
+<f+++++++ feed/internal/repository/postgres/stories.go
+cd+++++++ feed/internal/service/
+<f+++++++ feed/internal/service/posts.go
+<f+++++++ feed/internal/service/svc.go
+cd+++++++ gateway/
+<f+++++++ gateway/Caddyfile
+<f+++++++ gateway/Caddyfile.prod
+cd+++++++ gateway/admin/
+<f+++++++ gateway/admin/index.html
+cd+++++++ identity/
+<f+++++++ identity/Dockerfile
+<f+++++++ identity/go.mod
+<f+++++++ identity/go.sum
+cd+++++++ identity/cmd/
+cd+++++++ identity/cmd/server/
+<f+++++++ identity/cmd/server/main.go
+<f+++++++ identity/cmd/server/main_test.go
+cd+++++++ identity/internal/
+cd+++++++ identity/internal/domain/
+<f+++++++ identity/internal/domain/user.go
+cd+++++++ identity/internal/handler/
+<f+++++++ identity/internal/handler/featureflags.go
+<f+++++++ identity/internal/handler/http.go
+<f+++++++ identity/internal/handler/http_test.go
+<f+++++++ identity/internal/handler/otp.go
+cd+++++++ identity/internal/repository/
+<f+++++++ identity/internal/repository/repository.go
+cd+++++++ identity/internal/repository/memory/
+<f+++++++ identity/internal/repository/memory/memory.go
+cd+++++++ identity/internal/repository/postgres/
+<f+++++++ identity/internal/repository/postgres/otp.go
+<f+++++++ identity/internal/repository/postgres/refresh_token.go
+<f+++++++ identity/internal/repository/postgres/user.go
+cd+++++++ identity/internal/service/
+<f+++++++ identity/internal/service/auth.go
+<f+++++++ identity/internal/service/auth_test.go
+<f+++++++ identity/internal/service/otp.go
+cd+++++++ media/
+<f+++++++ media/Dockerfile
+<f+++++++ media/go.mod
+<f+++++++ media/go.sum
+cd+++++++ media/cmd/
+cd+++++++ media/cmd/server/
+<f+++++++ media/cmd/server/main.go
+cd+++++++ media/internal/
+cd+++++++ media/internal/domain/
+<f+++++++ media/internal/domain/types.go
+cd+++++++ media/internal/handler/
+<f+++++++ media/internal/handler/http.go
+cd+++++++ media/internal/repository/
+cd+++++++ media/internal/repository/postgres/
+<f+++++++ media/internal/repository/postgres/media.go
+cd+++++++ media/internal/s3/
+<f+++++++ media/internal/s3/client.go
+cd+++++++ media/internal/service/
+<f+++++++ media/internal/service/svc.go
+cd+++++++ messaging/
+<f+++++++ messaging/Dockerfile
+<f+++++++ messaging/go.mod
+<f+++++++ messaging/go.sum
+cd+++++++ messaging/cmd/
+cd+++++++ messaging/cmd/server/
+<f+++++++ messaging/cmd/server/main.go
+cd+++++++ messaging/internal/
+cd+++++++ messaging/internal/domain/
+<f+++++++ messaging/internal/domain/types.go
+cd+++++++ messaging/internal/handler/
+<f+++++++ messaging/internal/handler/http.go
+cd+++++++ messaging/internal/outbox/
+<f+++++++ messaging/internal/outbox/publisher.go
+cd+++++++ messaging/internal/permissions/
+<f+++++++ messaging/internal/permissions/permissions.go
+<f+++++++ messaging/internal/permissions/permissions_test.go
+cd+++++++ messaging/internal/repository/
+cd+++++++ messaging/internal/repository/postgres/
+<f+++++++ messaging/internal/repository/postgres/conversations.go
+<f+++++++ messaging/internal/repository/postgres/messages.go
+<f+++++++ messaging/internal/repository/postgres/outbox.go
+<f+++++++ messaging/internal/repository/postgres/reactions.go
+cd+++++++ messaging/internal/service/
+<f+++++++ messaging/internal/service/svc.go
+cd+++++++ migrations/
+<f+++++++ migrations/0000_extensions.down.sql
+<f+++++++ migrations/0000_extensions.up.sql
+<f+++++++ migrations/0001_users.down.sql
+<f+++++++ migrations/0001_users.up.sql
+<f+++++++ migrations/0002_activities.down.sql
+<f+++++++ migrations/0002_activities.up.sql
+<f+++++++ migrations/0003_session_hr.down.sql
+<f+++++++ migrations/0003_session_hr.up.sql
+<f+++++++ migrations/0004_session_calories.down.sql
+<f+++++++ migrations/0004_session_calories.up.sql
+<f+++++++ migrations/0010_social_graph.down.sql
+<f+++++++ migrations/0010_social_graph.up.sql
+<f+++++++ migrations/0011_messaging.down.sql
+<f+++++++ migrations/0011_messaging.up.sql
+<f+++++++ migrations/0012_notifications.down.sql
+<f+++++++ migrations/0012_notifications.up.sql
+<f+++++++ migrations/0013_reactions.down.sql
+<f+++++++ migrations/0013_reactions.up.sql
+<f+++++++ migrations/0014_media.down.sql
+<f+++++++ migrations/0014_media.up.sql
+<f+++++++ migrations/0015_message_media.down.sql
+<f+++++++ migrations/0015_message_media.up.sql
+<f+++++++ migrations/0016_stories.down.sql
+<f+++++++ migrations/0016_stories.up.sql
+<f+++++++ migrations/0017_feed_posts.down.sql
+<f+++++++ migrations/0017_feed_posts.up.sql
+<f+++++++ migrations/0018_moderation.down.sql
+<f+++++++ migrations/0018_moderation.up.sql
+<f+++++++ migrations/0019_xp_grades.down.sql
+<f+++++++ migrations/0019_xp_grades.up.sql
+<f+++++++ migrations/0020_auth_otp.down.sql
+<f+++++++ migrations/0020_auth_otp.up.sql
+<f+++++++ migrations/0021_featureflags.down.sql
+<f+++++++ migrations/0021_featureflags.up.sql
+cd+++++++ notifications/
+<f+++++++ notifications/Dockerfile
+<f+++++++ notifications/go.mod
+<f+++++++ notifications/go.sum
+cd+++++++ notifications/cmd/
+cd+++++++ notifications/cmd/server/
+<f+++++++ notifications/cmd/server/main.go
+cd+++++++ notifications/internal/
+cd+++++++ notifications/internal/domain/
+<f+++++++ notifications/internal/domain/types.go
+cd+++++++ notifications/internal/expopush/
+<f+++++++ notifications/internal/expopush/client.go
+cd+++++++ notifications/internal/handler/
+<f+++++++ notifications/internal/handler/http.go
+cd+++++++ notifications/internal/repository/
+cd+++++++ notifications/internal/repository/postgres/
+<f+++++++ notifications/internal/repository/postgres/repos.go
+cd+++++++ notifications/internal/service/
+<f+++++++ notifications/internal/service/svc.go
+cd+++++++ observability/
+<f+++++++ observability/grafana-datasources.yml
+<f+++++++ observability/loki.yml
+<f+++++++ observability/prometheus.yml
+cd+++++++ pkg/
+<f+++++++ pkg/go.mod
+<f+++++++ pkg/go.sum
+cd+++++++ pkg/audit/
+<f+++++++ pkg/audit/audit.go
+cd+++++++ pkg/auth/
+<f+++++++ pkg/auth/jwt.go
+<f+++++++ pkg/auth/jwt_test.go
+cd+++++++ pkg/clientversion/
+<f+++++++ pkg/clientversion/clientversion.go
+<f+++++++ pkg/clientversion/middleware.go
+<f+++++++ pkg/clientversion/middleware_test.go
+<f+++++++ pkg/clientversion/parse.go
+<f+++++++ pkg/clientversion/parse_test.go
+cd+++++++ pkg/featureflags/
+<f+++++++ pkg/featureflags/cache.go
+<f+++++++ pkg/featureflags/cache_test.go
+<f+++++++ pkg/featureflags/featureflags.go
+<f+++++++ pkg/featureflags/featureflags_test.go
+<f+++++++ pkg/featureflags/postgres.go
+<f+++++++ pkg/featureflags/rollout.go
+<f+++++++ pkg/featureflags/rollout_test.go
+cd+++++++ pkg/gamification/
+<f+++++++ pkg/gamification/gamification_test.go
+<f+++++++ pkg/gamification/grade.go
+<f+++++++ pkg/gamification/xp.go
+cd+++++++ pkg/permissions/
+<f+++++++ pkg/permissions/capability.go
+<f+++++++ pkg/permissions/check.go
+<f+++++++ pkg/permissions/check_test.go
+<f+++++++ pkg/permissions/loader.go
+<f+++++++ pkg/permissions/role.go
+cd+++++++ pkg/ratelimit/
+<f+++++++ pkg/ratelimit/ratelimit.go
+cd+++++++ realtime-gw/
+<f+++++++ realtime-gw/Dockerfile
+<f+++++++ realtime-gw/go.mod
+<f+++++++ realtime-gw/go.sum
+cd+++++++ realtime-gw/cmd/
+cd+++++++ realtime-gw/cmd/server/
+<f+++++++ realtime-gw/cmd/server/main.go
+cd+++++++ realtime-gw/internal/
+cd+++++++ realtime-gw/internal/gw/
+<f+++++++ realtime-gw/internal/gw/connection.go
+<f+++++++ realtime-gw/internal/gw/handler.go
+<f+++++++ realtime-gw/internal/gw/registry.go
+cd+++++++ scripts/
+<f+++++++ scripts/smoke_abac_muted.py
+<f+++++++ scripts/smoke_moderation.py
+<f+++++++ scripts/smoke_otp.py
+<f+++++++ scripts/smoke_permissions.py
+<f+++++++ scripts/smoke_posts.py
+<f+++++++ scripts/smoke_ratelimit.py
+<f+++++++ scripts/smoke_realtime_feed.py
+<f+++++++ scripts/smoke_realtime_stories.py
+<f+++++++ scripts/smoke_stories.py
+<f+++++++ scripts/smoke_xp.py
+<f+++++++ scripts/test_clientversion_caddy.sh
+cd+++++++ scripts/openapi-routes-check/
+<f+++++++ scripts/openapi-routes-check/ast_walk.go
+<f+++++++ scripts/openapi-routes-check/go.mod
+<f+++++++ scripts/openapi-routes-check/go.sum
+<f+++++++ scripts/openapi-routes-check/main.go
+<f+++++++ scripts/openapi-routes-check/main_test.go
+<f+++++++ scripts/openapi-routes-check/spec_load.go
+cd+++++++ scripts/secrets/
+<f+++++++ scripts/secrets/init-pre-commit.sh
+<f+++++++ scripts/secrets/verify_sops_roundtrip.sh
+cd+++++++ social-graph/
+<f+++++++ social-graph/Dockerfile
+<f+++++++ social-graph/go.mod
+<f+++++++ social-graph/go.sum
+cd+++++++ social-graph/cmd/
+cd+++++++ social-graph/cmd/server/
+<f+++++++ social-graph/cmd/server/main.go
+cd+++++++ social-graph/internal/
+cd+++++++ social-graph/internal/domain/
+<f+++++++ social-graph/internal/domain/types.go
+cd+++++++ social-graph/internal/handler/
+<f+++++++ social-graph/internal/handler/http.go
+<f+++++++ social-graph/internal/handler/moderation.go
+cd+++++++ social-graph/internal/repository/
+cd+++++++ social-graph/internal/repository/postgres/
+<f+++++++ social-graph/internal/repository/postgres/block.go
+<f+++++++ social-graph/internal/repository/postgres/follow.go
+<f+++++++ social-graph/internal/repository/postgres/profile.go
+<f+++++++ social-graph/internal/repository/postgres/reports.go
+cd+++++++ social-graph/internal/service/
+<f+++++++ social-graph/internal/service/moderation.go
+<f+++++++ social-graph/internal/service/svc.go
+changed: [prod-app-01]
+
+TASK [sport-stack : Pre-flight — assert age key file exists on controller (W3 fix)] ***
+ok: [prod-app-01 -> localhost]
+
+TASK [sport-stack : Decrypt SOPS groups on controller (per CONTEXT D-12 + D-26 — 3 slots only)] ***
+ok: [prod-app-01 -> localhost] => (item=(censored due to no_log))
+ok: [prod-app-01 -> localhost] => (item=(censored due to no_log))
+ok: [prod-app-01 -> localhost] => (item=(censored due to no_log))
+
+TASK [sport-stack : Merge SOPS groups into single env dict on controller] ******
+[DEPRECATION WARNING]: INJECT_FACTS_AS_VARS default to `True` is deprecated, top-level facts will not be auto injected after the change. This feature will be removed from ansible-core version 2.24.
+Origin: /Users/ismail/Desktop/projects/sport/.claude/worktrees/agent-a2cf95f1a5cb08640/infra/ansible/roles/sport-stack/tasks/decrypt_sops.yml:44:23
+
+42   become: false
+43   ansible.builtin.set_fact:
+44     sport_env_merged: >-
+                         ^ column 23
+
+Use `ansible_facts["fact_name"]` (no `ansible_` prefix) instead.
+
+ok: [prod-app-01 -> localhost]
+
+TASK [sport-stack : Template merged env to /run/sport.env на remote (tmpfs per D-15)] ***
+[DEPRECATION WARNING]: INJECT_FACTS_AS_VARS default to `True` is deprecated, top-level facts will not be auto injected after the change. This feature will be removed from ansible-core version 2.24.
+Origin: /Users/ismail/Desktop/projects/sport/.claude/worktrees/agent-a2cf95f1a5cb08640/infra/ansible/roles/sport-stack/templates/sport.env.j2
+
+Use `ansible_facts["fact_name"]` (no `ansible_` prefix) instead.
+
+changed: [prod-app-01]
+
+TASK [sport-stack : Run golang-migrate one-shot container (D-14)] **************
+skipping: [prod-app-01]
+
+TASK [sport-stack : Display migration result summary] **************************
+skipping: [prod-app-01]
+
+TASK [sport-stack : Install sport-stack.service systemd unit] ******************
+--- before
++++ after: /Users/ismail/.ansible/tmp/ansible-local-2859ll7p6ygy/tmpv7jkeo4v/sport-stack.service.j2
+@@ -0,0 +1,37 @@
++# /etc/systemd/system/sport-stack.service — Phase 3 D-04 docker-compose-on-systemd umbrella.
++# Wraps the 13-container production stack (8 Go services + 4 stateful + 1 gateway containerized Caddy)
++# under ONE systemd unit. Per D-15: /run/sport.env tmpfs mode 0600 owner deploy; shred on stop.
++#
++# CRITICAL invariants (DO NOT BREAK):
++#   • ExecStart uses `docker compose` SPACE-form (CONTEXT D-04 + RESEARCH Pitfall 4).
++#     NEVER `docker-compose` dash-form — that's the legacy v1 binary, removed in Compose v2.
++#   • ExecStopPost shreds /run/sport.env (D-15 defense-in-depth; /run is tmpfs anyway).
++#   • EnvironmentFile=/run/sport.env must exist BEFORE service start (templated by Ansible
++#     decrypt_sops.yml task to tmpfs mode 0600 owner deploy).
++#   • User=deploy + Group=deploy — non-root; deploy is in `docker` group (added by Plan 03-01
++#     docker role) so it can talk to /var/run/docker.sock.
++
++[Unit]
++Description=Running Ecosystem backend stack (docker compose umbrella)
++After=docker.service network-online.target
++Requires=docker.service
++Wants=network-online.target
++
++[Service]
++Type=simple
++User=deploy
++Group=deploy
++WorkingDirectory=/opt/sport
++EnvironmentFile=/run/sport.env
++# CRITICAL: `docker compose` SPACE-form per CONTEXT D-04 + RESEARCH Pitfall 4.
++ExecStart=/usr/bin/docker compose -f /opt/sport/services/backend/docker-compose.prod.yml up
++ExecStop=/usr/bin/docker compose -f /opt/sport/services/backend/docker-compose.prod.yml down
++# Shred plaintext env on stop (D-15 defense-in-depth; /run is tmpfs anyway).
++ExecStopPost=/bin/shred -u /run/sport.env
++Restart=on-failure
++RestartSec=10s
++TimeoutStartSec=600
++TimeoutStopSec=120
++
++[Install]
++WantedBy=multi-user.target
+
+changed: [prod-app-01]
+
+TASK [sport-stack : Flush handlers — apply systemd unit install before enable] ***
+
+RUNNING HANDLER [sport-stack : reload systemd] *********************************
+ok: [prod-app-01]
+
+TASK [sport-stack : Enable + start sport-stack.service] ************************
+skipping: [prod-app-01]
+
+TASK [sport-stack : Restart sport-stack if unit changed (steady-state only)] ***
+skipping: [prod-app-01]
+
+TASK [sport-stack : Smoke probe — OTP login flow (BASE_URL=https://148-253-214-156.sslip.io)] ***
+skipping: [prod-app-01]
+
+TASK [sport-stack : Display smoke output (last lines)] *************************
+skipping: [prod-app-01]
+
+PLAY RECAP *********************************************************************
+prod-app-01                : ok=9    changed=4    unreachable=0    failed=0    skipped=6    rescued=0    ignored=0   
+
+real 13.01
+user 2.13
+sys 0.87
+
+INFRA-07 VERDICT: PASS (real 13.01s <= 3600s)
+  Source: /usr/bin/time -p `real` line, parsed via awk
+  CAVEAT: check-mode dry-run timing; live first-deploy timing on prod VPS
+  deferred to Plan 03-03 cutover (sport-stack.service start + image pull +
+  migration + ACME issuance + smoke probe excluded from this measurement).
+  Real INFRA-07 verdict MUST be re-recorded in 03-03-timing.log after cutover.

@@ -60,6 +60,8 @@ coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+# Plan timing logs (Phase 3 INFRA-07 measurements — contractual plan outputs)
+!.planning/phases/**/[0-9][0-9]-[0-9][0-9]-timing.log
 .pnp.*
 .yarn/cache
 .yarn/install-state.gz
