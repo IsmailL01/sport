@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Closure
 status: executing
-stopped_at: Pattern-mapper next, then planner (opus), then plan-checker (sonnet) revision loop, then coverage gates + commit.
-last_updated: "2026-05-16T10:51:26.846Z"
-last_activity: 2026-05-16 -- Phase 03 execution started
+stopped_at: Phase 3 post-pivot planning complete (3 plans, plan-checker iter 2 PASSED) — ready for `/gsd-execute-phase 3 --wave 1` (Wave 1 NEW 03-01 Ansible scaffold, autonomous=false для DEV_B keys + user-provides-VPS-IP/SSH-user).
+last_updated: "2026-05-17T07:42:09.351Z"
+last_activity: 2026-05-17 -- Phase 03 planning complete
 progress:
   total_phases: 21
   completed_phases: 1
-  total_plans: 8
+  total_plans: 6
   completed_plans: 7
   percent: 5
 ---
@@ -29,10 +29,10 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 ## Current Position
 
-Phase: 03 (infrastructure-as-code) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 03
-Last activity: 2026-05-16 -- Phase 03 execution started
+Phase: **3 of 21** (Infrastructure as Code) — `backend` workstream — **POST-PIVOT 2026-05-17, ready to execute**
+Plan: TBD — 3 plans across 3 waves (was 5/4 pre-pivot; Terraform + sentry-prep dropped; see ROADMAP §Phase 3 + 03-CONTEXT §PIVOT NOTICE)
+Status: Ready to execute (Wave 1 = new 03-01 Ansible scaffold, autonomous=false для DEV_B keys + user-provides-VPS-IP/SSH-user)
+Last activity: 2026-05-17 — Phase 3 post-pivot planning complete (plan-checker iter 2 PASSED)
 
 Progress: [▓▓░░░░░░░░] ~11% of new v1.0 scope (REL-01..05 + SEC-01..09 all delivered or partial; 14-of-96 REQ-IDs complete — SEC-01 still partial pending Phase 4 CI wiring; everything else in SEC-* closed)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
@@ -148,23 +148,30 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-16 — Phase 3 Wave 1 mid-flight. Plan 03-01 executor (sonnet, worktree-isolated, commits `63a0c14` Wave 0 prereqs + `697e53b` Terraform scaffold + `39a67e0` SUMMARY) HALTED at Task 1 human-action checkpoint. Tasks 0 (.gitignore + 3 encrypted SOPS `hetzner.yaml` slots with `REPLACE_ME` placeholders) and 2 (Terraform skeleton — 11 `.tf` files + `tf-wrap.sh` + `.terraform.lock.hcl`, `terraform validate` green, B1 fix verified, I1 not triggered because `hcloud_storage_box` available in provider v1.63.0) shipped. Local-only deviation: Terraform installed via direct HashiCorp binary into `~/.local/bin` (Homebrew dropped Terraform/BSL; `hashicorp/tap` blocked by outdated Xcode CLT on this workstation) — follow-up in `docs/RUNBOOKS/deploy.md §1`. Task 3 (terraform init → plan sanity → import → apply) blocked on Task 1 completion.
+Last session: 2026-05-17 — **Phase 3 PIVOTED** mid-execution per user input "у меня не Hetzner а обычный vps сервер". 21 D-XX decisions classified SUPERSEDED/KEPT; new D-22..D-26 added (drop Terraform entirely; single existing prod VPS; UFW replaces Hetzner Cloud Firewall; provider-agnostic RUNBOOK; no VPS SOPS slot). Pre-pivot 5-plan scaffold (with Plan 03-01 Terraform + Plan 03-03b sentry-prep) reverted to 3-plan post-pivot set (Ansible-only, prod-only). Plan-checker iteration 2 PASSED — final fixes: B1 sport.env.j2 in 03-02 files_modified + verify; W1 caddy-role contract dropped from ROADMAP + VALIDATION + 03-01 forbidden.
 
-Earlier in same session: Phase 3 PATTERNS + 5 PLAN.md committed (`ad913f0`), revision loop iteration 1 closed 4 BLOCKER + 5 WARNING + 2 INFO; planner pass + plan-checker pass + plan-checker iteration 2 VERIFICATION PASSED.
-Stopped at: Plan 03-01 Task 1 — awaiting user resume signal `"credentials pasted + imported.auto.tfvars filled"`.
-Resume file: `.planning/phases/03-infrastructure-as-code/03-01-SUMMARY.md` (Wave 1 partial — read §CHECKPOINT REQUIRED for user-action steps).
+**Pivot commit sequence** (in order, on `feat/cursona-redesign`):
+- `00bcb39` revert(03) — Plan 03-01 superseded; deleted `infra/terraform/`, 3 SOPS hetzner.yaml slots, .gitignore Terraform section, 03-01-SUMMARY
+- `c16e9bb` — 3 old plan deletes (03-02, 03-03a, 03-04 old IDs)
+- `9cf1c63` — CONTEXT + RESEARCH pivot banners + new 03-01-PLAN.md (Ansible scaffold)
+- `9e4fefe` — ROADMAP + REQUIREMENTS + VALIDATION + PATTERNS pivot
+- `6f3d5a1` — 03-02-PLAN.md (sport-stack) + 03-03-PLAN.md (cutover + provider-agnostic RUNBOOK)
+- `af0be2e` — plan-checker iter 2 fixes (B1 + W1)
 
-**User-action checkpoint (Plan 03-01 Task 1) — required to unblock Wave 1:**
-1. Hetzner Cloud Console → Project → Security → API Tokens → Generate (Read+Write, label `terraform-v1.0`); copy token (shown once).
-2. Hetzner Cloud Console → Object Storage → Create Bucket (`running-ecosystem-tfstate`, location `fsn1` or `nbg1`, Private); Credentials → Generate → copy `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`.
-3. `brew install hcloud && hcloud context create terraform-v1.0` (paste API token from step 1) — then `hcloud server describe prod-app-01 -o json | jq '{server_type:.server_type.name, location:.datacenter.location.name, image:.image.name, id:.id}'`; paste 4 values into `infra/terraform/imported.auto.tfvars` (gitignored).
-4. `EDITOR=vim sops .secrets/{prod,staging,dev}/hetzner.yaml` (3 envs, same Hetzner project per CONTEXT D-02) — replace 3 × `REPLACE_ME` per file with values from steps 1+2.
-5. Verify: `sops -d .secrets/prod/hetzner.yaml | grep -v REPLACE_ME` shows all 3 keys with real values.
+**Coverage gates (final post-pivot):**
+- Requirements: 4/4 active INFRA-* covered in plan frontmatter (INFRA-01: 03-01p + 03-02 + 03-03; INFRA-03 + INFRA-05: 03-01; INFRA-07: 03-02 + 03-03). INFRA-02 + INFRA-04 deferred v1.1, INFRA-06 moved to Phase 5.
+- Decisions: 16 in-scope D-XX cited (D-03/04/12/13/14/15/16/17/19/20/21 KEPT; D-22/23/24/25/26 NEW). SUPERSEDED D-01/02/05/06/09/10/11/etc. excluded by design.
+- All 5 prior plan-checker fixes preserved across pivot: B3 (programmatic `awk '/^real/'` verdict from `/usr/bin/time -p`), B4 (explicit `docker compose down --remove-orphans` step 3.5 before Ansible UP), W3 (HOME-explicit SOPS env construct, no `expanduser`), W4 (negative-grep ROADMAP for stale Object Storage wording), W5 (sed-fill + `! grep -q '<fill'` for deploy.md §9 placeholders).
 
-**Next action after resume signal:** orchestrator spawns continuation executor for Plan 03-01 Task 3 (`./tf-wrap.sh init && plan && import hcloud_server.prod_app_01 <id> && plan && apply`), then proceeds to Wave 2 (Plan 03-02 — Ansible scaffold + roles, second human-action checkpoint for DEV_B SSH+age pubkeys).
-Resume file: `.planning/phases/03-infrastructure-as-code/03-RESEARCH.md` (read first; CONTEXT corrections in §Key Findings).
+Stopped at: Post-pivot planning complete; ready to execute Wave 1.
+Resume file: `.planning/phases/03-infrastructure-as-code/03-01-PLAN.md` (new Wave 1 — Ansible scaffold + common + docker + UFW + stub sport-stack + dev/prod inventory).
 
-**Next action**: `/gsd-plan-phase 3` — resumes from pattern-mapper spawn (CONTEXT + RESEARCH + VALIDATION already on disk; init JSON will detect `has_research: true` and skip the researcher). Planner produces 4-wave breakdown matching `<dependencies>` block in 03-CONTEXT (Wave 1: Terraform scaffold + import; Wave 2: Ansible scaffold + common/docker/caddy-template roles; Wave 3a: sport-stack + deploy; Wave 3b: Sentry VPS prep; Wave 4: cutover + RUNBOOK), applying the 4 RESEARCH corrections.
+**User-action checkpoints for Wave 1 (Plan 03-01) — required mid-plan:**
+
+1. **Pre-flight (Task 0):** User provides current VPS public IP + SSH-user name that has sudo on it. Orchestrator writes IP + user into `infra/ansible/inventory/prod/hosts.yml` + `group_vars/all.yml`.
+2. **DEV_B keys checkpoint:** DEV_B delivers SSH pubkey + age pubkey (Phase 2 carry-over follow-up #5). Orchestrator runs `sops updatekeys .secrets/**/*.yaml` + appends SSH pubkey to `group_vars/all.yml dev_ssh_pubkeys`. If DEV_B not yet onboarded, checkpoint can be deferred — Plan 03-01 SUMMARY records skip + carry-forward to Plan 03-03.
+
+**Next action:** `/gsd-execute-phase 3 --wave 1` (or full `/gsd-execute-phase 3`) — executor for Wave 1 will halt at Task 0 pre-flight for VPS IP/SSH-user. Then Wave 2 (Plan 03-02 sport-stack, autonomous=true, live deploy + `<60min` timing) → Wave 3 (Plan 03-03 prod cutover, autonomous=false для human-verify).
 
 ## Artifacts Created (cumulative)
 
