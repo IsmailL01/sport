@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Closure
-status: executing
-stopped_at: Plan 03-02 Wave 2 CLOSED — live cutover SUCCESS 2026-05-17 11:19Z. sport-stack.service active, 13 containers serving prod, all 6 running-ecosystem_* volumes preserved (10+ days data intact), INFRA-07 baseline = 66.5s real (well под <60min target). Ready for Wave 3 (Plan 03-03 — RUNBOOK + ROADMAP/REQ patches).
-last_updated: "2026-05-17T09:13:13.825Z"
-last_activity: 2026-05-17 — Phase 3 post-pivot planning complete (plan-checker iter 2 PASSED)
+status: completed
+stopped_at: Phase 3 COMPLETE 2026-05-17 — all 4 active INFRA-* acceptance green (02/04 deferred v1.1; 06 moved Phase 5). sport-stack.service active, 13 containers, INFRA-07 baseline 66.5s. Ready для Phase 4 (CI/CD).
+last_updated: "2026-05-17T11:34:12.505Z"
+last_activity: 2026-05-17 -- Phase 03 marked complete
 progress:
   total_phases: 21
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 8
-  percent: 5
+  completed_plans: 10
+  percent: 10
 ---
 
 # Project State
@@ -23,16 +23,15 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 **Milestone:** v1.0 Production Readiness — IN PROGRESS, **REDEFINED 2026-05-15** as 21-phase hardening scope. Earlier 8-phase feature scope superseded. Feature work (privacy zones, segments, coaching, premium, GDPR) slides to v1.1+. Target close: tagged `v1.0-rc.1` after 48h staging soak with ≥8 real runners.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** Phase 03 — infrastructure-as-code
+**Current focus:** Phase 4 — CI/CD pipeline (Phase 3 closed 2026-05-17)
 
 **Brownfield note:** Codebase remains at Phase 8 / M10 code-complete on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors landed under the superseded scope — kept as-is in git history; planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`). Pixel + iPhone field-test acceptance criteria inherited by new Phase 16 (CONTEXT skeleton seeded).
 
 ## Current Position
 
-Phase: **3 of 21** (Infrastructure as Code) — `backend` workstream — **POST-PIVOT 2026-05-17, ready to execute**
-Plan: TBD — 3 plans across 3 waves (was 5/4 pre-pivot; Terraform + sentry-prep dropped; see ROADMAP §Phase 3 + 03-CONTEXT §PIVOT NOTICE)
-Status: Ready to execute (Wave 1 = new 03-01 Ansible scaffold, autonomous=false для DEV_B keys + user-provides-VPS-IP/SSH-user)
-Last activity: 2026-05-17 — Phase 3 post-pivot planning complete (plan-checker iter 2 PASSED)
+Phase: **4 of 21** (CI/CD pipeline) — `backend` workstream — next, ready to plan
+Last completed: Phase 3 (Infrastructure as Code) — 3 plans across 3 waves, 2026-05-17. Pivoted mid-execution from Hetzner Cloud to provider-agnostic VPS (5→3 plans). Sport-stack systemd umbrella deployed на 148.253.214.156, 13 containers, INFRA-07 baseline 66.5s real (target <60min). UFW + key-only SSH защита.
+Status: Phase 3 complete; Phase 4 awaiting `/gsd-discuss-phase 4` then `/gsd-plan-phase 4`.
 
 Progress: [▓▓░░░░░░░░] ~11% of new v1.0 scope (REL-01..05 + SEC-01..09 all delivered or partial; 14-of-96 REQ-IDs complete — SEC-01 still partial pending Phase 4 CI wiring; everything else in SEC-* closed)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
