@@ -1,0 +1,8 @@
+---
+docker_apt_release_channel: stable
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin   # CRITICAL: plugin form (docker compose, space) per RESEARCH Pitfall 4

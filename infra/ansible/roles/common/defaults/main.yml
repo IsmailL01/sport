@@ -1,0 +1,10 @@
+---
+common_packages:
+  - curl
+  - gnupg
+  - ca-certificates
+  - python3
+  - python3-apt
+  - rsync
+  - age   # для SOPS interop (если когда-то нужно decrypt'ить on remote; v1.0 — no)
+  - ufw   # required для community.general.ufw module per D-24 NEW

@@ -1,0 +1,84 @@
+---
+# Docker Engine install per docs.docker.com/engine/install/ubuntu (official method).
+# Plugin form (`docker compose`, space) only — NEVER legacy `docker-compose` (dash).
+
+- name: Apt deps для Docker repository
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg]
+    update_cache: true
+    cache_valid_time: 3600
+  tags: [docker]
+
+- name: Make /etc/apt/keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  tags: [docker]
+
+- name: Download Docker apt key (canonical docs.docker.com path — .asc)
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+    force: false
+  tags: [docker]
+
+# Legacy cleanup: existing VPS may have an older pre-Ansible manual install that
+# wrote /etc/apt/keyrings/docker.gpg + a duplicate `signed-by=...docker.gpg` apt
+# source line. Apt rejects conflicting `Signed-By` values for the same source URL.
+# Canonical convention as of docs.docker.com/engine/install/ubuntu (2024+) is .asc.
+# Remove the legacy .gpg keyring; the apt_repository task below replaces the source
+# line с canonical .asc reference. Idempotent — no-op once legacy is cleaned.
+- name: Remove legacy docker.gpg keyring (avoids Signed-By conflict)
+  ansible.builtin.file:
+    path: /etc/apt/keyrings/docker.gpg
+    state: absent
+  tags: [docker]
+
+# Use ansible.builtin.copy (overwrite) instead of ansible.builtin.apt_repository
+# (append-only) so that any pre-existing legacy lines (e.g., a docker.gpg-based
+# line from a prior manual install) are replaced by the single canonical .asc line.
+- name: Write Docker apt source (canonical .asc — overwrites any legacy/duplicate)
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/docker.list
+    content: |
+      deb [arch={{ ansible_architecture | replace('aarch64','arm64') | replace('x86_64','amd64') }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} {{ docker_apt_release_channel }}
+    owner: root
+    group: root
+    mode: '0644'
+  register: docker_source
+  tags: [docker]
+
+- name: Refresh apt cache after docker source change
+  ansible.builtin.apt:
+    update_cache: true
+  when: docker_source.changed
+  tags: [docker]
+
+- name: Install Docker Engine + Compose plugin
+  ansible.builtin.apt:
+    name: "{{ docker_packages }}"
+    state: present
+  tags: [docker]
+
+- name: Enable + start docker.service
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+  tags: [docker]
+
+- name: Add deploy user в docker group
+  ansible.builtin.user:
+    name: "{{ deploy_user }}"
+    groups: [docker]
+    append: true
+  tags: [docker]
+
+- name: Verify docker compose (NOT docker-compose dash) installed
+  ansible.builtin.command: docker compose version
+  register: compose_check
+  changed_when: false
+  failed_when: compose_check.rc != 0
+  tags: [docker]

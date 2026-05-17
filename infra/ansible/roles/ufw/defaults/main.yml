@@ -1,0 +1,11 @@
+---
+# Default-deny ingress + allow-list per CONTEXT D-24. Egress always allow.
+ufw_allowed_tcp_public:
+  - 443   # Caddy public HTTPS (D-16)
+ufw_denied_tcp_public:
+  - 80    # Caddy redirects via redir 308 — no plaintext HTTP
+  - 4222  # NATS internal-only per D-07
+  - 5432  # Postgres internal-only
+  - 6379  # Redis internal-only
+  - 9000  # MinIO direct — served via Caddy at s3.<vps-ip>.sslip.io per D-08
+# SSH allow-list (22/TCP) sourced from group_vars/all.yml dev_admin_ips
