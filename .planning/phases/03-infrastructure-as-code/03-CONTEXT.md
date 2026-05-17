@@ -7,6 +7,18 @@
 **Workstream:** `backend` (STRICT after Phase 2 — Phase 2 → Phase 3 no-parallelization gate is now LIFTED; Ansible templates source from SOPS, not inline values)
 **Mode:** Autonomous (`--auto`-equivalent per persistent no-questions instruction; mirrors Phase 2 CONTEXT posture)
 
+## ⚠ D-24 REVISION (2026-05-17, post-Wave-1-second-recovery)
+
+Original D-24 NEW: UFW SSH allow only от `dev_admin_ips/32` (single-IP allowlist). **Observed failure mode within 38 minutes of Wave 1 apply:** residential ISP rotated dev IP (`91.92.33.145` → `85.239.149.26`), silently locking dev out next SSH attempt — UFW dropped SYN packets from new IP, ssh client hung at "Connection timed out during banner exchange". Required out-of-band web-console recovery (twice in one session). Per-IP allowlist is fundamentally брittle для residential ISP solo dev.
+
+**Revised D-24:** UFW SSH = `limit` action from anywhere (`rule: limit, port: 22, proto: tcp` — UFW's built-in rate-limit: 6 connections / 30s per source IP, blocks brute-force без locking-out legit users on IP rotation). Actual SSH defense-in-depth для solo-dev v1.0 closed-beta:
+- SSH key-only auth (D-19 `PasswordAuthentication no`) — no password = no brute-force surface
+- Root login disabled (D-19 `PermitRootLogin no`)
+- ed25519 key (collision-resistant)
+- UFW rate-limit (defense against script-kiddie SSH-scanner brute-forcers)
+
+v1.1 follow-up: if static dev IP / VPN gateway / bastion host lands, re-narrow к per-IP allowlist (move `limit` → `allow from <ip>` per dev). Until then, key-only-auth is the SSH-layer defense; UFW rate-limit is the IP-layer defense. Tested 2026-05-17 — same lockout class survives ISP rotation (lockout vector eliminated). Removed `dev_admin_ips` group_var dependency from `roles/ufw/tasks/main.yml`.
+
 ## ⚠ D-20 REVISION (2026-05-17, post-Wave-1-first-run)
 
 Original D-20 narrow sudoers (`NOPASSWD: /bin/systemctl, /usr/bin/docker, /usr/bin/docker compose, /bin/shred /run/sport.env` — 4 commands only) **broke Ansible day-2 ops** immediately after Wave 1 first-run + switchover к `ansible_user: deploy`. Ansible's `gather_facts`, apt, file copy, etc. tasks invoke `become: yes` → `sudo -i` (or `sudo -H -S -p`), none match the 4 whitelisted commands → "Missing sudo password" on every play. Revised: `deploy ALL=(ALL) NOPASSWD: ALL`. Actual defense for solo-dev v1.0 closed-beta = SSH key-only auth (D-19) + UFW SSH allow only от `dev_admin_ips/32` (D-24) + root login disabled (D-19) + ed25519 key; narrow sudoers added негативное value (blocked Ansible) для negligible additional security. v1.1 follow-up: revisit if team grows >1 dev — re-introduce narrow runtime sudoers + separate Ansible service account. Live VPS sudoers must be updated out-of-band before next ansible-playbook can land cleanly. Source updated в `roles/common/tasks/main.yml`.

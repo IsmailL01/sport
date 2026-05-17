@@ -15,13 +15,19 @@
     - { direction: outgoing, policy: allow }
   tags: [ufw]
 
-- name: Allow SSH (22/TCP) from dev admin IPs (FIRST — else Ansible locks itself out)
+- name: Allow SSH (22/TCP) from anywhere — rate-limited (D-24 REVISED 2026-05-17)
+  # D-24 originally allowed SSH only from {{ dev_admin_ips }} /32 — but residential
+  # ISP rotates the dev IP (observed 91.92.33.145 → 85.239.149.26 within 38 min),
+  # which silently locks the dev out next time it tries SSH. For solo-dev v1.0
+  # closed-beta, actual SSH defense = key-only auth (D-19) + root login disabled
+  # (D-19) + UFW rate-limit (6 connections / 30s per source IP — UFW's `limit`
+  # action — blocks brute-force without locking out legit users on IP rotation).
+  # v1.1 follow-up: if static dev IP / VPN gateway / bastion lands, narrow back
+  # to per-IP allowlist. Full rationale в 03-CONTEXT.md §D-24 REVISION.
   community.general.ufw:
-    rule: allow
+    rule: limit
     port: '22'
     proto: tcp
-    src: "{{ item }}"
-  loop: "{{ dev_admin_ips }}"
   tags: [ufw]
 
 - name: Allow public TCP ports (Caddy 443 per D-16)
