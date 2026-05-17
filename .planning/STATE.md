@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Closure
 status: executing
-stopped_at: Plan 03-02 Wave 2 PARTIAL — role tree built (8 files) + check-mode dry-run passed (real=13s); live cutover deferred pending SOPS slot gap closure. Compose-file requires 5 env vars (JWT_SECRET, POSTGRES_PASSWORD as standalone, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, EXPO_ACCESS_TOKEN) not in SOPS slots — values exist на VPS at /opt/running-ecosystem/.env.prod. Awaiting user decision on SOPS-extension option (a/b/c per 03-02-SUMMARY §Carry-forward).
+stopped_at: Plan 03-02 Wave 2 CLOSED — live cutover SUCCESS 2026-05-17 11:19Z. sport-stack.service active, 13 containers serving prod, all 6 running-ecosystem_* volumes preserved (10+ days data intact), INFRA-07 baseline = 66.5s real (well под <60min target). Ready for Wave 3 (Plan 03-03 — RUNBOOK + ROADMAP/REQ patches).
 last_updated: "2026-05-17T09:13:13.825Z"
 last_activity: 2026-05-17 — Phase 3 post-pivot planning complete (plan-checker iter 2 PASSED)
 progress:

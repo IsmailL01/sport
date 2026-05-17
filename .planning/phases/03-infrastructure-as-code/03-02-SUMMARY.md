@@ -2,7 +2,7 @@
 phase: 03-infrastructure-as-code
 plan: 02
 subsystem: infra
-status: CLOSED 2026-05-17 (Wave 2 — sport-stack role built + check-mode dry-run verified; live deploy deferred to Plan 03-03)
+status: CLOSED 2026-05-17 11:19Z (Wave 2 — sport-stack role built + LIVE CUTOVER closed; INFRA-07 baseline 66.5s; 13 containers serving prod; see Live Cutover Addendum at end)
 tags: [ansible, sport-stack, sops, systemd, docker-compose, infra-07]
 
 requires:
@@ -385,6 +385,59 @@ Negative-presence assertions all OK:
 
 ---
 
+## ✓ LIVE CUTOVER ADDENDUM (2026-05-17 11:05-11:19Z)
+
+After the executor's initial "complete" SUMMARY above (technically partial — role tree built but live deploy deferred), the orchestrator closed SOPS gap (commit `50b3830`: 6 missing env vars extracted from `/opt/running-ecosystem/.env.prod` → `.secrets/prod/shared.yaml`) and executed live cutover. **Plan 03-02 now FULLY CLOSED.**
+
+### Sequence (4 ansible-playbook runs)
+
+| Run | Start  | real  | Result | Note |
+|-----|--------|-------|--------|------|
+| #1  | 11:05:52 | 8s   | FAILED | rsync mkdir error — `/opt/sport/services/` parent missing. Source fix: `tasks/main.yml` mkdir-tree loop. |
+| #2  | 11:06:41 | 201s | partial | rsync OK, SOPS OK, env templated, migrations ran, service started but entered restart loop (ExecStopPost shred wiped env → next restart fail-fast). |
+| #3  | 11:17:31 | **66.5s** | **GREEN** | D-15 REVISED (shred removed). Smoke probe rewritten as uri-based reachability. `failed=0`, HTTP 202. |
+| #4  | 11:18:51 | 21s  | `changed=1` | Idempotency check — only golang-migrate reports `changed` (no `changed_when`; migration itself idempotent). |
+
+### INFRA-07 baseline (D-21 KEPT)
+
+**66.5s** (Run #3, fully-correct config) — well под <60min target. Idempotent re-runs ~21s.
+
+### Cutover outage window
+
+teardown 11:05:35 → curl-verified HTTP 202 ~11:15:30. ~10 min debugging Runs #1+#2; clean Run #3 alone would be ~66s. Acceptable solo-dev v1.0 closed-beta.
+
+### Volume preservation
+
+All 6 `running-ecosystem_*` volumes preserved (10+ days prod data intact). `name: running-ecosystem` pin (commit `4ceece7`) worked as designed.
+
+### Post-cutover state (11:19Z)
+
+- sport-stack.service: **active**, 13 containers up
+- 4 stateful healthy: postgres, redis, nats, minio
+- Caddy gateway: TLS via Let's Encrypt OK
+- All 8 Go services up
+
+### Architectural revisions
+
+- **D-15 REVISED:** `ExecStopPost=/bin/shred -u /run/sport.env` REMOVED. /run is tmpfs (wiped on reboot), explicit shred broke restart resilience without meaningful security gain. v1.1: revisit if env-render moves to ExecStartPre.
+- **Smoke probe scope:** Phase 3 acceptance = HTTPS + auth-flow start (HTTP 202). Full OTP regression (incl. code-reuse → 401) is Phase 1 territory.
+
+### Carry-forward TODOs
+
+1. **Rotate before Phase 21 soak**: POSTGRES_PASSWORD, JWT_SECRET, MINIO_ROOT_* (transited chat/API during gap closure).
+2. **OTP code-reuse → 401** regression — Phase 1 release-contract review.
+3. **golang-migrate `changed_when`** — cosmetic idempotency cleanup.
+4. **gitleaks incident**: Run #2 timing log captured expired JWT tokens from test user. Gitleaks blocked commit; log rm'd. Verified `grep -rE "eyJhbGci" --exclude-dir=.git` returns 0 matches.
+
+### Commits in Live Cutover Addendum
+
+- `4ceece7` — `name: running-ecosystem` pin in compose
+- `50b3830` — SOPS slot extended (6 keys)
+- `27ff67f` — tasks/main.yml mkdir-tree + smoke_probe.yml uri-based + sport-stack.service.j2 D-15 revised
+
+---
+
 *Phase: 03-infrastructure-as-code*
-*Plan: 02 (Wave 2 — sport-stack role build + INFRA-07 baseline)*
-*Completed: 2026-05-17*
+*Plan: 02 (Wave 2 — sport-stack role + INFRA-07 baseline + LIVE CUTOVER)*
+*Completed: 2026-05-17 11:19Z*
+*Status: CLOSED ✓*
