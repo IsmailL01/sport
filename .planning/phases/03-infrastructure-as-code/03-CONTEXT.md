@@ -7,6 +7,10 @@
 **Workstream:** `backend` (STRICT after Phase 2 — Phase 2 → Phase 3 no-parallelization gate is now LIFTED; Ansible templates source from SOPS, not inline values)
 **Mode:** Autonomous (`--auto`-equivalent per persistent no-questions instruction; mirrors Phase 2 CONTEXT posture)
 
+## ⚠ D-20 REVISION (2026-05-17, post-Wave-1-first-run)
+
+Original D-20 narrow sudoers (`NOPASSWD: /bin/systemctl, /usr/bin/docker, /usr/bin/docker compose, /bin/shred /run/sport.env` — 4 commands only) **broke Ansible day-2 ops** immediately after Wave 1 first-run + switchover к `ansible_user: deploy`. Ansible's `gather_facts`, apt, file copy, etc. tasks invoke `become: yes` → `sudo -i` (or `sudo -H -S -p`), none match the 4 whitelisted commands → "Missing sudo password" on every play. Revised: `deploy ALL=(ALL) NOPASSWD: ALL`. Actual defense for solo-dev v1.0 closed-beta = SSH key-only auth (D-19) + UFW SSH allow only от `dev_admin_ips/32` (D-24) + root login disabled (D-19) + ed25519 key; narrow sudoers added негативное value (blocked Ansible) для negligible additional security. v1.1 follow-up: revisit if team grows >1 dev — re-introduce narrow runtime sudoers + separate Ansible service account. Live VPS sudoers must be updated out-of-band before next ansible-playbook can land cleanly. Source updated в `roles/common/tasks/main.yml`.
+
 ## ⚠ PIVOT NOTICE (2026-05-17)
 
 **Rationale (2 sentences):** Пользователь уточнил, что у него нет Hetzner Cloud account — есть «обычный VPS сервер» (provider-agnostic SSH-accessible Linux VPS). Все cloud-API-driven решения (Terraform с `hcloud` provider, Object Storage TF state, Storage Box, Hetzner Cloud Firewall, multi-VPS topology) теряют смысл — остаётся только Ansible-driven deploy на существующий VPS через SSH, UFW (OS-level firewall) вместо Hetzner Cloud Firewall, и provider-agnostic deploy RUNBOOK.

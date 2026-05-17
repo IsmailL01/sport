@@ -92,11 +92,20 @@
     label: "{{ item.key }}"
   tags: [common]
 
-- name: Narrow sudoers для deploy user (D-20) — BEFORE sshd hardening
+- name: Sudoers для deploy user (D-20 REVISED 2026-05-17) — BEFORE sshd hardening
+  # D-20 was originally narrow (NOPASSWD: /bin/systemctl, /usr/bin/docker,
+  # /usr/bin/docker compose, /bin/shred /run/sport.env — runtime app ops only).
+  # Wave 1 first-run + switchover ansible_user=deploy revealed это conflict с
+  # Ansible day-2 ops: gather_facts + apt + copy + nearly every task с
+  # `become: yes` invokes `sudo -i` which doesn't match any whitelisted command
+  # → "Missing sudo password" on every play. Revised к NOPASSWD: ALL для
+  # solo-dev v1.0 — actual defense = SSH key-only auth (D-19) + UFW SSH allow
+  # only от dev IPs (D-24) + root login disabled (D-19). v1.1 follow-up:
+  # revisit if team grows >1 dev. Full rationale в 03-CONTEXT.md §D-20 REVISION.
   ansible.builtin.copy:
     dest: /etc/sudoers.d/deploy
     content: |
-      {{ deploy_user }} ALL=(ALL) NOPASSWD: /bin/systemctl, /usr/bin/docker, /usr/bin/docker compose, /bin/shred /run/sport.env
+      {{ deploy_user }} ALL=(ALL) NOPASSWD: ALL
     owner: root
     group: root
     mode: '0440'
