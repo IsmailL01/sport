@@ -1,0 +1,28 @@
+---
+# Per CONTEXT D-14 — migration runs as separate Ansible play BEFORE sport-stack.service start.
+# Uses existing one-shot `migrations` service в docker-compose.prod.yml L101-113.
+# The container exits 0 on success; non-zero rc means migration failed (fail-fast).
+#
+# WHY before service-start: avoids T-03-PIV-10 race (sport-stack.service starts → app containers
+# hit unmigrated schema → 500-storm). Migration is synchronous; service-start gated by its rc.
+#
+# Migration container has `restart: "no"` in compose (one-shot semantics), so `run --rm`
+# runs to completion and removes the container; second-run finds DB at latest and exits 0
+# (golang-migrate is idempotent at the schema-version level).
+
+- name: "Run golang-migrate one-shot container (D-14)"
+  ansible.builtin.command:
+    cmd: >
+      /usr/bin/docker compose
+      -f {{ sport_compose_file }}
+      --env-file {{ sport_env_file }}
+      run --rm {{ sport_migrate_service }}
+  register: migration_result
+  changed_when: "'no change' not in migration_result.stdout"
+  failed_when: migration_result.rc != 0
+  tags: [sport-stack]
+
+- name: "Display migration result summary"
+  ansible.builtin.debug:
+    var: migration_result.stdout_lines
+  tags: [sport-stack]

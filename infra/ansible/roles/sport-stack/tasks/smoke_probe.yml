@@ -1,0 +1,27 @@
+---
+# Per CONTEXT D-21 — post-deploy smoke probe gates INFRA-07 completion.
+# Invokes existing services/backend/scripts/smoke_otp.py с BASE_URL={{ sport_smoke_base_url }}.
+# Retry 5 × 30s = 2.5 min — covers Caddy ACME issuance window after first deploy
+# (Let's Encrypt HTTP-01 challenge has variable latency).
+#
+# delegate_to: localhost — smoke runs on dev workstation; no Python deps on remote VPS.
+
+- name: "Smoke probe — OTP login flow (BASE_URL={{ sport_smoke_base_url }})"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: python3 services/backend/scripts/smoke_otp.py
+    chdir: "{{ playbook_dir }}/../.."
+  environment:
+    BASE_URL: "{{ sport_smoke_base_url }}"
+  register: smoke_result
+  retries: "{{ sport_smoke_retries }}"
+  delay: "{{ sport_smoke_delay_seconds }}"
+  until: smoke_result.rc == 0
+  changed_when: false
+  tags: [sport-stack]
+
+- name: "Display smoke output (last lines)"
+  ansible.builtin.debug:
+    var: smoke_result.stdout_lines
+  tags: [sport-stack]

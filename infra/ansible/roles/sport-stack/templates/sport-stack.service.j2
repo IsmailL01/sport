@@ -1,0 +1,37 @@
+# /etc/systemd/system/sport-stack.service — Phase 3 D-04 docker-compose-on-systemd umbrella.
+# Wraps the 13-container production stack (8 Go services + 4 stateful + 1 gateway containerized Caddy)
+# under ONE systemd unit. Per D-15: /run/sport.env tmpfs mode 0600 owner deploy; shred on stop.
+#
+# CRITICAL invariants (DO NOT BREAK):
+#   • ExecStart uses `docker compose` SPACE-form (CONTEXT D-04 + RESEARCH Pitfall 4).
+#     NEVER `docker-compose` dash-form — that's the legacy v1 binary, removed in Compose v2.
+#   • ExecStopPost shreds /run/sport.env (D-15 defense-in-depth; /run is tmpfs anyway).
+#   • EnvironmentFile=/run/sport.env must exist BEFORE service start (templated by Ansible
+#     decrypt_sops.yml task to tmpfs mode 0600 owner deploy).
+#   • User=deploy + Group=deploy — non-root; deploy is in `docker` group (added by Plan 03-01
+#     docker role) so it can talk to /var/run/docker.sock.
+
+[Unit]
+Description=Running Ecosystem backend stack (docker compose umbrella)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ deploy_user }}
+Group={{ deploy_group }}
+WorkingDirectory={{ sport_install_dir }}
+EnvironmentFile={{ sport_env_file }}
+# CRITICAL: `docker compose` SPACE-form per CONTEXT D-04 + RESEARCH Pitfall 4.
+ExecStart=/usr/bin/docker compose -f {{ sport_compose_file }} up
+ExecStop=/usr/bin/docker compose -f {{ sport_compose_file }} down
+# Shred plaintext env on stop (D-15 defense-in-depth; /run is tmpfs anyway).
+ExecStopPost=/bin/shred -u {{ sport_env_file }}
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=600
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

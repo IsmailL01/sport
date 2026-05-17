@@ -1,0 +1,11 @@
+---
+env_name: prod
+caddy_host: "148-253-214-156.sslip.io"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# sport-stack-specific overrides (Plan 03-02 Wave 2 — post-pivot)
+# Каждый ключ может быть переопределён для других env; для prod — defaults inherited.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Smoke probe target (https://<caddy_host>) — gates INFRA-07 closure.
+sport_smoke_base_url: "https://{{ caddy_host }}"

@@ -1,0 +1,34 @@
+---
+# sport-stack role defaults (Phase 3 Plan 03-02 — Wave 2).
+# Encodes CONTEXT D-04 + D-12 + D-14 + D-15 + D-16 + D-21 + D-26 invariants.
+
+# Deploy target paths (per CONTEXT D-04 + D-15)
+sport_install_dir: /opt/sport
+sport_env_file: /run/sport.env             # tmpfs (RAM-only per D-15)
+sport_env_mode: '0600'
+sport_env_owner: "{{ deploy_user }}"
+sport_env_group: "{{ deploy_group }}"
+
+# SOPS slot inventory (D-26 post-pivot — NO hetzner.yaml)
+sport_sops_groups:
+  - shared
+  - mapbox
+  - oauth
+
+# systemd unit
+sport_service_name: sport-stack.service
+sport_compose_file: "{{ sport_install_dir }}/services/backend/docker-compose.prod.yml"
+
+# Smoke probe retry (5 × 30s = 2.5 min — covers Caddy ACME issuance window)
+sport_smoke_retries: 5
+sport_smoke_delay_seconds: 30
+
+# Migration container service name (matches docker-compose.prod.yml L101)
+sport_migrate_service: migrations
+
+# Repo sync strategy — rsync-based (no git remote in this worktree per
+# Plan 03-01 SUMMARY §Carry-forward #2 option b). Controller-side source =
+# the playbook_dir's grand-parent (worktree root), filtered to services/backend/
+# tree + supporting files. See tasks/sync_repo.yml.
+sport_repo_sync_strategy: rsync
+sport_repo_local_root: "{{ playbook_dir }}/../.."

@@ -1,0 +1,8 @@
+---
+# sport-stack handlers (notified by tasks/main.yml when systemd unit changes).
+# Steady-state restart is handled by an explicit conditional task in main.yml
+# (avoids check-mode race: initial install template-fires-handler before service exists).
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true

@@ -1,8 +1,89 @@
 ---
-# STUB role — overwritten by Plan 03-02 (Wave 2 sport-stack role full implementation).
-# Purpose: satisfy `ansible-playbook --syntax-check site.yml` which parses ALL
-# роли referenced в playbook; without this stub, syntax-check fails on missing
-# `sport-stack` role.
-- name: "stub — full implementation in Plan 03-02 (sport-stack)"
-  ansible.builtin.debug:
-    msg: "Plan 03-01 stub — overwritten by Plan 03-02 в Wave 2."
+# sport-stack role main orchestration (Plan 03-02 Wave 2 — overwrites Plan 03-01 Task 1 stub).
+#
+# Order:
+#   (a) Ensure /opt/sport directory exists with deploy ownership.
+#   (b) Sync compose stack files (controller worktree → /opt/sport/) via rsync
+#       (synchronize module). git-clone deferred per Plan 03-01 SUMMARY §Carry-forward #2
+#       option b — no `origin` remote in this worktree.
+#   (c) Decrypt SOPS на controller → template /run/sport.env on remote (D-12 + D-26).
+#   (d) Run migrations one-shot (D-14) — must precede service start.
+#   (e) Install sport-stack.service.j2 → /etc/systemd/system/.
+#   (f) systemctl daemon-reload + enable --now sport-stack.service.
+#   (g) Smoke probe loop (D-21) — gates INFRA-07.
+
+- name: "Ensure /opt/sport directory exists with deploy ownership"
+  ansible.builtin.file:
+    path: "{{ sport_install_dir }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: '0755'
+  tags: [sport-stack]
+
+# Repo sync — rsync over SSH (controller-side source = worktree root).
+# Filtered to services/backend/ tree only (everything else is dev-only).
+# Mirrors `git ls-files services/backend` semantics without needing a git remote.
+- name: "Sync services/backend/ tree to {{ sport_install_dir }}/services/backend/ via rsync"
+  ansible.posix.synchronize:
+    src: "{{ sport_repo_local_root }}/services/backend/"
+    dest: "{{ sport_install_dir }}/services/backend/"
+    delete: false               # do NOT delete remote files outside sync scope (preserve runtime artifacts)
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=node_modules"
+      - "--exclude=*.pyc"
+      - "--exclude=__pycache__"
+      - "--exclude=.env*"        # secrets are SOPS-rendered to /run/sport.env, never synced
+  become: false                  # synchronize runs over SSH-as-ansible_user; sudo not needed for /opt/sport (deploy owns it)
+  tags: [sport-stack]
+
+- name: "Decrypt SOPS + template /run/sport.env (D-12 + D-26)"
+  ansible.builtin.import_tasks: decrypt_sops.yml
+  tags: [sport-stack]
+
+- name: "Run migrations (D-14 — one-shot, before service-up)"
+  ansible.builtin.import_tasks: run_migrations.yml
+  when: not ansible_check_mode    # migration container can't run during --check (no live docker exec)
+  tags: [sport-stack]
+
+- name: "Install sport-stack.service systemd unit"
+  ansible.builtin.template:
+    src: sport-stack.service.j2
+    dest: "/etc/systemd/system/{{ sport_service_name }}"
+    owner: root
+    group: root
+    mode: '0644'
+  register: sport_unit_install
+  notify:
+    - reload systemd
+  tags: [sport-stack]
+
+- name: "Flush handlers — apply systemd unit install before enable"
+  ansible.builtin.meta: flush_handlers
+  tags: [sport-stack]
+
+- name: "Enable + start sport-stack.service"
+  ansible.builtin.systemd:
+    name: "{{ sport_service_name }}"
+    enabled: true
+    state: started
+  when: not ansible_check_mode    # service file may not exist yet during --check dry-run
+  tags: [sport-stack]
+
+# Steady-state: if unit file content changed AND service is already running,
+# restart to pick up new settings. Conditional avoids race in check-mode initial install
+# (service doesn't exist yet during template task; restart would fail).
+- name: "Restart sport-stack if unit changed (steady-state only)"
+  ansible.builtin.systemd:
+    name: "{{ sport_service_name }}"
+    state: restarted
+  when:
+    - sport_unit_install is changed
+    - not ansible_check_mode
+  tags: [sport-stack]
+
+- name: "Smoke probe — gates INFRA-07 (D-21)"
+  ansible.builtin.import_tasks: smoke_probe.yml
+  when: not ansible_check_mode    # smoke needs live HTTP endpoint; --check dry-run skips
+  tags: [sport-stack]

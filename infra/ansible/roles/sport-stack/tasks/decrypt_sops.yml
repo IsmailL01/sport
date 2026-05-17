@@ -1,0 +1,61 @@
+---
+# Per CONTEXT D-12 — SOPS runs на dev workstation ТОЛЬКО.
+# Age key NEVER copied to remote VPS (D-26 — нет SOPS slot для VPS access вообще).
+#
+# Sequence:
+#   1. На controller (localhost): assemble plaintext .env content в Ansible facts via
+#      community.sops.load_vars для каждого SOPS group в sport_sops_groups
+#      (shared, mapbox, oauth — exactly 3 slots per D-26).
+#   2. Merge все три dict в один sport_env_merged.
+#   3. На remote VPS: template (ansible.builtin.template) — render merged dict to
+#      /run/sport.env with mode 0600, owner deploy, group deploy.
+#
+# Pre-flight: SOPS_AGE_KEY_FILE must point to existing file (W3 fix — HOME-explicit construct).
+# Every task touching plaintext has no_log: true (RESEARCH Pitfall 8).
+
+- name: "Pre-flight — assert age key file exists on controller (W3 fix)"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'SOPS_AGE_KEY_FILE') | default(lookup('env', 'HOME') + '/.config/sops/age/keys.txt', true) }}"
+  register: age_key_stat
+  failed_when: not age_key_stat.stat.exists
+  tags: [sport-stack]
+
+- name: "Decrypt SOPS groups on controller (per CONTEXT D-12 + D-26 — 3 slots only)"
+  delegate_to: localhost
+  become: false
+  environment:
+    # W3 fix: explicit HOME construct (NOT expanduser — that path was rejected в prior plan-checker round).
+    SOPS_AGE_KEY_FILE: "{{ lookup('env', 'SOPS_AGE_KEY_FILE') | default(lookup('env', 'HOME') + '/.config/sops/age/keys.txt', true) }}"
+  community.sops.load_vars:
+    file: "{{ playbook_dir }}/../../.secrets/{{ env_name }}/{{ item }}.yaml"
+    name: "sport_secrets_{{ item }}"
+  loop: "{{ sport_sops_groups }}"
+  loop_control:
+    label: "{{ item }}"
+  no_log: true         # CRITICAL — RESEARCH Pitfall 8 (plaintext в ~/.ansible.log)
+  tags: [sport-stack]
+
+- name: "Merge SOPS groups into single env dict on controller"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.set_fact:
+    sport_env_merged: >-
+      {{
+        (sport_secrets_shared | default({}))
+        | combine(sport_secrets_mapbox | default({}))
+        | combine(sport_secrets_oauth | default({}))
+      }}
+  no_log: true
+  tags: [sport-stack]
+
+- name: "Template merged env to /run/sport.env на remote (tmpfs per D-15)"
+  ansible.builtin.template:
+    src: sport.env.j2
+    dest: "{{ sport_env_file }}"
+    owner: "{{ sport_env_owner }}"
+    group: "{{ sport_env_group }}"
+    mode: "{{ sport_env_mode }}"
+  no_log: true
+  tags: [sport-stack]
