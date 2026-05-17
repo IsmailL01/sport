@@ -1,0 +1,8 @@
+---
+# STUB role — overwritten by Plan 03-02 (Wave 2 sport-stack role full implementation).
+# Purpose: satisfy `ansible-playbook --syntax-check site.yml` which parses ALL
+# роли referenced в playbook; without this stub, syntax-check fails on missing
+# `sport-stack` role.
+- name: "stub — full implementation in Plan 03-02 (sport-stack)"
+  ansible.builtin.debug:
+    msg: "Plan 03-01 stub — overwritten by Plan 03-02 в Wave 2."

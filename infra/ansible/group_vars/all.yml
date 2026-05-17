@@ -1,0 +1,32 @@
+---
+# Shared across all envs (dev/prod).
+# `ansible_user` НЕ задаётся здесь — управляется per-host в inventory/prod/hosts.yml
+# (bootstrap=root → steady-state=deploy switchover). См. SUMMARY 03-01.
+
+deploy_user: deploy
+deploy_group: deploy
+
+# SSH authorized_keys для deploy user. Single entry — solo developer (Phase 2
+# follow-up #5 CLOSED-AS-N/A per orchestrator pre-flight directive: no DEV_B
+# in this project, no second recipient needed).
+dev_ssh_pubkeys:
+  dev_a: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILp5uVe/TTgiahFZ3qKbl0xo+SuHXrGDc2dL5c7YkEBb vps-access"
+
+# Dev admin IPs для UFW 22/TCP allow-list (per D-24 NEW post-pivot).
+# Single entry — solo developer. /32 CIDR.
+#
+# TODO (v1.1): 91.92.33.145 is residential/dynamic; UFW + sshd allow-from будет
+# нуждаться в re-update при ротации ISP. Mitigations: (a) static IP from ISP,
+# (b) bastion host, (c) widen SSH allowlist к 0.0.0.0/0 + полагаться только
+# на key-only-auth as sole defense.
+dev_admin_ips:
+  - "91.92.33.145/32"
+
+# Caddy ACME email (override per env if needed; для closed beta = один email)
+caddy_acme_email: "hummetzadeismail8@gmail.com"
+
+# sport_repo_url — git URL для cloning /opt/sport/ на VPS.
+# Текущий worktree не имеет remote `origin` (см. SUMMARY §Deviations §git-remote-missing).
+# Placeholder ниже — Plan 03-02 Task 1 (Wave 2 git clone task) ДОЛЖНА быть updated
+# когда remote добавлен, ИЛИ использовать `rsync`/scp-based file sync вместо git clone.
+sport_repo_url: "PLACEHOLDER_NO_GIT_REMOTE_ORIGIN_YET"

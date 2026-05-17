@@ -1,0 +1,16 @@
+---
+- name: Bootstrap base packages + SSH hardening + UFW
+  hosts: app_servers
+  become: true
+  gather_facts: true
+  roles:
+    - common
+    - docker
+    - ufw   # NEW post-pivot per D-24 — OS-level firewall (replaces Hetzner Cloud Firewall)
+
+- name: Deploy sport-stack to app servers
+  hosts: app_servers
+  become: true
+  roles:
+    - sport-stack   # STUB в этом плане; Plan 03-02 Wave 2 полностью overwrites
+  tags: [deploy]

@@ -1,0 +1,9 @@
+# /etc/ssh/sshd_config.d/99-hardening.conf — Phase 3 D-19
+PermitRootLogin no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+UsePAM yes
+X11Forwarding no
+PrintMotd no
+AcceptEnv LANG LC_*
+Subsystem sftp /usr/lib/openssh/sftp-server
