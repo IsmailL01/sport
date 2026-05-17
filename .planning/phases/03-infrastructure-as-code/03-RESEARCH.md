@@ -4,6 +4,112 @@
 **Domain:** IaC (Ansible + Terraform) для Hetzner Cloud (multi-VPS dev/staging/prod/sentry, docker-compose-on-systemd, SOPS-decrypt-at-deploy)
 **Confidence:** HIGH overall (Terraform/Ansible/Caddy/SOPS hard-verified via official docs + Hetzner community tutorials; **one significant correction** vs CONTEXT D-11 — Sentry RAM sizing)
 
+
+## ⚠ SUPERSEDED SECTIONS (2026-05-17 pivot)
+
+> **Pivot context:** Пользователь уточнил 2026-05-17 что у него нет Hetzner Cloud account — только провайдер-агностичный SSH-accessible Linux VPS. Все Terraform / Hetzner-Cloud-API / multi-VPS / Object-Storage / sentry-01 sections ниже SUPERSEDED. Что остаётся актуальным: Ansible best practices, SOPS via `delegate_to: localhost`, docker-compose-on-systemd umbrella unit (D-04), Caddy в compose (D-16 correction kept), `docker compose` space-form (D-04 correction kept), migration via one-shot `docker compose run --rm migrate` (D-14 kept), <60min deploy timing realism, `brew install ansible` (terraform install no longer needed). Полный pivot rationale + новые decisions D-22..D-26: см. `03-CONTEXT.md §## ⚠ PIVOT NOTICE`.
+
+**SUPERSEDED sections (do not consume for active planning):**
+
+| Section | Reason |
+|---------|--------|
+| §Summary — paragraphs о Hetzner Object Storage / D-05 closure / Sentry RAM correction | SUPERSEDED — no Terraform, sentry-01 deferred to Phase 5 |
+| §Architectural Responsibility Map — "Cloud resource lifecycle (Terraform)" row | SUPERSEDED — no Terraform |
+| §User Constraints §Locked Decisions — D-01 (Terraform half), D-02 (3-VPS topology), D-05 (TF state), D-06 (Hetzner Cloud Firewall), D-09/D-10/D-11 (Sentry VPS) | SUPERSEDED — see 03-CONTEXT.md §PIVOT NOTICE |
+| §Phase Requirements — INFRA-02, INFRA-04, INFRA-06 rows | SUPERSEDED — deferred to v1.1 (INFRA-02/04) or Phase 5 (INFRA-06) |
+| §Standard Stack — Terraform, hcloud provider, Hetzner Object Storage, Hetzner Storage Box | SUPERSEDED — no Terraform, no Hetzner Cloud |
+| §Alternatives Considered — Hetzner Object Storage S3 backend rows | SUPERSEDED — no Terraform |
+| §Standard Stack §Installation — `brew install terraform` | SUPERSEDED — only `brew install ansible` needed |
+| §Architecture Patterns §System Architecture Diagram — Terraform + Hetzner Object Storage + multi-VPS topology | SUPERSEDED — single VPS, no Terraform |
+| §Architecture Patterns §Recommended Project Structure — `infra/terraform/` tree, `infra/ansible/inventory/{staging,sentry}/`, `sentry-prep` role | SUPERSEDED — Terraform tree deleted (commit `00bcb39`), staging/sentry inventory groups dropped |
+| §Pattern 4: Terraform import existing prod VPS | SUPERSEDED — no Terraform |
+| §Pattern 5: Hetzner Object Storage Terraform backend (D-05) | SUPERSEDED — no Terraform |
+| §Pattern 6: Hetzner Cloud Firewall (D-06) | SUPERSEDED — UFW replaces (see new §UFW section below in §Don't Hand-Roll context) |
+| §Anti-Patterns — "Terraform state в git", "`terraform apply` без `terraform import`", "Каскадное удаление firewall rules через `terraform destroy`" rows | SUPERSEDED — no Terraform |
+| §Don't Hand-Roll — "TF state file locking", "Per-VPS firewall management (hcloud_firewall)", "Hetzner DNS automation" rows | SUPERSEDED — replace UFW row added below |
+| §Runtime State Inventory — references к "Terraform import должен НЕ трогать данные" | SUPERSEDED partial — backup перед cutover still applies, Terraform reference dropped |
+| §Pitfall 1: Sentry RAM sizing — D-11 CX42 correction | SUPERSEDED — sentry-01 deferred to Phase 5; correction will land там |
+| §Pitfall 2: Hetzner S3 backend skip_requesting_account_id | SUPERSEDED — no Terraform |
+| §Pitfall 5: Hetzner Storage Box ≠ Object Storage — D-05 misnomer | SUPERSEDED — no Terraform |
+| §Pitfall 7: SSH key drift after terraform import | SUPERSEDED — no Terraform |
+| §Pitfall 10: terraform import пишет state, НЕ HCL | SUPERSEDED — no Terraform |
+| §Code Examples §Sample infra/terraform/main.tf | SUPERSEDED — no Terraform |
+| §Code Examples §Sample hcloud_server + hcloud_firewall for sentry-01 | SUPERSEDED — sentry-01 deferred to Phase 5 |
+
+**KEPT sections (still active for planning):**
+
+- §Architecture Patterns §Pattern 1: docker-compose-on-systemd umbrella (D-04 — verified, KEPT)
+- §Architecture Patterns §Pattern 2: SOPS decrypt via `delegate_to: localhost` (D-12 — KEPT)
+- §Architecture Patterns §Pattern 3: Migration as separate Ansible play (D-14 — KEPT)
+- §Anti-Patterns — `docker-compose` dash form, `Type=forking` + `up -d`, `sops -d` on remote VPS, inline secrets в Ansible vars
+- §Don't Hand-Roll — SOPS decrypt, Caddy install + ACME, systemd unit для docker-compose, schema migrations, SSH hardening (mostly KEPT)
+- §Pitfall 3: Caddy в compose vs apt-installed (D-16 correction — KEPT, port 443 conflict)
+- §Pitfall 4: `docker compose` vs `docker-compose` ExecStart path (KEPT — Ubuntu 24.04 plugin form)
+- §Pitfall 6: <60min INFRA-07 timing realism (KEPT — adapted for "first-clean-Ansible-deploy on existing prod VPS")
+- §Pitfall 8: `no_log: true` без SOPS plaintext leak (KEPT)
+- §Pitfall 9: `migrate` container parallel races (KEPT — single-VPS, no races)
+- §Sample `infra/ansible/site.yml` (KEPT, but `sentry` host group dropped post-pivot)
+- §Sample Caddyfile.j2 template (KEPT)
+
+### NEW Section: §UFW (community.general.ufw) — replaces Pattern 6 Hetzner Cloud Firewall
+
+**What:** Ansible's `community.general.ufw` module manages Ubuntu's UFW (Uncomplicated Firewall) idempotently. UFW is OS-level (configures iptables under the hood) — works on any Linux VPS, no provider API dependency.
+
+**When to use:** Phase 3 post-pivot (D-24) — provider-agnostic OS-level firewall replacing Hetzner Cloud Firewall.
+
+**Example pattern** (will be implemented in NEW Plan 03-01 `roles/ufw/`):
+
+```yaml
+# infra/ansible/roles/ufw/tasks/main.yml
+- name: Set UFW default policies
+  community.general.ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: incoming, policy: deny }
+    - { direction: outgoing, policy: allow }
+
+- name: Allow Caddy HTTPS (443) from anywhere
+  community.general.ufw:
+    rule: allow
+    port: '443'
+    proto: tcp
+
+- name: Allow SSH from dev admin IPs only
+  community.general.ufw:
+    rule: allow
+    port: '22'
+    proto: tcp
+    src: "{{ item }}"
+  loop: "{{ dev_admin_ips }}"
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
+```
+
+**Effective ports policy (matches original D-06):**
+
+| Port | Direction | Source | Disposition |
+|------|-----------|--------|-------------|
+| 443/TCP | in | 0.0.0.0/0 | allow (Caddy public) |
+| 22/TCP | in | `{{ dev_admin_ips }}` (group_var) | allow (admin SSH from dev IPs) |
+| 80/TCP | in | * | deny (Caddy redirects via `redir 308`) |
+| 4222/TCP (NATS) | in | * | deny (internal-only per D-07) |
+| 5432/TCP (Postgres) | in | * | deny (internal-only) |
+| 6379/TCP (Redis) | in | * | deny (internal-only) |
+| 9000/TCP (MinIO) | in | * | deny (served via Caddy `s3.<vps-ip>.sslip.io` per D-08) |
+| * | out | * | allow (services need DNS, Mapbox API, Expo Push, OAuth providers) |
+
+**Critical gotchas:**
+- `community.general.ufw` requires UFW package installed first — add `ufw` to `common_packages` в `common` role defaults.
+- `state: enabled` is the last task — enabling UFW BEFORE allowing SSH locks Ansible out (Ansible runs via SSH).
+- Verify rules via `ufw status numbered` on the remote VPS post-apply.
+
+[CITED: docs.ansible.com/ansible/latest/collections/community/general/ufw_module.html]
+
+---
+
 ## Summary
 
 Phase 3 строит IaC seam поверх уже работающего production stack на `148.253.214.156`. Все 21 CONTEXT-decision устойчивы при проверке кроме **D-11 (Sentry VPS sizing)** — Sentry self-hosted 2026 требует **минимум 16 GB RAM + 4 vCPU + 16 GB swap** (источник: develop.sentry.dev/self-hosted), а CONTEXT предполагал CX32 (8 GB). Это блокирует Phase 5 если не исправлено — рекомендуется **CX42 (8 vCPU / 16 GB / 160 GB SSD)** для `sentry-01`.
@@ -420,6 +526,8 @@ WantedBy=multi-user.target
 
 ### Pattern 4: Terraform import existing prod VPS
 
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
+
 **What:** Существующий `148.253.214.156` VPS уже работает; запуск `terraform apply` без import'а удалит и пересоздаст его (zero-downtime требование сломано). Import первым шагом, потом `plan` reconciles drift.
 
 **When to use:** Brownfield migration существующей infrastructure под Terraform управление.
@@ -477,6 +585,8 @@ terraform plan
 
 ### Pattern 5: Hetzner Object Storage Terraform backend (D-05 resolution)
 
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
+
 **What:** Hetzner Object Storage — S3-compatible (Ceph-S3 implementation). Terraform `s3` backend поддерживает её через 3 skip-флага + `use_lockfile = true` (S3-native locking, Terraform 1.11+).
 
 **When to use:** TF state для multi-dev команды; нужен conditional writes для lock primitive; нельзя в git/storage box.
@@ -515,6 +625,8 @@ terraform {
 - `force_path_style = true` обязательно для Ceph-S3 (Hetzner's implementation).
 
 ### Pattern 6: Hetzner Cloud Firewall (D-06)
+
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
 
 **Example:**
 ```hcl
@@ -601,6 +713,8 @@ resource "hcloud_firewall" "app" {
 
 ### Pitfall 1: Sentry RAM sizing — CONTEXT D-11 wrong (HIGH severity)
 
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
+
 **What goes wrong:** CONTEXT D-11 предполагает CX32 (4 vCPU / 8 GB RAM) для sentry-01. Sentry self-hosted **минимум 16 GB RAM + 16 GB swap + 4 CPU cores** ([CITED: develop.sentry.dev/self-hosted](https://develop.sentry.dev/self-hosted/) — "Minimum 16 GB RAM (with 16 GB swap), 32 GB recommended for optimal performance"). На CX32 Sentry container OOM-killed.
 
 **Why it happens:** Старые Sentry docs (2020-2022) говорили 8 GB; новые requirements bumped в 2024-2025 из-за ClickHouse + Snuba + Symbolicator weight.
@@ -612,6 +726,8 @@ resource "hcloud_firewall" "app" {
 [VERIFIED via 2 sources: develop.sentry.dev/self-hosted + github.com/getsentry/self-hosted README ("Minimum 16 GB RAM")]
 
 ### Pitfall 2: Hetzner S3 backend `skip_requesting_account_id` missing
+
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
 
 **What goes wrong:** Без `skip_requesting_account_id = true` Terraform пытается контактировать AWS STS endpoint (`sts.eu-central.amazonaws.com`) для discovery AWS account ID — это fails timeout (Hetzner не AWS), и `terraform init` падает с `AWS account ID not previously found`.
 
@@ -640,6 +756,8 @@ resource "hcloud_firewall" "app" {
 **Verify:** `which docker-compose` → "not found" на Ubuntu 24.04 cloud-init. `docker compose version` → "Docker Compose version v2.x.y".
 
 ### Pitfall 5: Hetzner Storage Box ≠ Object Storage — D-05 misnomer
+
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
 
 **What goes wrong:** ROADMAP §Phase 3 success criterion 4 says "Terraform state in Hetzner **Storage Box**". Storage Box — это SFTP/WebDAV product (no S3 API, no conditional writes), НЕ годится для TF state with locking. CONTEXT D-05 правильно flag'нул this как researcher question.
 
@@ -676,6 +794,8 @@ resource "hcloud_firewall" "app" {
 
 ### Pitfall 7: SSH key drift after first `terraform import`
 
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
+
 **What goes wrong:** Hetzner Cloud Console UI позволяет attach SSH keys to server на create-time только. Если existing prod VPS был создан с SSH keys IDs `[A, B]` но `tfvars` указывают `[B, C]` — `terraform plan` после import показывает diff requiring server re-create.
 
 **How to avoid:** Plan 03-02 Wave 1 (terraform import) включает Task 1.5: dump current SSH key IDs from Hetzner Console, sync into `terraform.tfvars` before first `terraform plan`. Use `lifecycle { ignore_changes = [ssh_keys] }` если pristine sync невозможен.
@@ -697,6 +817,8 @@ resource "hcloud_firewall" "app" {
 **How to avoid:** Phase 3 — single-VPS, нет races. Documented для Phase 7 readiness.
 
 ### Pitfall 10: `terraform import` пишет state, НЕ HCL
+
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
 
 **What goes wrong:** `terraform import hcloud_server.prod_app_01 <id>` пишет в state file, но если `resource "hcloud_server" "prod_app_01" {}` block НЕ существует в HCL — import succeeds, но following `plan` показывает "resource must be destroyed (no configuration)" → next `apply` уничтожит prod.
 
@@ -742,6 +864,8 @@ resource "hcloud_firewall" "app" {
 
 ### Sample `infra/terraform/main.tf`
 
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
+
 ```hcl
 # infra/terraform/main.tf
 terraform {
@@ -760,6 +884,8 @@ provider "hcloud" {
 ```
 
 ### Sample `hcloud_server` + `hcloud_firewall` for sentry-01 (CORRECTED sizing)
+
+> **SUPERSEDED 2026-05-17 — pivot to provider-agnostic VPS scope. See CONTEXT.md §PIVOT NOTICE.**
 
 ```hcl
 # infra/terraform/servers.tf
