@@ -2,14 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Closure
-status: completed
-stopped_at: Phase 3 COMPLETE 2026-05-17 — all 4 active INFRA-* acceptance green (02/04 deferred v1.1; 06 moved Phase 5). sport-stack.service active, 13 containers, INFRA-07 baseline 66.5s. Ready для Phase 4 (CI/CD).
-last_updated: "2026-05-17T11:34:12.505Z"
-last_activity: 2026-05-17 -- Phase 03 marked complete
+status: executing
+stopped_at: Phase 4 planned (7 plans across 4 waves; plan-checker iter 2 PASSED). Ready for /gsd-execute-phase 4. Wave 1 04-01 will halt at user-action checkpoint for GitHub repo creation (gh repo create runningecosystem/sport).
+last_updated: "2026-05-17T13:39:47.534Z"
 progress:
   total_phases: 21
   completed_phases: 2
-  total_plans: 6
+  total_plans: 13
   completed_plans: 10
   percent: 10
 ---
@@ -31,7 +30,7 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 Phase: **4 of 21** (CI/CD pipeline) — `backend` workstream — next, ready to plan
 Last completed: Phase 3 (Infrastructure as Code) — 3 plans across 3 waves, 2026-05-17. Pivoted mid-execution from Hetzner Cloud to provider-agnostic VPS (5→3 plans). Sport-stack systemd umbrella deployed на 148.253.214.156, 13 containers, INFRA-07 baseline 66.5s real (target <60min). UFW + key-only SSH защита.
-Status: Phase 3 complete; Phase 4 awaiting `/gsd-discuss-phase 4` then `/gsd-plan-phase 4`.
+Status: Ready to execute
 
 Progress: [▓▓░░░░░░░░] ~11% of new v1.0 scope (REL-01..05 + SEC-01..09 all delivered or partial; 14-of-96 REQ-IDs complete — SEC-01 still partial pending Phase 4 CI wiring; everything else in SEC-* closed)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.

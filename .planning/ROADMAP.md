@@ -129,7 +129,14 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 4. **Rollback drill validated with real DB migration**: deploy version N with a migration in path → deploy N+1 with second migration → `make rollback v=N` reverts service binaries AND the N+1 migration (down migration runs successfully) → integration test confirms N's data + behavior restored. No-op rollback (same code, same schema) does NOT count.
 5. Deployment freeze toggle: a runbook step that pauses CD on incident declaration
 6. Branch protection: required passing checks include all matrix items above
-**Plans**: TBD
+**Plans**: 7 plans across 4 waves
+- [ ] `04-01-PLAN.md` — GitHub repo + remote + GHCR namespace bootstrap (CICD-01 prereq) — Wave 1, autonomous=false — `gh repo create runningecosystem/sport --private` + push feat/cursona-redesign + create main; delete Phase 0 placeholder ci.yml; bookmark GHCR public-package flip for after Plan 04-03a
+- [ ] `04-02-PLAN.md` — Extend backend-ci.yml: 8-service matrix + lint + 5 scanners + Trivy + secret-scan-full.yml + .golangci.yml + .trivyignore.yaml (CICD-01, SEC-01 closure) — Wave 2, autonomous=false — iterate on scratch PR until all-green; first-green-CI-run-record is sequence guard для Plan 04-05
+- [ ] `04-03a-PLAN.md` — Create backend-cd.yml: cosign keyless + SLSA L2 (`attest-build-provenance@v2` per RESEARCH correction) + GHCR push for 8 services + docker-compose.prod.yml image-pin (CICD-02, CICD-03) — Wave 3, autonomous=false — first CD run supervision; flip GHCR package visibility=public per RESEARCH §Open Q recommendation
+- [ ] `04-03b-PLAN.md` — Top-level Makefile с `make rollback v=N` + drill migrations 9990/9991 + drill_assert_schema.sh (CICD-04 scaffold) — Wave 3, autonomous=true — scaffolding only; drill execution = Plan 04-04
+- [ ] `04-04-PLAN.md` — Execute rollback drill on prod VPS (live, supervised); extend deploy.md §6.4 с drill results (CICD-04 execution acceptance — "no-op doesn't count") — Wave 4, autonomous=false — pre-drill pg_dump snapshot mandatory; backward-compat NULLABLE migrations per RESEARCH Pitfall 5
+- [ ] `04-05-PLAN.md` — Branch protection setup: setup-branch-protection.sh + USER ACTION к run it + deploy.md §10 (CICD-06) — Wave 4, autonomous=false — depends_on=[04-02] enforces sequence guard per RESEARCH Pitfall 1 (first green CI run before lock-down); 8 required checks + 0 reviewers + no force-push + no deletes
+- [ ] `04-06-PLAN.md` — Deployment freeze toggle: deploy.md §11 с 3 paths (production env disable [future seam] / workflow disable [v1.0 PRIMARY] / immediate revert [Path #3]) + verify + incident-response log template (CICD-05) — Wave 4, autonomous=true — docs-only
 
 ### Phase 5: Observability (backend)
 **Workstream:** `backend`
