@@ -2,6 +2,7 @@
 phase: 03-infrastructure-as-code
 plan: 01
 subsystem: infra
+status: CLOSED 2026-05-17 (after 3 recovery iterations — sshd Subsystem dup, D-20 sudoers conflict, D-24 IP rotation)
 tags: [ansible, ufw, docker, sshd-hardening, deploy-user, sops, sslip.io, vps]
 
 requires:
@@ -9,13 +10,12 @@ requires:
     provides: SOPS canonical store + deploy seam (sops-edit.md) — Phase 3 wraps, не replaces
 provides:
   - infra/ansible/ scaffold (ansible.cfg, site.yml, dev+prod inventory, group_vars)
-  - roles/common (apt base, deploy user, narrow sudoers D-20, sshd hardening D-19)
+  - roles/common (apt base, deploy user, sudoers NOPASSWD: ALL [D-20 REVISED], sshd hardening D-19)
   - roles/docker (Docker Engine + Compose plugin per docs.docker.com canonical .asc)
-  - roles/ufw (NEW post-pivot D-24 — OS-level firewall replaces Hetzner Cloud Firewall)
+  - roles/ufw (UFW SSH limit-from-anywhere [D-24 REVISED] + 443 allow + 80/4222/5432/6379/9000 deny)
   - roles/sport-stack STUB (satisfies --syntax-check; overwritten by Plan 03-02 Wave 2)
-  - Prod VPS 148.253.214.156 hardened (root SSH disabled — assumed, verification BLOCKED — см. §HALT)
-  - Prod VPS Docker Engine + Compose plugin installed (verified live during run)
-  - Prod VPS UFW active с D-24 ports policy (verified live during run via ufw status numbered)
+  - Prod VPS 148.253.214.156 hardened: root SSH disabled (verified — `ssh root@VPS` returns Permission denied), deploy user with NOPASSWD sudo, Docker Engine + Compose plugin, UFW active with D-24-revised policy
+  - 2nd ansible-playbook run reported `ok=24 changed=0` (idempotent verified 2026-05-17)
 affects: [04-cicd, 05-observability, 03-02-wave-2-sport-stack, 03-03-wave-3-cutover]
 
 tech-stack:
@@ -28,10 +28,16 @@ tech-stack:
     - "ufw OS package on prod VPS (148.253.214.156)"
     - "Docker Engine 29.4.3-1~ubuntu.24.04~noble (already pre-installed; Ansible idempotent)"
   patterns:
-    - "Lockout-safe UFW ordering: defaults → allow 22 from dev IPs FIRST → allow 443 → deny → enable LAST"
+    - "Lockout-safe UFW ordering: defaults → allow 22 (limit) → allow 443 → deny → enable LAST"
     - "Pre-handler-restart prerequisite ordering: authorized_keys + sudoers BEFORE sshd hardening drop-in"
-    - "Bootstrap-vs-steady-state SSH user: ansible_user=root for bootstrap, switch to deploy after first run"
-    - "Solo-dev SSH allow-list: single /32 entry в dev_admin_ips; v1.1 follow-up if ISP rotates IP"
+    - "Bootstrap-vs-steady-state SSH user: ansible_user=root for bootstrap, switched to deploy after first run (D-19 enforced)"
+    - "Solo-dev SSH defense-in-depth (D-24 REVISED): key-only auth + root disabled + UFW limit (6/30s) instead of per-IP allowlist (residential ISP rotation makes allowlist brittle — observed 91.92.33.145 → 85.239.149.26 within 38 min)"
+    - "D-20 REVISED: sudoers NOPASSWD: ALL для solo-dev (narrow whitelist blocked Ansible's `gather_facts`/apt/copy `become: yes` operations)"
+    - "sshd drop-in must NOT declare Subsystem (Ubuntu 24.04 main config already declares; duplicate causes sshd start failure)"
+  recovery_iterations:
+    - iter_1: "Wave 1 first-run wedged sshd via duplicate `Subsystem sftp` in drop-in vs Ubuntu main config. Recovery: user out-of-band web-console `sed -i '/^Subsystem sftp/d' /etc/ssh/sshd_config.d/99-hardening.conf && systemctl restart ssh`. Source fix: commit 2605c3a removed line + added comment block."
+    - iter_2: "Inventory switchover ansible_user: root → deploy revealed D-20 narrow sudoers conflict — `gather_facts` failed `Missing sudo password`. Source fix: commit 1fc39de (D-20 → NOPASSWD: ALL). Live fix: docker-as-root one-liner (deploy already had `NOPASSWD: /usr/bin/docker`) wrote new sudoers via privileged alpine container."
+    - iter_3: "Residential dev IP rotated 91.92.33.145 → 85.239.149.26 within 38 min of Wave 1 first-run — UFW per-IP allowlist would have locked dev out. Source fix: commit 2fd39b1 (D-24 → UFW `limit 22/tcp` from anywhere; SSH defense moves to key-only auth + rate-limit). Applied via 2nd ansible-playbook run 2026-05-17."
 
 key-files:
   created:
