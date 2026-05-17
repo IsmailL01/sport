@@ -1,4 +1,12 @@
 # /etc/ssh/sshd_config.d/99-hardening.conf — Phase 3 D-19
+#
+# DO NOT add `Subsystem sftp ...` here — Ubuntu 24.04's main /etc/ssh/sshd_config
+# already declares `Subsystem sftp`, and OpenSSH refuses to start on duplicate
+# Subsystem entries (sshd: re-define for ... Subsystem → service fails to restart
+# → SSH wedged). Drop-ins must NOT re-declare Subsystem; let the main config own it.
+# Incident: Phase 3 / Plan 03-01 Wave 1 first-run wedged sshd on prod VPS via this
+# duplicate; recovered via out-of-band console + line removal. See 03-01-SUMMARY.md
+# §Carry-forward items.
 PermitRootLogin no
 PasswordAuthentication no
 ChallengeResponseAuthentication no
@@ -6,4 +14,3 @@ UsePAM yes
 X11Forwarding no
 PrintMotd no
 AcceptEnv LANG LC_*
-Subsystem sftp /usr/lib/openssh/sftp-server
