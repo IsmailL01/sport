@@ -32,13 +32,15 @@ Total: **96 REQ-IDs across 21 phases**.
 
 ### Phase 3 — Infrastructure as Code (INFRA)
 
-- [ ] **INFRA-01**: `infra/ansible/` playbooks idempotently install Caddy + Postgres+TimescaleDB + Redis + NATS + MinIO + 6 Go service systemd units
-- [ ] **INFRA-02**: `infra/terraform/` manages Hetzner Cloud resources (VPS hosts, Storage Box, DNS, firewall)
-- [ ] **INFRA-03**: Environments `dev` / `staging` / `prod` with inventory in `infra/ansible/inventory/{env}/`
-- [ ] **INFRA-04**: Terraform state in Hetzner Storage Box with remote locking; never in repo
-- [ ] **INFRA-05**: Network firewall rules explicit; no `0.0.0.0/0` except documented (443, 4222, presigned MinIO)
-- [ ] **INFRA-06**: Separate VPS provisioned for Sentry with separate DNS `sentry.<domain>` and separate ACME cert (isolation per user redline)
-- [ ] **INFRA-07**: Fresh deploy from `git clone` to all services running in <60 minutes (measured, documented in `docs/RUNBOOKS/deploy.md`)
+> **Scope pivot 2026-05-17:** User clarified that no Hetzner Cloud account exists — only an SSH-accessible Linux VPS at the prod address. INFRA-02 and INFRA-04 (Terraform / cloud-API + TF state backend) deferred to v1.1; INFRA-06 (Sentry VPS provisioning) moved to Phase 5. INFRA-01/03/05/07 reworded for provider-agnostic Ansible-only scope.
+
+- [ ] **INFRA-01**: `infra/ansible/` playbooks idempotently install Caddy + Postgres+TimescaleDB + Redis + NATS + MinIO + 8 Go service containers (identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph) under a single `sport-stack.service` systemd umbrella on the prod VPS
+- [ ] **INFRA-02**: **DEFERRED to v1.1** — Pivoted 2026-05-17 to provider-agnostic VPS scope; no cloud-API provisioning in v1.0. Will revisit if migrating to a cloud-API provider in v1.1.
+- [ ] **INFRA-03**: Environments `dev` (localhost docker-compose, no Ansible) + `prod` (existing VPS) with inventory in `infra/ansible/inventory/{dev,prod}/`. Staging deferred to v1.1.
+- [ ] **INFRA-04**: **DEFERRED to v1.1** — No Terraform in v1.0 post-pivot (2026-05-17). Will revisit alongside INFRA-02.
+- [ ] **INFRA-05**: UFW (OS-level) firewall rules explicit; no `0.0.0.0/0` except documented (443 Caddy + 22 from dev IPs). NATS 4222 / Postgres 5432 / Redis 6379 / MinIO 9000 closed to public (internal-only via docker network — defense in depth with UFW).
+- [ ] **INFRA-06**: **MOVED to Phase 5** — Sentry self-hosted requires additional VPS; provisioning decision (colocate on prod VPS vs separate VPS) belongs in Phase 5 alongside Sentry install. Phase 5 owner decides.
+- [ ] **INFRA-07**: Fresh deploy from `git clone` to all services running in <60 minutes (measured on existing prod VPS first-clean-Ansible-deploy, documented in `docs/RUNBOOKS/deploy.md` §9)
 
 ### Phase 4 — CI/CD Pipeline (CICD)
 

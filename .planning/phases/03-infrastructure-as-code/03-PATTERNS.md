@@ -1,8 +1,32 @@
 # Phase 3: Infrastructure as Code — Pattern Map
 
 **Mapped:** 2026-05-16
-**Files analyzed:** 33 (28 new + 5 modified/touched)
+**Pivoted:** 2026-05-17 (см. ## ⚠ PIVOT NOTICE below — Terraform/staging/sentry rows SUPERSEDED)
+**Files analyzed:** 33 (28 new + 5 modified/touched) — original count; post-pivot active set is **17 files** (Ansible-only, prod-only)
 **Analogs found in repo:** 11 / 33 (greenfield Terraform/Ansible — большая часть требует external refs из RESEARCH.md)
+
+---
+
+## ⚠ PIVOT NOTICE (2026-05-17)
+
+> Пользователь уточнил 2026-05-17 что у него нет Hetzner Cloud account — только провайдер-агностичный SSH-accessible Linux VPS. Все Terraform-слой строки и staging/sentry inventory + sentry-prep role строки ниже SUPERSEDED.
+>
+> **Post-pivot active rows** (still relevant for planning/execution):
+> - `infra/ansible/ansible.cfg`, `site.yml` — KEPT
+> - `inventory/dev/hosts.yml`, `inventory/prod/hosts.yml` — KEPT (drop staging + sentry)
+> - `group_vars/all.yml`, `group_vars/prod.yml` — KEPT (drop staging + sentry)
+> - `roles/common/`, `roles/docker/`, `roles/caddy/` (template-only), `roles/ufw/` (NEW per D-24) — KEPT
+> - `roles/sport-stack/` (all subfiles) — KEPT
+> - `services/backend/scripts/smoke_*.py` (existing analog) — KEPT
+>
+> **Post-pivot SUPERSEDED rows** (do NOT consult during planning/execution; preserved for v1.1 retrospective):
+> - All `infra/terraform/*` rows (entire Terraform слой) — D-22
+> - `inventory/staging/hosts.yml`, `inventory/sentry/hosts.yml` — D-23
+> - `group_vars/staging.yml`, `group_vars/sentry.yml` — D-23
+> - `roles/sentry-prep/` (all subfiles) — D-23 + moved to Phase 5
+> - `.secrets/<env>/hetzner.yaml` SOPS slot pattern row — D-26
+>
+> Полный pivot rationale: `.planning/phases/03-infrastructure-as-code/03-CONTEXT.md §PIVOT NOTICE`.
 
 ---
 

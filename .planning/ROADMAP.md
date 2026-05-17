@@ -18,7 +18,7 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 
 - [x] **Phase 1: Release contract & version baseline** — `shared` — Lock mobile↔backend wire contract, version negotiation, feature-flag matrix, v1.0 IN/OUT freeze — **Code-complete 2026-05-15** (Plans 01-01..03 shipped on `feat/cursona-redesign`; REL-01..05 all delivered. Live deployment + OpenAPI YAML extension follow-ups tracked in 01-03-SUMMARY.md).
 - [x] **Phase 2: Secrets & config hardening** — `backend` — `gitleaks`+`trufflehog` clean (0 findings full-history), SOPS-encrypted secrets, Mapbox token incident reset (ADR-0006), `IDENTITY_DEV_MODE` fix — **DONE 2026-05-16**, 4/4 plans, commits 5e73162..d6fe1f3
-- [ ] **Phase 3: Infrastructure as code** — `backend` — Ansible + Terraform-for-cloud-resources (Object Storage TF state + Storage Box for Phase 7), dev/staging/prod environments, systemd umbrella + containerized Caddy — **Planned 2026-05-16** (5 plans across 4 waves; ready for `/gsd-execute-phase 3`)
+- [ ] **Phase 3: Infrastructure as code** — `backend` — Ansible-only deploy на existing prod VPS, sport-stack systemd umbrella + containerized Caddy + UFW; provider-agnostic RUNBOOK — **Re-Planned 2026-05-17** (5→3 plans; pivoted to provider-agnostic VPS per user input; Terraform/cloud-API deferred to v1.1; staging/sentry moved out of Phase 3)
 - [ ] **Phase 4: CI/CD pipeline** — `backend` — GitHub Actions matrix, signed images pinned to digests, one-button rollback **proven with real DB migration in path**
 - [ ] **Phase 5: Observability (backend)** — `backend` — Sentry self-hosted on separate VPS with separate DNS, Prom+OTLP, OTP log redaction (CONCERNS.md P0)
 - [ ] **Phase 6: Edge protection & rate-limiting** — `backend` — Verify `pkg/ratelimit` under load, **add `/auth/*` rate-limit** (CONCERNS.md P0), Caddy WAF
@@ -80,42 +80,42 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 **Maps to existing plan**: New scope (v1.0 hardening); no pre-v1.0 P-IDs apply. SEC-03/04 inherit context from pre-v1.0 archive 01-08-SUMMARY.md (Mapbox token chat-leak inventory).
 
 ### Phase 3: Infrastructure as code
-**Workstream:** `backend` (STRICT after Phase 2 — no parallelization with Phase 2 per user redline; gate LIFTED 2026-05-16)
-**Goal:** Move from "deployed by hand on `148-253-214-156.sslip.io`" to "Ansible playbooks deploy the full backend stack to any fresh Hetzner VPS in <60 minutes from `git clone + ansible-playbook` alone." Terraform handles only Hetzner Cloud resources (Object Storage for TF state, Storage Box for Phase 7 pgBackRest, DNS, firewall); systemd + Ansible handle service deployment.
-**Depends on:** Phase 2 (strict — Ansible vars source from SOPS, not inline)
-**Requirements:** INFRA-01..07
+**Workstream:** `backend` (Phase 2 → Phase 3 strict gate LIFTED 2026-05-16)
+**Goal:** Move from "deployed by hand on the prod VPS via SSH + `git pull` + `/opt/sport/deploy.sh`" → to "Ansible-driven idempotent deploy на тот же VPS в <60 минут от `git clone + ansible-playbook` alone, provider-agnostic". SSH is the only deploy seam (provider-side automation deferred to v1.1 per pivot 2026-05-17).
+**Depends on:** Phase 2 (Ansible vars source from SOPS, not inline)
+**Requirements:** INFRA-01, INFRA-03, INFRA-05, INFRA-07 (INFRA-02 + INFRA-04 deferred to v1.1; INFRA-06 moved to Phase 5)
 **Success Criteria:**
-1. `infra/ansible/` playbooks idempotently install: containerized Caddy + Postgres+TimescaleDB + Redis + NATS JetStream + MinIO + all 8 Go service containers under a single `sport-stack.service` systemd umbrella (per CONTEXT D-04 — corrected from "6 native systemd units" in earlier draft; current code on `feat/cursona-redesign` has 8 services: identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph)
-2. `infra/terraform/` manages Hetzner Cloud resources: VPS hosts (`prod-app-01` existing-imported + `staging-app-01` + `sentry-01`), Object Storage bucket (TF state), Storage Box (Phase 7 pgBackRest target), DNS records (sslip.io for v1.0), firewall rules
-3. Environments: `dev` / `staging` / `prod` (plus `sentry` inventory group) with inventory files in `infra/ansible/inventory/{env}/`
-4. State backend: Terraform state in Hetzner **Object Storage** (S3-compatible, eu-central-1) with `use_lockfile = true` and `skip_requesting_account_id = true` (per RESEARCH — Storage Box is SFTP/WebDAV, no locking primitives; reserved for Phase 7 pgBackRest); state never in main repo
-5. Network: explicit Hetzner Cloud firewall rules; no `0.0.0.0/0` except 443 Caddy + 22 from dev-IPs-only + presigned MinIO via Caddy `s3.<…>.sslip.io`. NATS 4222 / Postgres 5432 / Redis 6379 / MinIO 9000 closed to public (internal-only via docker network).
-6. Separate VPS provisioned for Sentry (`sentry-01`, `cx42` 16 GB per RESEARCH correction to CONTEXT D-11 — Sentry self-hosted 2026 minimum is 16 GB) with separate DNS `sentry.<sentry-ip>.sslip.io` and separate ACME cert (Phase 5 consumes; isolation per user redline)
-7. Fresh deploy from `git clone` to all services running in <60 minutes (measured on staging; recorded in `docs/RUNBOOKS/deploy.md` §9)
+1. `infra/ansible/` playbooks idempotently install: containerized Caddy + Postgres+TimescaleDB + Redis + NATS JetStream + MinIO + all 8 Go service containers under a single `sport-stack.service` systemd umbrella on the existing prod VPS (current code on `feat/cursona-redesign` has 8 services: identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph)
+2. Environments: `dev` (localhost docker-compose, no Ansible) + `prod` (existing VPS) with inventory in `infra/ansible/inventory/{dev,prod}/`. Staging deferred to v1.1.
+3. UFW (OS-level) firewall rules explicit; no `0.0.0.0/0` except 443 Caddy + 22 from dev-IPs-only. NATS 4222 / Postgres 5432 / Redis 6379 / MinIO 9000 closed to public (internal-only via docker network — defense in depth with UFW).
+4. Fresh deploy from `git clone` to all services running in <60 minutes (measured on the existing prod VPS first-clean-Ansible-deploy; recorded in `docs/RUNBOOKS/deploy.md` §9)
 
-**Plans**: 5 plans across 4 waves
+**Deferred from Phase 3 (per 2026-05-17 pivot to provider-agnostic VPS scope):**
+- Terraform / cloud-API provisioning → v1.1 (revisit if migrating to a cloud-API provider)
+- Staging environment → v1.1 (manual spinup at provider's UI when needed)
+- Sentry VPS provisioning (originally INFRA-06) → Phase 5 (sentry-prep role + colocate-vs-separate-VPS decision belongs there)
+- TF state backend → N/A while no Terraform
+- Object Storage / Storage Box → N/A while no Terraform; pgBackRest backup target choice deferred to Phase 7
 
-**Wave 1** (sequential — blocks everything; user-action for Hetzner API token)
-- [ ] `03-01-PLAN.md` — Terraform scaffold + state backend (Object Storage) + import existing prod-app-01 + tf-wrap.sh + Hetzner SOPS slot (INFRA-02, INFRA-04, INFRA-05) — Wave 1, autonomous=false — 11 `.tf` files + `tf-wrap.sh` + 3 SOPS `hetzner.yaml`; var-driven prod attrs (B1 fix); WARN-and-escalate on missing Storage Box resource (I1 fix)
+**Plans**: 3 plans across 3 waves (was 5 plans across 4 waves pre-pivot; see commits `00bcb39` revert + `c16e9bb`/`9cf1c63` pivot)
 
-**Wave 2** *(blocked on Wave 1 completion)* (sequential after; user-action for DEV_B SSH+age pubkeys)
-- [ ] `03-02-PLAN.md` — Ansible scaffold + 4 inventories + 4 group_vars + common + docker + caddy (template-only) roles + stub sport-stack/sentry-prep roles for syntax-check (INFRA-01 partial, INFRA-03) — Wave 2, autonomous=false — `sport_repo_url` from `git remote get-url origin` (W2 fix); sudoers regex without username (W1 fix); full-file `--syntax-check` post-stubs (B2 fix)
+**Wave 1** (sequential — blocks everything; user-action for DEV_B SSH+age pubkeys + user provides current VPS IP/SSH-user)
+- [ ] `03-01-PLAN.md` — Ansible scaffold + common + docker + caddy (template-only) + UFW roles + dev/prod inventory + group_vars (INFRA-01 partial, INFRA-03, INFRA-05) — Wave 1, autonomous=false — `sport_repo_url` from `git remote get-url origin`; sudoers regex without username; SSH hardening (no root login, no password auth); UFW idempotent enforcement of ports policy
 
-**Wave 3** *(blocked on Wave 2 completion; 03-03a + 03-03b parallel-safe — no shared file writes)*
-- [ ] `03-03a-PLAN.md` — sport-stack role: SOPS-decrypt via `delegate_to: localhost` + migration play + `sport-stack.service` systemd umbrella (`docker compose` space-form per RESEARCH D-04 correction) + `/run/sport.env` tmpfs mode 0600 + `shred -u` on stop + smoke probe + INFRA-07 timing measurement on staging (INFRA-01 full, INFRA-07) — Wave 3, autonomous=true — split `<automated>`/`<manual>` verify with `awk '/^real/'` programmatic verdict (B3 fix); HOME-explicit SOPS env construct (W3 fix)
-- [ ] `03-03b-PLAN.md` — sentry-prep role + sentry-01 VPS (`cx42` 16 GB per RESEARCH D-11 correction) + DNS `sentry.<sentry-ip>.sslip.io` + containerized Caddy template + ACME for sentry hostname (Phase 5 will install Sentry stack on top) (INFRA-06) — Wave 3, autonomous=true — 5 role files; ACME issued at sentry.<sentry-ip>.sslip.io
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] `03-02-PLAN.md` — sport-stack role: SOPS-decrypt via `delegate_to: localhost` (drops hetzner.yaml — no VPS SOPS slot per D-26) + migration play + `sport-stack.service` systemd umbrella (`docker compose` space-form per D-04) + `/run/sport.env` tmpfs mode 0600 + `shred -u` on stop + smoke probe + INFRA-07 timing measurement on the existing prod VPS (INFRA-01, INFRA-07) — Wave 2, autonomous=true — split `<automated>` (template greps + syntax-check + check-mode) / `<manual>` (live deploy + `awk '/^real/'` programmatic verdict from `/usr/bin/time -p`); HOME-explicit SOPS env construct
 
-**Wave 4** *(blocked on Wave 3 completion)*
-- [ ] `03-04-PLAN.md` — Prod cutover (existing 148.253.214.156, with explicit `docker compose down` of manual stack before Ansible play per B4 fix) + `docs/RUNBOOKS/deploy.md` 9 sections + ROADMAP text-fix (6→8 services, Storage Box→Object Storage, cx42) + REQUIREMENTS.md INFRA-04 patch (INFRA-01 verify, INFRA-04 docs, INFRA-07 RUNBOOK) — Wave 4, autonomous=false — 4 tasks; sed-fills `<fill ...>` placeholders programmatically with negative-presence verify (W5 fix); negative-presence ROADMAP duplication check (W4 fix); REQUIREMENTS.md text patch (I2 fix)
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] `03-03-PLAN.md` — Prod cutover (explicit `docker compose down` of existing manual stack BEFORE Ansible play per B4 — preserves zero-downtime invariant) + provider-agnostic `docs/RUNBOOKS/deploy.md` (9 sections, `<vps-ip>` placeholders) + ROADMAP text-fix (8 services + criteria 2/4 deferred + criterion 6 moved) + REQUIREMENTS INFRA-02/04 deferred + INFRA-06 moved (INFRA-01 verify, INFRA-07 RUNBOOK) — Wave 3, autonomous=false — 4 tasks; sed-fills `<fill ...>` timing placeholders programmatically with `! grep -q '<fill'` verify
 
-**Cross-cutting constraints (truths shared by 3+ plans):**
-- SOPS-decrypt happens via `delegate_to: localhost`; age key stays on dev workstation (never on remote VPS) — 03-01, 03-03a, 03-04
-- All Caddy is containerized (`caddy:2.8-alpine` in compose); no apt-install (would double-bind port 443) — 03-02, 03-03a, 03-03b, 03-04
-- Hetzner Object Storage for TF state + Hetzner Storage Box for Phase 7 pgBackRest — DISTINCT products — 03-01, 03-04
-- `sport_repo_url` sourced from `git remote get-url origin` at Wave 0; never hardcoded — 03-02, 03-03a
-- sentry-01 sized `cx42` (16 GB, per RESEARCH correction) — 03-01 servers.tf, 03-03b verify, 03-04 RUNBOOK
+**Cross-cutting constraints (truths shared by 2+ plans):**
+- SOPS-decrypt happens via `delegate_to: localhost`; age key stays on dev workstation (never on remote VPS) — 03-02, 03-03
+- All Caddy is containerized (`caddy:2.8-alpine` in compose); no apt-install (would double-bind port 443) — 03-01, 03-02, 03-03
+- `docker compose` space-form (Compose plugin) in systemd ExecStart; never `docker-compose` dash-form (Ubuntu 24.04 removed it) — 03-02
+- UFW (OS-level) enforces firewall policy; never Hetzner Cloud Firewall (D-24 NEW post-pivot) — 03-01, 03-03 verify
+- RUNBOOK is provider-agnostic (D-25 NEW post-pivot) — `<vps-ip>` placeholders, no `hetzner`/`digitalocean`/`aws`/`gcp` literals — 03-03
 
-**Maps to existing plan**: New scope (v1.0 hardening); no pre-v1.0 P-IDs apply. INFRA-* inherit context from Phase 2's SOPS deploy seam (RUNBOOK `docs/RUNBOOKS/sops-edit.md §Deploy script`).
+**Maps to existing plan**: New scope (v1.0 hardening); no pre-v1.0 P-IDs apply. INFRA-* inherit context from Phase 2's SOPS deploy seam (`docs/RUNBOOKS/sops-edit.md §Deploy script`). **Pivot note 2026-05-17:** User clarified that no Hetzner Cloud account exists — only an SSH-accessible Linux VPS at the prod address. 21 D-XX decisions from original CONTEXT.md classified SUPERSEDED/KEPT; new D-22..D-26 added (drop Terraform, single VPS, UFW, provider-agnostic RUNBOOK, no VPS SOPS slot). See `.planning/phases/03-infrastructure-as-code/03-CONTEXT.md §PIVOT NOTICE`.
 
 ### Phase 4: CI/CD pipeline
 **Workstream:** `backend`
