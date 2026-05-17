@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Closure
 status: executing
-stopped_at: Phase 3 post-pivot planning complete (3 plans, plan-checker iter 2 PASSED) — ready for `/gsd-execute-phase 3 --wave 1` (Wave 1 NEW 03-01 Ansible scaffold, autonomous=false для DEV_B keys + user-provides-VPS-IP/SSH-user).
+stopped_at: Plan 03-01 Wave 1 first-run wedged sshd on prod VPS 148.253.214.156 (duplicate `Subsystem sftp` in drop-in). Source fixed (commit `2605c3a`). User must recover SSH via out-of-band console before Ansible can re-run with corrected drop-in.
 last_updated: "2026-05-17T07:42:09.351Z"
 last_activity: 2026-05-17 -- Phase 03 planning complete
 progress:
@@ -148,7 +148,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-17 — **Phase 3 PIVOTED** mid-execution per user input "у меня не Hetzner а обычный vps сервер". 21 D-XX decisions classified SUPERSEDED/KEPT; new D-22..D-26 added (drop Terraform entirely; single existing prod VPS; UFW replaces Hetzner Cloud Firewall; provider-agnostic RUNBOOK; no VPS SOPS slot). Pre-pivot 5-plan scaffold (with Plan 03-01 Terraform + Plan 03-03b sentry-prep) reverted to 3-plan post-pivot set (Ansible-only, prod-only). Plan-checker iteration 2 PASSED — final fixes: B1 sport.env.j2 in 03-02 files_modified + verify; W1 caddy-role contract dropped from ROADMAP + VALIDATION + 03-01 forbidden.
+Last session: 2026-05-17 — Phase 3 Wave 1 (Plan 03-01) executor ran Ansible against `root@148.253.214.156`; playbook reported `ok=24 changed=5 failed=0` over 50s — but post-restart **sshd wedged** on the VPS. TCP/22 accepts connections but no SSH banner; Caddy on 443 unaffected (VPS itself alive). Cause: drop-in `infra/ansible/roles/common/files/sshd_config_overrides` re-declared `Subsystem sftp` which Ubuntu 24.04's main config already declares — OpenSSH refuses duplicate Subsystem entries → service fails to restart. Source fixed in commit `2605c3a` (line removed + inline incident comment for future maintainers). User must recover SSH via out-of-band console (provider-side VNC/KVM-over-web) before any further Ansible runs can land.
+
+Earlier in same session: Phase 3 PIVOTED per user input "у меня не Hetzner а обычный vps сервер". 21 D-XX decisions classified SUPERSEDED/KEPT; new D-22..D-26 added. Pre-pivot 5-plan scaffold reverted to 3-plan post-pivot set (Ansible-only, prod-only). Plan-checker iteration 2 PASSED.
 
 **Pivot commit sequence** (in order, on `feat/cursona-redesign`):
 - `00bcb39` revert(03) — Plan 03-01 superseded; deleted `infra/terraform/`, 3 SOPS hetzner.yaml slots, .gitignore Terraform section, 03-01-SUMMARY
@@ -163,15 +165,36 @@ Last session: 2026-05-17 — **Phase 3 PIVOTED** mid-execution per user input "�
 - Decisions: 16 in-scope D-XX cited (D-03/04/12/13/14/15/16/17/19/20/21 KEPT; D-22/23/24/25/26 NEW). SUPERSEDED D-01/02/05/06/09/10/11/etc. excluded by design.
 - All 5 prior plan-checker fixes preserved across pivot: B3 (programmatic `awk '/^real/'` verdict from `/usr/bin/time -p`), B4 (explicit `docker compose down --remove-orphans` step 3.5 before Ansible UP), W3 (HOME-explicit SOPS env construct, no `expanduser`), W4 (negative-grep ROADMAP for stale Object Storage wording), W5 (sed-fill + `! grep -q '<fill'` for deploy.md §9 placeholders).
 
-Stopped at: Post-pivot planning complete; ready to execute Wave 1.
-Resume file: `.planning/phases/03-infrastructure-as-code/03-01-PLAN.md` (new Wave 1 — Ansible scaffold + common + docker + UFW + stub sport-stack + dev/prod inventory).
+Stopped at: Wave 1 Plan 03-01 — sshd wedge HALT on prod VPS, awaiting out-of-band console recovery by user.
+Resume file: `.planning/phases/03-infrastructure-as-code/03-01-SUMMARY.md` (full HALT recovery procedure in §Carry-forward items + §Deviations).
 
-**User-action checkpoints for Wave 1 (Plan 03-01) — required mid-plan:**
+**User-action checkpoint (Wave 1 sshd recovery) — required to unblock further Ansible runs:**
 
-1. **Pre-flight (Task 0):** User provides current VPS public IP + SSH-user name that has sudo on it. Orchestrator writes IP + user into `infra/ansible/inventory/prod/hosts.yml` + `group_vars/all.yml`.
-2. **DEV_B keys checkpoint:** DEV_B delivers SSH pubkey + age pubkey (Phase 2 carry-over follow-up #5). Orchestrator runs `sops updatekeys .secrets/**/*.yaml` + appends SSH pubkey to `group_vars/all.yml dev_ssh_pubkeys`. If DEV_B not yet onboarded, checkpoint can be deferred — Plan 03-01 SUMMARY records skip + carry-forward to Plan 03-03.
+1. Open prod VPS provider's web console / KVM-over-IP for 148.253.214.156 (whatever your VPS provider exposes — Hetzner Cloud Console "Console" tab, OVH IPMI, DigitalOcean Recovery Console, etc.). Login as root locally.
+2. Diagnose: `journalctl -u ssh --no-pager -n 50` + `sshd -t -f /etc/ssh/sshd_config` (should report the duplicate-Subsystem error).
+3. Apply fix on the live VPS:
+   ```bash
+   sed -i '/^Subsystem sftp/d' /etc/ssh/sshd_config.d/99-hardening.conf
+   systemctl restart ssh
+   systemctl status ssh    # should be active (running)
+   ```
+4. Verify SSH recovery from dev workstation:
+   ```bash
+   ssh deploy@148.253.214.156 'echo OK'              # should succeed
+   ssh root@148.253.214.156 'echo ROOT_SHOULD_FAIL'  # should fail with Permission denied (D-19 hardening active)
+   ```
+5. Switchover inventory for subsequent runs:
+   - Edit `infra/ansible/inventory/prod/hosts.yml` — set `ansible_user: deploy` (uncomment if commented; replace `root` if still listed)
+6. Re-run Ansible to confirm drop-in fix lands cleanly + idempotency:
+   ```bash
+   cd infra/ansible && ansible-playbook -i inventory/prod --tags=common,docker,ufw site.yml
+   # 1st run: changed=1 (drop-in updated) + sshd restart → SHOULD NOT wedge this time
+   # 2nd run: changed=0 (idempotent)
+   ```
 
-**Next action:** `/gsd-execute-phase 3 --wave 1` (or full `/gsd-execute-phase 3`) — executor for Wave 1 will halt at Task 0 pre-flight for VPS IP/SSH-user. Then Wave 2 (Plan 03-02 sport-stack, autonomous=true, live deploy + `<60min` timing) → Wave 3 (Plan 03-03 prod cutover, autonomous=false для human-verify).
+After recovery + idempotency confirmed, Wave 1 is closed and ready to advance.
+
+**Next action:** `/gsd-execute-phase 3 --wave 2` — Plan 03-02 sport-stack role (autonomous=true): SOPS-decrypt via `delegate_to: localhost` + migration play + `sport-stack.service` systemd umbrella + smoke probe + `<60min` INFRA-07 timing measurement on prod VPS. Then Wave 3 (Plan 03-03 prod cutover, autonomous=false).
 
 ## Artifacts Created (cumulative)
 
