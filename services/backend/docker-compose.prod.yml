@@ -9,6 +9,16 @@
 #   - migrations run-once init job, сервисы ждут её
 #   - все сервисы restart: unless-stopped
 #   - пароли и JWT_SECRET из env
+#
+# Project name pinned via top-level `name:` (Compose v2 spec). Without this,
+# project name derives from cwd basename → moving the compose file from
+# /opt/running-ecosystem/ to /opt/sport/ (Phase 3 sport-stack systemd umbrella)
+# would create fresh empty volumes (sport_postgres_data instead of running-
+# ecosystem_postgres_data), silently orphaning 10+ days of production data.
+# Pinning name=running-ecosystem ensures volume + container namespaces are
+# stable across compose-file location moves.
+
+name: running-ecosystem
 
 services:
   postgres:
