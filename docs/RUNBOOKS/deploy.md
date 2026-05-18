@@ -321,6 +321,120 @@ Future re-measurements (incremental deploys, fresh-VPS baselines, Phase 4 CI int
 
 ---
 
+## 10. Branch protection setup (Phase 4 / CICD-06)
+
+> **SEQUENCE GUARD CRITICAL** (RESEARCH Pitfall 1): Enable branch protection ONLY AFTER first green CI run на backend-ci.yml. Enabling before = lockout (cannot merge fixes если required check has never passed).
+
+### 10.1. Initial setup
+
+Run from dev workstation после Plan 04-02 first green CI:
+
+```bash
+./scripts/setup-branch-protection.sh
+# OR с explicit namespace:
+# ./scripts/setup-branch-protection.sh <alt-namespace>/sport main
+```
+
+Effects:
+- `main` branch protected: **8 required status checks** must pass before merge:
+  - `Test (Go 1.25)`, `Lint (golangci-lint v2)`, `SAST (gosec)`, `Vuln (govulncheck)`, `SAST (semgrep)`, `Secrets (gitleaks + trufflehog — PR diff)`, `Docker build (no push, verify)`, `Guard (no :latest)`
+- **0 required reviewers** (solo dev admin self-approves PRs — D-20)
+- **No force-push** к main (`allow_force_pushes: false`)
+- **No branch deletion** (`allow_deletions: false`)
+- **Conversation resolution required** (PR comments must be resolved before merge)
+- **`enforce_admins: false`** (solo dev emergency-override path; v1.1 flips к `true` when DEV_B onboards)
+
+Idempotent — re-run после changing required checks is safe (`gh api PUT` overwrites).
+
+### 10.2. Verify protection state
+
+```bash
+gh api repos/IsmailL01/sport/branches/main/protection --jq '{
+  required_status_checks_count: (.required_status_checks.contexts | length),
+  required_reviewers: .required_pull_request_reviews.required_approving_review_count,
+  enforce_admins: .enforce_admins.enabled,
+  allow_force_pushes: .allow_force_pushes.enabled,
+  allow_deletions: .allow_deletions.enabled,
+  conversation_resolution: .required_conversation_resolution.enabled,
+  contexts: .required_status_checks.contexts
+}'
+```
+
+Expected: `required_status_checks_count: 8`, `required_reviewers: 0`, `allow_force_pushes: false`, `allow_deletions: false`, `enforce_admins: false`.
+
+**Full contract check (boolean):**
+```bash
+gh api repos/IsmailL01/sport/branches/main/protection --jq '
+  (.required_status_checks.contexts | length == 8)
+  and (.required_pull_request_reviews.required_approving_review_count == 0)
+  and (.allow_force_pushes.enabled == false)
+  and (.allow_deletions.enabled == false)
+  and (.enforce_admins.enabled == false)
+'
+# Expected: true
+```
+
+**NOTE:** parens around each comparison are MANDATORY — without them jq pipes the contexts array through `length == 8 and <next>` and tries to access `.next` on the array (which gives `expected an object but got: array`).
+
+### 10.3. Bypass procedure (incident response)
+
+Если incident requires immediate merge bypass (revert breaks CI temporarily; hotfix needs к ship NOW):
+
+**Preferred path — temporarily disable specific check:**
+```bash
+# Disable single check (e.g., temporarily ignore SAST gosec):
+gh api -X PATCH repos/IsmailL01/sport/branches/main/protection/required_status_checks \
+  --field 'contexts[]=Test (Go 1.25)' \
+  --field 'contexts[]=Lint (golangci-lint v2)' \
+  --field 'contexts[]=Vuln (govulncheck)' \
+  --field 'contexts[]=SAST (semgrep)' \
+  --field 'contexts[]=Secrets (gitleaks + trufflehog — PR diff)' \
+  --field 'contexts[]=Docker build (no push, verify)' \
+  --field 'contexts[]=Guard (no :latest)'
+# Merge the PR
+# Re-enable: re-run ./scripts/setup-branch-protection.sh
+```
+
+**Last-resort path — disable protection entirely (use ONLY если above fails):**
+```bash
+gh api -X DELETE repos/IsmailL01/sport/branches/main/protection
+# ... merge fix ...
+# IMMEDIATELY re-apply: ./scripts/setup-branch-protection.sh
+```
+
+**NEVER recommended:** `git push --force` к main — `allow_force_pushes: false` so this fails anyway (intentional safety net).
+
+### 10.4. Change procedure (add/remove required check)
+
+1. Update `.github/workflows/backend-ci.yml` (or backend-cd.yml) с new job + verify it runs green на smoke PR
+2. Update `scripts/setup-branch-protection.sh` JSON body — add/remove job's `name:` string in `contexts` array
+3. Re-run `./scripts/setup-branch-protection.sh` (idempotent — overwrites previous config)
+4. Verify via §10.2 — context list reflects update
+
+### 10.5. Smoke test (verify protection actually blocks unverified merges)
+
+Periodically (after major workflow changes):
+
+```bash
+git checkout -b chore/protection-smoke
+echo "<!-- smoke -->" >> docs/RUNBOOKS/deploy.md
+git commit -am "chore: protection smoke test"
+git push -u origin chore/protection-smoke
+gh pr create --base main --head chore/protection-smoke --title "smoke" --body "verify protection blocks until checks pass"
+# Open PR в browser:
+# — Expected: "Merge pull request" disabled с "Required statuses must pass before merging"
+# — After CI green: button enables (proves end-to-end works)
+# Then close OR merge then delete branch.
+```
+
+---
+
+## 11. Deployment freeze toggle (Phase 4 / CICD-05) — *populated by Plan 04-06*
+
+---
+
 *RUNBOOK created: 2026-05-17 — Phase 3 Plan 03-03 Task 1*
+*§5+§6 rewritten: 2026-05-18 — Phase 4 Plan 04-04 (save/scp/load + drill log)*
+*§10 added: 2026-05-18 — Phase 4 Plan 04-05 (branch protection)*
 *Provider-agnostic per CONTEXT D-25*
 *Owner: solo dev (Ismail)*
