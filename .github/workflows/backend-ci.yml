@@ -28,6 +28,8 @@ on:
 permissions:
   contents: read
   security-events: write   # SARIF upload к GH Security tab
+  pull-requests: read      # gitleaks-action reads PR commits via API
+  actions: read            # codeql/upload-sarif fetches workflow-run metadata (private repos)
 
 jobs:
   test:
@@ -63,7 +65,7 @@ jobs:
           go-version: "1.25"
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.x
+          version: v2.5.0   # specific pin — action rejects v2.x glob (parseVersion strict v1.2|v1.2.3)
           working-directory: services/backend
           # Reads .golangci.yml at repo root (action walks up from working-directory).
 
@@ -76,16 +78,31 @@ jobs:
         with:
           go-version: "1.25"
       - name: Run gosec
-        working-directory: services/backend
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
+          # services/backend has no go.mod (workspace); run per-module and merge SARIF.
           # `|| true` per Pattern D — failure surfaced via SARIF upload + Security tab,
           # not via scanner-step exit code (allows partial-results to upload).
-          gosec -fmt sarif -out gosec.sarif -severity high ./... || true
+          rm -f gosec.sarif
+          MERGE_ARGS=""
+          for SVC in pkg identity activity-sync feed media messaging notifications realtime-gw social-graph; do
+            ( cd services/backend/$SVC && gosec -fmt sarif -out "../gosec-$SVC.sarif" -severity high ./... ) || true
+            if [ -f "services/backend/gosec-$SVC.sarif" ]; then
+              MERGE_ARGS="$MERGE_ARGS services/backend/gosec-$SVC.sarif"
+            fi
+          done
+          # Use jq to merge multiple SARIF runs into one file (avoids SARIF upload rate
+          # limits per RESEARCH Pitfall 8).
+          if [ -n "$MERGE_ARGS" ]; then
+            jq -s '{ "$schema": .[0]["$schema"], version: .[0].version, runs: ([.[].runs[]]) }' \
+              $MERGE_ARGS > gosec.sarif
+          else
+            echo '{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[]}' > gosec.sarif
+          fi
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: services/backend/gosec.sarif
+          sarif_file: gosec.sarif
           category: gosec
 
   govulncheck:
@@ -93,11 +110,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: golang/govulncheck-action@v1
+      - uses: actions/setup-go@v5
         with:
-          go-version-input: "1.25"
-          work-dir: services/backend
-          # govulncheck exits non-zero on vulnerability → blocks merge per D-10.
+          go-version: "1.25"
+      # services/backend is workspace-root с go.work but no go.mod, so the upstream
+      # golang/govulncheck-action@v1 fails ("no go.mod file"). Run per-module instead via
+      # a shell loop — keeps the single `Vuln (govulncheck)` check-context (Plan 04-05
+      # branch-protection contract requires verbatim name without matrix dimension).
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck per module
+        run: |
+          set -e
+          FAIL=0
+          for SVC in pkg identity activity-sync feed media messaging notifications realtime-gw social-graph; do
+            echo "::group::govulncheck $SVC"
+            ( cd services/backend/$SVC && govulncheck ./... ) || FAIL=1
+            echo "::endgroup::"
+          done
+          if [ "$FAIL" != "0" ]; then
+            echo "::error::govulncheck found vulnerabilities (blocks merge per D-10)"
+            exit 1
+          fi
 
   semgrep:
     name: SAST (semgrep)
@@ -107,7 +141,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Semgrep scan
         run: |
-          semgrep ci \
+          # `semgrep scan` (not `semgrep ci` — `ci` rejects `--severity`).
+          # Severity filters: ERROR + WARNING only (skip INFO noise).
+          semgrep scan \
             --config=p/golang \
             --config=p/owasp-top-ten \
             --sarif --output=semgrep.sarif \
