@@ -27,7 +27,31 @@ stopped_at: |
 
   Next: Phase 5 — Observability (backend). Sentry self-hosted on separate VPS с separate DNS,
   Prom + OTLP, OTP log redaction (CONCERNS.md P0).
-last_updated: "2026-05-18T21:15:00.000Z"
+
+  Phase 5 CONTEXT captured 2026-05-18 (autonomous mode). 24 D-XX decisions auto-resolved:
+  - Sentry на separate VPS (D-01 locked by redline) + 4 vCPU/16 GB sizing (D-03) +
+    sslip.io DNS pattern `sentry.<sentry-ip>.sslip.io` (D-04)
+  - 4 Sentry projects (D-06): prod-backend / staging-backend / prod-mobile / staging-mobile
+    (mobile DSNs ship here, consumed by Phase 17)
+  - slog (Go stdlib, 81 existing call-sites, D-09) + custom JSON handler с PII-scrub (D-10)
+  - PII deny-list (D-12): code/phone/displayName/lat/lon/coords/external_uuid/DM-content/tokens
+    dropped; email → SHA256[:8] hash
+  - OBS-04 OTP fix (D-13): drop `code` attr from prod path + emit only via `slog.DebugContext`
+    (gated by LOG_LEVEL=debug + handler scrub = defense-in-depth)
+  - CI grep-audit gate (D-14) + cardinality probe (D-18) block new PII attrs / user_id labels
+  - prometheus/client_golang for /metrics (D-15) + OpenTelemetry OTLP/HTTP к Sentry (D-20)
+  - Telegram bot alerts (D-24, NOT PagerDuty — $40/mo overkill for 2-dev team)
+  - Loki on sentry VPS + promtail на prod VPS shipping logs (D-27..29)
+  - Sentry deploy: new `sentry-prep` Ansible role wrapping `getsentry/self-hosted/install.sh`
+    (D-30) + `sentry-stack.service` systemd unit on sentry VPS (D-31)
+  - 6 plans across 4 waves (3 autonomous=false USER ACTION checkpoints:
+    sentry-VPS provisioning, Telegram bot + DSN extraction, final acceptance walkthrough)
+
+  10 questions deferred к researcher (Sentry version pin, OTLP auth, Caddy-vs-nginx,
+  Telegram webhook formatter, promtail vs Vector vs Fluent Bit, cardinality probe lang,
+  X-Debug-Session + JWT coupling, DSN per-service vs shared, Sentry retention, sentry-cli
+  vs HTTP API project bootstrap).
+last_updated: "2026-05-18T22:00:00.000Z"
 progress:
   total_phases: 21
   completed_phases: 4
