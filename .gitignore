@@ -143,3 +143,9 @@ __pycache__/
 .cache/
 tmp/
 temp/
+
+# ===== Claude Code worktrees =====
+# Parallel-execution worktrees live under .claude/worktrees/; never check them in.
+# Prior accidental gitlinks (mode 160000) for these paths were removed в Plan 04-02
+# Task 5 deviation fix — CI checkout was failing with "no submodule mapping found".
+.claude/worktrees/
