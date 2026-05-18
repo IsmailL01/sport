@@ -19,7 +19,7 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 - [x] **Phase 1: Release contract & version baseline** — `shared` — Lock mobile↔backend wire contract, version negotiation, feature-flag matrix, v1.0 IN/OUT freeze — **Code-complete 2026-05-15** (Plans 01-01..03 shipped on `feat/cursona-redesign`; REL-01..05 all delivered. Live deployment + OpenAPI YAML extension follow-ups tracked in 01-03-SUMMARY.md).
 - [x] **Phase 2: Secrets & config hardening** — `backend` — `gitleaks`+`trufflehog` clean (0 findings full-history), SOPS-encrypted secrets, Mapbox token incident reset (ADR-0006), `IDENTITY_DEV_MODE` fix — **DONE 2026-05-16**, 4/4 plans, commits 5e73162..d6fe1f3
 - [x] **Phase 3: Infrastructure as code** — `backend` — Ansible-only deploy на existing prod VPS, sport-stack systemd umbrella + containerized Caddy + UFW; provider-agnostic RUNBOOK — **DONE 2026-05-17** (3/3 plans; pivoted mid-execution from Hetzner Cloud к provider-agnostic VPS; INFRA-07 baseline 66.5s on 148.253.214.156; INFRA-02/04 deferred v1.1, INFRA-06 moved Phase 5)
-- [ ] **Phase 4: CI/CD pipeline** — `backend` — GitHub Actions matrix, signed images pinned to digests, one-button rollback **proven with real DB migration in path**
+- [x] **Phase 4: CI/CD pipeline** — `backend` — GitHub Actions matrix, signed images pinned to digests, one-button rollback **proven with real DB migration in path**
 - [ ] **Phase 5: Observability (backend)** — `backend` — Sentry self-hosted on separate VPS with separate DNS, Prom+OTLP, OTP log redaction (CONCERNS.md P0)
 - [ ] **Phase 6: Edge protection & rate-limiting** — `backend` — Verify `pkg/ratelimit` under load, **add `/auth/*` rate-limit** (CONCERNS.md P0), Caddy WAF
 - [ ] **Phase 7: DB + queues + state ops** — `backend` — pgBackRest → Hetzner Storage Box, **proven restore drill to clean VPS**, R18 `user_id` zero-downtime migration (backfill strategy deferred to discuss-phase 7)
@@ -136,7 +136,7 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 - [x] `04-03b-PLAN.md` — Top-level Makefile с `make rollback v=N` + drill migrations 9990/9991 + drill_assert_schema.sh (CICD-04 scaffold) — Wave 3, autonomous=true — scaffolding only; drill execution = Plan 04-04
 - [x] `04-04-PLAN.md` — Execute rollback drill on prod VPS (live, supervised); extend deploy.md §6.4 с drill results (CICD-04 execution acceptance — "no-op doesn't count") — Wave 4, autonomous=false — pre-drill pg_dump snapshot mandatory; backward-compat NULLABLE migrations per RESEARCH Pitfall 5
 - [x] `04-05-PLAN.md` — Branch protection setup: setup-branch-protection.sh + USER ACTION к run it + deploy.md §10 (CICD-06) — Wave 4, autonomous=false — depends_on=[04-02] enforces sequence guard per RESEARCH Pitfall 1 (first green CI run before lock-down); 8 required checks + 0 reviewers + no force-push + no deletes
-- [ ] `04-06-PLAN.md` — Deployment freeze toggle: deploy.md §11 с 3 paths (production env disable [future seam] / workflow disable [v1.0 PRIMARY] / immediate revert [Path #3]) + verify + incident-response log template (CICD-05) — Wave 4, autonomous=true — docs-only
+- [x] `04-06-PLAN.md` — Deployment freeze toggle: deploy.md §11 с 3 paths (production env disable [future seam] / workflow disable [v1.0 PRIMARY] / immediate revert [Path #3]) + verify + incident-response log template (CICD-05) — Wave 4, autonomous=true — docs-only
 
 ### Phase 5: Observability (backend)
 **Workstream:** `backend`

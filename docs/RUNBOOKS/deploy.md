@@ -242,7 +242,7 @@ ssh deploy@<vps-ip> 'PASSWD=$(grep "^POSTGRES_PASSWORD=" /run/sport.env | cut -d
 
 Если Ansible-driven deploy упёрся во что-то неразрешимое — fallback к manual scp/git pull + docker compose. Каталог `/opt/running-ecosystem/` остаётся на VPS как legacy после Phase 3 cutover (deprecated но не удалён); там лежит pre-cutover compose stack который можно поднять через `sudo docker compose --env-file .env.prod -f docker-compose.prod.yml up -d`.
 
-### 6.4. Drill execution log — CICD-04 (closed 2026-05-18)
+### 6.4. Automated rollback drill log — CICD-04 (closed 2026-05-18)
 
 **Цель:** доказать что rollback path (code revert + DB migration down) работает на реальном проде с реальной schema mutation.
 
@@ -429,12 +429,139 @@ gh pr create --base main --head chore/protection-smoke --title "smoke" --body "v
 
 ---
 
-## 11. Deployment freeze toggle (Phase 4 / CICD-05) — *populated by Plan 04-06*
+## 11. Deployment freeze procedure (Phase 4 / CICD-05)
+
+> **Purpose:** halt CD pipeline during incident-response when current deploys must NOT roll out (active P0 incident, post-rollback while root-cause investigation continues, security disclosure waiting for coordinated patch).
+
+> **Solo dev context (Ismail = on-call для v1.0):** procedure designed для zero calm-research required during incident. Copy-paste commands; verify expected behavior; document decision в incident-response log.
+
+### 11.1. When к use each path
+
+| Path | When | Reversibility | Time |
+|------|------|---------------|------|
+| **#1 Disable production environment** | Future seam — v1.0 has no `production` GitHub environment defined (D-05: manual Ansible deploy from dev workstation; CD only publishes images). Hook documented для Phase 21 если auto-deploy lands. | Trivial (re-enable env settings) | N/A v1.0 |
+| **#2 Disable backend-cd workflow** | Works TODAY. Use when current code shouldn't generate new published images (e.g., main has known-bad state but immediate revert not yet ready). Tests + scanners still run on PRs. | Trivial (`gh workflow enable backend-cd.yml`) | <30s |
+| **#3 Immediate revert via `make rollback`** | Active P0/P1 — current deploy broke prod. Use combined с #2 (freeze first, rollback second). | Re-deploy current main when ready | 5-10 min |
+
+### 11.2. Path #1 — Disable production environment (future seam, v1.0 N/A)
+
+> **STATUS v1.0:** No `production` environment defined в repo settings (D-05 — manual Ansible deploy from dev workstation). Below = documented hook для Phase 21 if auto-deploy lands. **Currently NOT functional** — use Path #2 OR Path #3.
+
+When v1.1 OR Phase 21 adds `production` environment с manual-approval gate:
+
+```bash
+# List environments:
+gh api repos/IsmailL01/sport/environments
+
+# Disable specific environment (when one exists):
+# — Via UI: Repo Settings → Environments → production → "Disable environment"
+# — Via API (set zero approvers + null branch policy):
+gh api -X PUT repos/IsmailL01/sport/environments/production \
+  --field deployment_branch_policy=null \
+  --field 'reviewers=[]'
+# OR delete entirely (more aggressive):
+gh api -X DELETE repos/IsmailL01/sport/environments/production
+```
+
+Verify: `gh api repos/IsmailL01/sport/environments` lists без `production` entry.
+
+### 11.3. Path #2 — Disable backend-cd workflow (PRIMARY freeze path для v1.0)
+
+Freeze:
+
+```bash
+gh workflow disable backend-cd.yml
+# OR via UI: Repo Settings → Actions → Workflows → backend-cd.yml → "..." menu → Disable workflow
+```
+
+Verify frozen:
+
+```bash
+gh workflow view backend-cd.yml --json state --jq '.state'
+# Expected: "disabled_manually"
+```
+
+Effect:
+- Subsequent `git push к main` AND `git push origin v*` tags do NOT trigger backend-cd.yml
+- `backend-ci.yml` continues running (PR test/lint/scan flow preserved)
+- Existing published images в GHCR remain reachable + signed + verifiable (deploys can still pull existing images)
+
+Unfreeze (human-gates — no auto-unfreeze per RESEARCH §Open Q 5):
+
+```bash
+gh workflow enable backend-cd.yml
+gh workflow view backend-cd.yml --json state --jq '.state'
+# Expected: "active"
+```
+
+Document decision в incident-response log (§11.6 template).
+
+### 11.4. Path #3 — Immediate revert (combined с Path #2 для maximum safety)
+
+Recommended ordering: **freeze first, rollback second.** Freeze prevents another developer (или future-you under stress) from accidentally re-deploying broken code while rollback runs.
+
+```bash
+# 1. Freeze CD (Path #2):
+gh workflow disable backend-cd.yml
+
+# 2. Identify previous good version:
+git log --oneline -10                 # find last known-good tag/SHA
+git tag -l 'v1.0*' --sort=-v:refname | head -5
+
+# 3. Run rollback (Plan 04-03b Makefile target):
+make rollback v=<previous-tag-or-sha>
+# Internally: git checkout → ssh migrate down 1 → ansible-playbook --skip-tags=run-migrations → smoke
+# Wall-clock: ~30s if images already on prod (no re-transfer); ~5 min if re-transfer needed
+# Pre-flight check: `make rollback` fails-fast if <8/8 images for the target tag present on prod
+
+# 4. Verify prod restored:
+curl -fsS https://148-253-214-156.sslip.io/healthz                # external check
+bash services/backend/scripts/drill_assert_schema.sh expect-present  # OR expect-absent (depends on target schema state)
+```
+
+**DO NOT unfreeze CD until root cause of incident confirmed AND fix landed на main.** Per RESEARCH §Open Q 5: human-gates unfreeze — `make rollback` target intentionally does NOT touch CD freeze state.
+
+### 11.5. Verify freeze worked (smoke procedure)
+
+Periodically (после major workflow changes OR incident debriefs):
+
+```bash
+# 1. Freeze:
+gh workflow disable backend-cd.yml
+
+# 2. Trigger what would normally publish:
+git tag freeze-smoke-test
+git push origin freeze-smoke-test
+
+# 3. Verify backend-cd did NOT run (no new run triggered by freeze-smoke-test SHA):
+gh run list --workflow=backend-cd.yml --limit 1 --json headSha,conclusion --jq '.[0]'
+# Expected: most recent run's headSha is NOT the freeze-smoke-test commit
+
+# 4. Cleanup:
+git push origin :refs/tags/freeze-smoke-test
+git tag -d freeze-smoke-test
+gh workflow enable backend-cd.yml
+```
+
+### 11.6. Incident response log template
+
+For each incident-response freeze, capture (paste into nearest available log — `docs/INCIDENT-LOG.md` will exist post-v1.0; для now: SUMMARY of nearest active plan OR inline comment в this RUNBOOK):
+
+```
+Freeze: <YYYY-MM-DD HH:MM UTC>
+Path used: <#1 / #2 / #3>
+Decision-maker: <name>
+Reason: <1-2 sentences>
+Expected unfreeze condition: <fix landed | root cause confirmed | scheduled review at X>
+Unfreeze: <YYYY-MM-DD HH:MM UTC OR pending>
+Postmortem ref: <link if applicable>
+```
 
 ---
 
 *RUNBOOK created: 2026-05-17 — Phase 3 Plan 03-03 Task 1*
 *§5+§6 rewritten: 2026-05-18 — Phase 4 Plan 04-04 (save/scp/load + drill log)*
 *§10 added: 2026-05-18 — Phase 4 Plan 04-05 (branch protection)*
+*§11 added: 2026-05-18 — Phase 4 Plan 04-06 (deployment freeze)*
 *Provider-agnostic per CONTEXT D-25*
 *Owner: solo dev (Ismail)*

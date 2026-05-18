@@ -4,35 +4,36 @@ milestone: v1.0
 milestone_name: Closure
 status: executing
 stopped_at: |
-  Phase 4 Plan 04-04 CLOSED 2026-05-18 — live rollback drill PASS on prod 148.253.214.156.
-  3-stage assertion sequence proven (A: PRESENT → B: ABSENT → rollback: PRESENT). pg_dump
-  baseline captured. CICD-02 + CICD-04 acceptance closed.
+  Phase 4 (CI/CD pipeline) CLOSED 2026-05-18 — all 7 plans + 4 acceptance IDs delivered:
+  - CICD-01 (PR matrix + scanners): backend-ci.yml 8-service × 5 scanners + Trivy; 23/23 green
+  - CICD-02 (cosign keyless + SLSA L2 + local verify): 16/16 PASS via `gh attestation verify`;
+    canonical local tool (cosign 3.0.6 cannot validate v2 attest-build-provenance bundles —
+    no GitHub TSA chain в Sigstore trusted-root)
+  - CICD-03 (no :latest tags): metadata-action `flavor: latest=false` + negative-grep guard
+  - CICD-04 (live rollback drill PASS on prod): 3-stage assertion A:PRESENT → B:ABSENT →
+    rollback:PRESENT; pg_dump baseline captured; backward-compat migrations 9990/9991
+  - CICD-05 (deployment freeze procedure): deploy.md §11 — 3 paths (env disable future seam /
+    workflow disable PRIMARY v1.0 / immediate revert via make rollback)
+  - CICD-06 (branch protection): IsmailL01/sport:main locked с 8 required checks + 0 reviewers
+    + no force-push + no deletes + enforce_admins:false
 
-  STRATEGY pivot: image transport changed from GHCR-pull-on-prod к save/scp/load via
-  controller (dev workstation pulls + cosign+SLSA verify via `gh attestation verify` + docker
-  save | gzip → synchronize → prod docker load). Prod never auths to GHCR. Trade-off:
-  +5 min wall-clock per deploy; eliminates personal-account package visibility manual flip
-  and prod-side PAT secret-of-secret bootstrap. See deploy.md §5.1 + §6.4.
+  STRATEGY pivot landed: image transport = save/scp/load via controller (no prod-side GHCR auth).
+  Trade-off: +5 min wall-clock per deploy; eliminates personal-account package visibility
+  manual flip and prod-side PAT secret-of-secret bootstrap. See deploy.md §5.1 + §6.4.
 
-  Discoveries cooked into solution:
-  - metadata-action strips `v` prefix for semver — GHCR tag is `1.0.0-rc.test-a` not `v1.0.0-rc.test-a`;
-    Ansible normalizes via Jinja regex_replace; deploy.md §5 documents
-  - rsync delete:false leaves obsolete migrations on prod → ansible migrate up re-applies
-    rolled-back migration; mitigated via Makefile `--skip-tags=run-migrations` during rollback
-  - sport.env placeholder values (`<deferred-v1.1>`) break `set -a; .` sourcing; Makefile
-    uses grep-extracted POSTGRES_PASSWORD for migrate down
-  - local cosign 3.0.6 can't validate v2 attest-build-provenance bundles (no GitHub TSA chain
-    в Sigstore trusted-root); `gh attestation verify` is canonical local verify tool
+  v1.0.1 backlog populated в ROADMAP §"v1.0.1 Backlog" with 6 debt items:
+  GHCR-PULL-AUTH, MIGRATE-RSYNC-DELETE, METADATA-RAW-TAG, CD-SMOKE-VERIFY,
+  DIGEST-PINNING, SECRETS-ROTATE.
 
-  Next: Plan 04-05 (branch protection: `gh api -X PUT` with 8 pinned check contexts pinned
-  in Plan 04-02 contract, deploy.md §10) → Plan 04-06 (deploy.md §11 freeze docs) → Phase 4 closeout.
-last_updated: "2026-05-18T20:55:00.000Z"
+  Next: Phase 5 — Observability (backend). Sentry self-hosted on separate VPS с separate DNS,
+  Prom + OTLP, OTP log redaction (CONCERNS.md P0).
+last_updated: "2026-05-18T21:15:00.000Z"
 progress:
   total_phases: 21
-  completed_phases: 3
-  total_plans: 16
-  completed_plans: 16
-  percent: 15
+  completed_phases: 4
+  total_plans: 18
+  completed_plans: 18
+  percent: 19
 ---
 
 # Project State
@@ -44,17 +45,17 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 **Milestone:** v1.0 Production Readiness — IN PROGRESS, **REDEFINED 2026-05-15** as 21-phase hardening scope. Earlier 8-phase feature scope superseded. Feature work (privacy zones, segments, coaching, premium, GDPR) slides to v1.1+. Target close: tagged `v1.0-rc.1` after 48h staging soak with ≥8 real runners.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** Phase 4 — CI/CD pipeline (Phase 3 closed 2026-05-17)
+**Current focus:** Phase 5 — Observability (backend) (Phase 4 closed 2026-05-18)
 
 **Brownfield note:** Codebase remains at Phase 8 / M10 code-complete on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors landed under the superseded scope — kept as-is in git history; planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`). Pixel + iPhone field-test acceptance criteria inherited by new Phase 16 (CONTEXT skeleton seeded).
 
 ## Current Position
 
-Phase: **4 of 21** (CI/CD pipeline) — `backend` workstream — next, ready to plan
-Last completed: Phase 3 (Infrastructure as Code) — 3 plans across 3 waves, 2026-05-17. Pivoted mid-execution from Hetzner Cloud to provider-agnostic VPS (5→3 plans). Sport-stack systemd umbrella deployed на 148.253.214.156, 13 containers, INFRA-07 baseline 66.5s real (target <60min). UFW + key-only SSH защита.
+Phase: **5 of 21** (Observability — backend) — `backend` workstream — next, ready to plan
+Last completed: Phase 4 (CI/CD pipeline) — 7 plans across 4 waves, 2026-05-18. All 6 acceptance IDs delivered (CICD-01..06). Live rollback drill PASS on prod. Branch protection on main с 8 required checks. Strategy pivot mid-Wave-4: GHCR-pull-on-prod → save/scp/load via controller (eliminates prod-side GHCR auth). v1.0.1 backlog populated с 6 debt items.
 Status: Ready to execute
 
-Progress: [▓▓░░░░░░░░] ~11% of new v1.0 scope (REL-01..05 + SEC-01..09 all delivered or partial; 14-of-96 REQ-IDs complete — SEC-01 still partial pending Phase 4 CI wiring; everything else in SEC-* closed)
+Progress: [▓▓▓░░░░░░░] ~22% of new v1.0 scope (REL-01..05 + SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 — 22-of-96 REQ-IDs complete)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
 
 **Next phase (open):** Phase 3 (Infrastructure as Code) — `backend` workstream. Phase 2 → Phase 3 strict no-parallelization gate is **NOW LIFTED**. Ansible playbooks + Terraform-for-cloud-resources for dev/staging/prod environments; consumes SOPS-decrypted env files from Phase 2.
@@ -81,7 +82,10 @@ Plan 02-04 actual: ~95 min spread across 2 sessions (Task 2 docs ~25 min prior s
 
 **Recent Trend:**
 
-- Last activity: 2026-05-16 — **Phase 2 closed**. Plan 02-04 Mapbox token rotation: ADR-0006 verdict A (commit `58b15eb`), SOPS-write + smoke HTTP 200 (commit `881f912`), Incident Log complete + SUMMARY (commit `d6fe1f3`). Old tokens revoked at dashboard by user.
+- Last activity: 2026-05-18 — **Phase 4 closed**. Plans 04-04 (drill PASS + save/scp/load pivot, commit `fb3bfe4`) + 04-05 (branch protection, commit `d972bcc`) + 04-06 (deploy.md §11, pending commit). v1.0.1 backlog populated в ROADMAP с 6 debt items. Branch `main` locked с 8 required checks.
+- 2026-05-18 — Codebase map refreshed after phases 2-4 closeout (`c8eb755`).
+- 2026-05-17 — **Phase 3 closed**. 3 plans across 3 waves; pivoted mid-execution Hetzner Cloud → provider-agnostic VPS (5→3 plans). INFRA-07 baseline 66.5s on 148.253.214.156.
+- 2026-05-16 — **Phase 2 closed**. Plan 02-04 Mapbox token rotation: ADR-0006 verdict A (commit `58b15eb`), SOPS-write + smoke HTTP 200 (commit `881f912`), Incident Log complete + SUMMARY (commit `d6fe1f3`). Old tokens revoked at dashboard by user.
 - 2026-05-16 — Plan 02-04 Task 2 docs (prior session): ADR-0006 + sops-edit RUNBOOK + 10-playbook SECRETS.md extension (commits a67beb0..ccc39c1).
 - 2026-05-16 — Plan 02-03 scanners + pre-commit shipped (SEC-08 closed; SEC-01 partial pending Phase 4 CI; commits 28acb2d..ac2ebd5).
 - 2026-05-15 — Plan 02-01 SOPS+age scaffold shipped (SEC-02 substrate; commits 5e73162..04f44b8).
