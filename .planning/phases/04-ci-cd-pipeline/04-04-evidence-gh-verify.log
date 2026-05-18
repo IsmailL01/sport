@@ -1,0 +1,54 @@
+# Plan 04-04 Task 3 — gh attestation verify evidence (JSON output)
+# Generated: 2026-05-18T17:42:13Z
+# Tool: gh version 2.92.0 (2026-04-28) / cosign 3.0.6
+# Result: 16/16 PASS — verification via GitHub TSA (timestamp.githubapp.com)
+# Note: SLSA v1 provenance attestation bundles produced by actions/attest-build-provenance@v2
+
+=== identity:1.0.0-rc.test-a sha256:aeb69298e4ec435a68ce5515942ef89c1c4c0794b1a160a37e60df0a047d8e7d ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-a","repo":"https://github.com/IsmailL01/sport","sha":"4e7872ad20366816090633e3a502e794f4f49486","subject":{"digest":{"sha256":"aeb69298e4ec435a68ce5515942ef89c1c4c0794b1a160a37e60df0a047d8e7d"},"name":"ghcr.io/ismaill01/identity"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== activity-sync:1.0.0-rc.test-a sha256:d5e7d15eb4bbe01a15b12c47dec3b9533176775f61edbc8e4c195fc1142e18b5 ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-a","repo":"https://github.com/IsmailL01/sport","sha":"4e7872ad20366816090633e3a502e794f4f49486","subject":{"digest":{"sha256":"d5e7d15eb4bbe01a15b12c47dec3b9533176775f61edbc8e4c195fc1142e18b5"},"name":"ghcr.io/ismaill01/activity-sync"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== feed:1.0.0-rc.test-a sha256:75c0f1e61d2b23b6819e4dc78c3177db6a75b4e466e593c1d8e5b4694b93a349 ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-a","repo":"https://github.com/IsmailL01/sport","sha":"4e7872ad20366816090633e3a502e794f4f49486","subject":{"digest":{"sha256":"75c0f1e61d2b23b6819e4dc78c3177db6a75b4e466e593c1d8e5b4694b93a349"},"name":"ghcr.io/ismaill01/feed"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== media:1.0.0-rc.test-a sha256:f52c80b57721ae516fa4f4c95a9aed0036e765b8697b512ecb98b8d4b47084b2 ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-a","repo":"https://github.com/IsmailL01/sport","sha":"4e7872ad20366816090633e3a502e794f4f49486","subject":{"digest":{"sha256":"f52c80b57721ae516fa4f4c95a9aed0036e765b8697b512ecb98b8d4b47084b2"},"name":"ghcr.io/ismaill01/media"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== messaging:1.0.0-rc.test-a sha256:5c1083553da8afb9ca41a961f5c4ab51a5f1332a670d7e29b3d2d6f5f389247b ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-a","repo":"https://github.com/IsmailL01/sport","sha":"4e7872ad20366816090633e3a502e794f4f49486","subject":{"digest":{"sha256":"5c1083553da8afb9ca41a961f5c4ab51a5f1332a670d7e29b3d2d6f5f389247b"},"name":"ghcr.io/ismaill01/messaging"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== notifications:1.0.0-rc.test-a sha256:d91efc823d852c45254f9832fec22d0d6a3c5361730faebc3dd78e703c59ccc8 ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-a","repo":"https://github.com/IsmailL01/sport","sha":"4e7872ad20366816090633e3a502e794f4f49486","subject":{"digest":{"sha256":"d91efc823d852c45254f9832fec22d0d6a3c5361730faebc3dd78e703c59ccc8"},"name":"ghcr.io/ismaill01/notifications"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== realtime-gw:1.0.0-rc.test-a sha256:b70b7c5d125212a2fd3f22e1f8b9b38fd9d3ad96453b4259dc078dd046ae4607 ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-a","repo":"https://github.com/IsmailL01/sport","sha":"4e7872ad20366816090633e3a502e794f4f49486","subject":{"digest":{"sha256":"b70b7c5d125212a2fd3f22e1f8b9b38fd9d3ad96453b4259dc078dd046ae4607"},"name":"ghcr.io/ismaill01/realtime-gw"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== social-graph:1.0.0-rc.test-a sha256:d5848955208ee48761f0d872c04a29cd5790e614dbb6fceb6979dff159fcaf3e ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-a","repo":"https://github.com/IsmailL01/sport","sha":"4e7872ad20366816090633e3a502e794f4f49486","subject":{"digest":{"sha256":"d5848955208ee48761f0d872c04a29cd5790e614dbb6fceb6979dff159fcaf3e"},"name":"ghcr.io/ismaill01/social-graph"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== identity:1.0.0-rc.test-b sha256:9d2705295135d09cb2040f549b8c92971e5a429692e879aa84b07097405bbbf4 ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-b","repo":"https://github.com/IsmailL01/sport","sha":"0db67d8fd09b1e1e17f9a896945e9afb0ce79c86","subject":{"digest":{"sha256":"9d2705295135d09cb2040f549b8c92971e5a429692e879aa84b07097405bbbf4"},"name":"ghcr.io/ismaill01/identity"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== activity-sync:1.0.0-rc.test-b sha256:77668502350e18f11793d991707abcad7335677be3fbefac1a12bbfef17d3baa ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-b","repo":"https://github.com/IsmailL01/sport","sha":"0db67d8fd09b1e1e17f9a896945e9afb0ce79c86","subject":{"digest":{"sha256":"77668502350e18f11793d991707abcad7335677be3fbefac1a12bbfef17d3baa"},"name":"ghcr.io/ismaill01/activity-sync"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== feed:1.0.0-rc.test-b sha256:3c9bd89d70ee23d9a13e906e91fa5a69bb054221b77bd0432f34724392632f7b ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-b","repo":"https://github.com/IsmailL01/sport","sha":"0db67d8fd09b1e1e17f9a896945e9afb0ce79c86","subject":{"digest":{"sha256":"3c9bd89d70ee23d9a13e906e91fa5a69bb054221b77bd0432f34724392632f7b"},"name":"ghcr.io/ismaill01/feed"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== media:1.0.0-rc.test-b sha256:9a8b838de6e830bd772239bfb293c2c7327ef140e28996b3039bf739ed0f9d58 ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-b","repo":"https://github.com/IsmailL01/sport","sha":"0db67d8fd09b1e1e17f9a896945e9afb0ce79c86","subject":{"digest":{"sha256":"9a8b838de6e830bd772239bfb293c2c7327ef140e28996b3039bf739ed0f9d58"},"name":"ghcr.io/ismaill01/media"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== messaging:1.0.0-rc.test-b sha256:e2c97ae0d4803bd6dec746a43dc8518f6175614e1ff9a8d49e200f18b0643884 ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-b","repo":"https://github.com/IsmailL01/sport","sha":"0db67d8fd09b1e1e17f9a896945e9afb0ce79c86","subject":{"digest":{"sha256":"e2c97ae0d4803bd6dec746a43dc8518f6175614e1ff9a8d49e200f18b0643884"},"name":"ghcr.io/ismaill01/messaging"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== notifications:1.0.0-rc.test-b sha256:ecb3410d5de4cc9ba23e769627110a0a3956a087dc6c845564801befe8f73c4d ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-b","repo":"https://github.com/IsmailL01/sport","sha":"0db67d8fd09b1e1e17f9a896945e9afb0ce79c86","subject":{"digest":{"sha256":"ecb3410d5de4cc9ba23e769627110a0a3956a087dc6c845564801befe8f73c4d"},"name":"ghcr.io/ismaill01/notifications"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== realtime-gw:1.0.0-rc.test-b sha256:304a26a36a79ac8537615893963bd49c71aaade0a984cc5c5534073c4bda9cfa ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-b","repo":"https://github.com/IsmailL01/sport","sha":"0db67d8fd09b1e1e17f9a896945e9afb0ce79c86","subject":{"digest":{"sha256":"304a26a36a79ac8537615893963bd49c71aaade0a984cc5c5534073c4bda9cfa"},"name":"ghcr.io/ismaill01/realtime-gw"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
+=== social-graph:1.0.0-rc.test-b sha256:b65cd6fd9a751ccae7b3670989c5aaa6defda12446f7b93c59caa6050dfe0333 ===
+{"ok":true,"ref":"refs/tags/v1.0.0-rc.test-b","repo":"https://github.com/IsmailL01/sport","sha":"0db67d8fd09b1e1e17f9a896945e9afb0ce79c86","subject":{"digest":{"sha256":"b65cd6fd9a751ccae7b3670989c5aaa6defda12446f7b93c59caa6050dfe0333"},"name":"ghcr.io/ismaill01/social-graph"},"ts":"timestamp.githubapp.com","workflow":"backend-cd"}
+
