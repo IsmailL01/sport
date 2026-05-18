@@ -1,88 +1,194 @@
+# .github/workflows/backend-ci.yml
+# PR + push-к-main CI for the Go backend monorepo.
+# Source: Plan 04-02 / RESEARCH §Code Examples §A. Eight job-`name:` strings below are a
+# verbatim contract consumed by Plan 04-05 branch-protection JSON — DO NOT vary spelling
+# (including the em-dash `—` U+2014 в secrets-scan-diff name).
 name: backend-ci
 
-# Запускается на изменения в services/backend/ или сам workflow.
 on:
   push:
     branches: [main]
     paths:
       - "services/backend/**"
       - ".github/workflows/backend-ci.yml"
+      - ".github/workflows/secret-scan-full.yml"
+      - "Makefile"
+      - ".golangci.yml"
+      - ".trivyignore.yaml"
   pull_request:
     branches: [main]
     paths:
       - "services/backend/**"
       - ".github/workflows/backend-ci.yml"
+      - ".github/workflows/secret-scan-full.yml"
+      - "Makefile"
+      - ".golangci.yml"
+      - ".trivyignore.yaml"
+
+permissions:
+  contents: read
+  security-events: write   # SARIF upload к GH Security tab
 
 jobs:
   test:
-    name: Test (Go)
+    name: Test (Go 1.25)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/backend
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-          cache-dependency-path: |
-            services/backend/identity/go.sum
-            services/backend/activity-sync/go.sum
-            services/backend/pkg/go.sum
-
-      - name: Verify modules
-        run: |
-          cd pkg && go mod download
-          cd ../identity && go mod download
-          cd ../activity-sync && go mod download
-
-      - name: Vet
-        run: |
-          cd pkg && go vet ./...
-          cd ../identity && go vet ./...
-          cd ../activity-sync && go vet ./...
-
-      - name: Test
-        run: |
-          cd pkg && go test -race -coverprofile=../coverage-pkg.out ./...
-          cd ../identity && go test -race -coverprofile=../coverage-identity.out ./...
-          cd ../activity-sync && go test -race -coverprofile=../coverage-activity-sync.out ./...
-
-      - name: Coverage summary
-        run: |
-          for f in coverage-*.out; do
-            echo "=== $f ==="
-            go tool cover -func="$f" | tail -1
-          done
-
-  docker:
-    name: Docker build
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
-        service: [identity, activity-sync]
+        service: [pkg, identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: services/backend/${{ matrix.service }}/go.sum
+      - name: Test ${{ matrix.service }}
+        working-directory: services/backend/${{ matrix.service }}
+        run: |
+          go mod download
+          go test -race -coverprofile=coverage.out ./...
+          echo "### Coverage — ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out | tail -1 >> $GITHUB_STEP_SUMMARY
 
+  lint:
+    name: Lint (golangci-lint v2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.x
+          working-directory: services/backend
+          # Reads .golangci.yml at repo root (action walks up from working-directory).
+
+  gosec:
+    name: SAST (gosec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Run gosec
+        working-directory: services/backend
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          # `|| true` per Pattern D — failure surfaced via SARIF upload + Security tab,
+          # not via scanner-step exit code (allows partial-results to upload).
+          gosec -fmt sarif -out gosec.sarif -severity high ./... || true
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: services/backend/gosec.sarif
+          category: gosec
+
+  govulncheck:
+    name: Vuln (govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: "1.25"
+          work-dir: services/backend
+          # govulncheck exits non-zero on vulnerability → blocks merge per D-10.
+
+  semgrep:
+    name: SAST (semgrep)
+    runs-on: ubuntu-latest
+    container: returntocorp/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep scan
+        run: |
+          semgrep ci \
+            --config=p/golang \
+            --config=p/owasp-top-ten \
+            --sarif --output=semgrep.sarif \
+            --severity ERROR --severity WARNING || true
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  secrets-scan-diff:
+    name: Secrets (gitleaks + trufflehog — PR diff)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'   # diff-only on PRs — full history runs в secret-scan-full.yml cron
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks needs commits even on diff
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          # ↑ Uncomment ONLY если repo namespace = organization (per RESEARCH Pitfall 4 +
+          # 04-01-SUMMARY ownership decision). Verified: github.com/IsmailL01/sport =
+          # personal account, ownership=personal → license NOT required → keep commented.
+      - name: TruffleHog (diff)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --results=verified,unknown
+          # base/head auto-detected on PR — diff scan only
+
+  docker-build:
+    name: Docker build (no push, verify)
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]
+    steps:
+      - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-
-      # Логин в реестр — добавляется позже когда выберем (GHCR / Docker Hub).
-      # - uses: docker/login-action@v3
-      #   with:
-      #     registry: ghcr.io
-      #     username: ${{ github.actor }}
-      #     password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build ${{ matrix.service }}
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: services/backend
           file: services/backend/${{ matrix.service }}/Dockerfile
           push: false
-          tags: ghcr.io/ismaill01/${{ matrix.service }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          load: true   # load into local Docker для Trivy scan downstream
+          tags: ghcr.io/ismaill01/${{ matrix.service }}:ci-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/ismaill01/${{ matrix.service }}:ci-${{ github.sha }}
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          severity: HIGH,CRITICAL   # D-10 — block on these
+          exit-code: '1'   # fail job on findings
+          ignore-unfixed: false
+          trivyignores: .trivyignore.yaml
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+
+  no-latest-tag-guard:
+    name: Guard (no :latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Negative grep — forbid `:latest`
+        run: |
+          # Strip comment lines first; grep -c counts comments otherwise (header prose
+          # self-invalidates per planner-antipatterns — RESEARCH Pitfall 6).
+          if grep -v '^#' .github/workflows/*.yml services/backend/docker-compose.prod.yml \
+               | grep -E ':latest["\x27]?\s*$' ; then
+            echo "FAIL: \`:latest\` tag found (excluding comment lines) — ROADMAP hard rule violated"
+            exit 1
+          fi
+          echo "PASS — no :latest tags found in non-comment lines"
