@@ -44,6 +44,9 @@ jobs:
       matrix:
         service: [identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]
     outputs:
+      # NOTE: matrix outputs in GH Actions are last-write-wins (one service's digest overwrites others).
+      # For per-service verify, cosign-verify-smoke uses tag-based ref instead of digest output.
+      # The digest output remains для convenience (last service published).
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
@@ -118,7 +121,7 @@ jobs:
           cosign verify \
             --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            ghcr.io/ismaill01/${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/ismaill01/${{ matrix.service }}:sha-$(echo ${{ github.sha }} | cut -c1-7)
 
       - name: Verify SLSA attestation
         run: |
@@ -126,7 +129,7 @@ jobs:
             --type slsaprovenance \
             --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            ghcr.io/ismaill01/${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/ismaill01/${{ matrix.service }}:sha-$(echo ${{ github.sha }} | cut -c1-7)
 
   no-latest-tag-guard:
     name: Guard (no :latest in CD outputs)
