@@ -1,401 +1,382 @@
-<!-- refreshed: 2026-05-14 -->
+<!-- refreshed: 2026-05-18 -->
 # Architecture
 
-**Analysis Date:** 2026-05-14
+**Analysis Date:** 2026-05-18
 
 ## System Overview
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          MOBILE CLIENT (Expo RN)                            │
-│                       `apps/mobile-rn/App.tsx` → RootNavigator              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  UI layer (screens + design system)                                         │
-│  `src/navigation/screens/`  +  `src/ui/`  +  `src/design/`                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  State layer (Zustand stores)                                               │
-│  `src/state/*.ts`  +  `src/state/social/*.ts`  +  `src/modules/*/state/`    │
-├──────────────────────────────────────────┬──────────────────────────────────┤
-│  Domain (pure TS, no platform deps)      │  Pipeline (GPS filters chain)    │
-│  `src/domain/*.ts`, `src/domain/training`│  `src/pipeline/*.ts` + filters/  │
-├──────────────────────────────────────────┴──────────────────────────────────┤
-│  Adapter layer — interfaces only at top, vendor SDK in `./adapters/` only   │
-│  Location | Sensors | Map | Realtime | Notifications | Media | Health       │
-│  `src/location/`  `src/sensors/`  `src/map/`  `src/realtime/`               │
-│  `src/notifications/`  `src/media/`  `src/health/`                          │
-├──────────────────────────────────────────┬──────────────────────────────────┤
-│  Storage (SQLite repositories)           │  Sync engine (outbox pattern)    │
-│  `src/storage/*Repository.ts`            │  `src/sync/syncEngine.ts`        │
-└──────────────────────────────────────────┴──────────────────┬───────────────┘
-                                                              │ HTTPS / WSS
-                                                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              API GATEWAY (Caddy reverse-proxy)                              │
-│              `services/backend/gateway/Caddyfile`  :8080                    │
-└────┬──────────┬──────────┬──────────┬──────────┬──────────┬─────────────────┘
-     │          │          │          │          │          │
-     ▼          ▼          ▼          ▼          ▼          ▼
-┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐
-│identity │ │activity-│ │social-  │ │messaging│ │  feed   │ │notifications  │
-│  :8081  │ │  sync   │ │ graph   │ │  :8084  │ │  :8085  │ │   :8086       │
-│         │ │  :8082  │ │  :8083  │ │         │ │         │ │               │
-└────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └───────┬───────┘
-     │           │           │           │           │              │
-     └───────────┴─────┬─────┴───────────┴───────────┴──────────────┘
-                       │
-        ┌──────────────┼──────────────┬──────────────┐
-        ▼              ▼              ▼              ▼
-   ┌────────┐    ┌─────────┐   ┌──────────┐  ┌────────────┐
-   │Postgres│    │  NATS   │   │  Redis   │  │ media-svc  │
-   │+Time-  │    │JetStream│   │ (cache + │  │   :8087    │
-   │ scale  │    │         │   │ rate-lim)│  │  (S3 sign) │
-   └────────┘    └────┬────┘   └──────────┘  └────────────┘
-                      │
-                      ▼
-              ┌──────────────────┐
-              │ realtime-gw :8090 │ ── WebSocket ── back to mobile
-              └──────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          Mobile Client (Expo RN)                          │
+│                            `apps/mobile-rn/`                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│  UI / Navigation        State (zustand)         Sync Engine              │
+│  `src/ui/`              `src/state/*.ts`        `src/sync/`              │
+│  `src/navigation/`                                                       │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Domain (pure TS)       Pipeline (filters)     Adapters (sensor-agnostic)│
+│  `src/domain/`          `src/pipeline/`        `src/{location,map,       │
+│                                                  sensors,realtime,       │
+│                                                  notifications,health}/` │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Storage (SQLite, expo-sqlite)                  Auth (JWT + refresh)     │
+│  `src/storage/`                                 `src/auth/`              │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │ HTTPS (Caddy ACME) + WS
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│             Edge Gateway — Caddy 2.8 (HTTPS via Let's Encrypt)            │
+│             `services/backend/gateway/Caddyfile.prod`                     │
+│             148-253-214-156.sslip.io → path-based reverse_proxy           │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+        ┌─────────────┬───────────┼───────────┬──────────────┐
+        ▼             ▼           ▼           ▼              ▼
+┌──────────────┐ ┌──────────┐ ┌───────┐ ┌───────────┐ ┌─────────────┐
+│  identity    │ │activity- │ │ feed  │ │ messaging │ │ social-graph│
+│  :8081       │ │sync :8082│ │ :8085 │ │  :8083    │ │   :8084     │
+│ `identity/`  │ │`activity-│ │`feed/`│ │`messaging/`│ │`social-graph/`│
+│              │ │ sync/`   │ │       │ │           │ │             │
+└──────┬───────┘ └────┬─────┘ └───┬───┘ └─────┬─────┘ └──────┬──────┘
+       │              │           │           │              │
+┌──────▼──────┐ ┌─────▼────┐ ┌────▼─────────┐ │ ┌────────────▼────┐
+│notifications│ │  media   │ │ realtime-gw  │ │ │ Each Go service │
+│   :8087     │ │  :8086   │ │   :8090  WS  │ │ │  has identical  │
+│             │ │          │ │              │ │ │  internal/      │
+└──────┬──────┘ └─────┬────┘ └──────┬───────┘ │ │  {domain,handler,│
+       │              │              │         │ │  repository,    │
+       │              │              │         │ │  service}/      │
+       └──────────────┴──────────────┴─────────┘ │  layout         │
+                                  │              └─────────────────┘
+        ┌─────────────────────────┴─────────────────────────────┐
+        ▼                  ▼                  ▼                  ▼
+┌───────────────┐ ┌──────────────┐ ┌──────────────────┐ ┌────────────┐
+│  PostgreSQL   │ │  NATS        │ │  Redis 7         │ │  MinIO     │
+│  TimescaleDB  │ │  JetStream   │ │  (rate-limit,    │ │  (S3 API)  │
+│  pg16         │ │  (events)    │ │   presence,      │ │            │
+│ `migrations/` │ │              │ │   timeline)      │ │            │
+└───────────────┘ └──────────────┘ └──────────────────┘ └────────────┘
+
+Host VPS (Hetzner) — systemd umbrella `sport-stack.service` wraps `docker compose -f docker-compose.prod.yml up`
+`/etc/systemd/system/sport-stack.service` (templated from `infra/ansible/roles/sport-stack/templates/sport-stack.service.j2`)
 ```
 
 ## Component Responsibilities
 
-### Mobile (`apps/mobile-rn/`)
-
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| App root | Polyfills, error boundary, theme, mapbox token init, TTS adapter wiring | `apps/mobile-rn/App.tsx` |
-| RootNavigator | Auth gate, push deep-link routing, realtime/push lifecycle on auth change | `apps/mobile-rn/src/navigation/RootNavigator.tsx` |
-| AppTabs | 4-tab shell (Record / Journal / Chats / Me), per-tab native stack | `apps/mobile-rn/src/navigation/AppTabs.tsx` |
-| Domain types | `RawPoint`, `Point`, `Session`, `Track`, `Stats`, `Pause`, `ActivityType`, `EnrichedPoint` | `apps/mobile-rn/src/domain/types.ts` |
-| Domain calcs | Area (shoelace+proj), closure detection, calories (MET), currency, splits, records, streak | `apps/mobile-rn/src/domain/AreaCalculator.ts`, `ClosureDetector.ts`, `calories.ts`, `currency.ts`, `splits.ts`, `records.ts`, `streak.ts` |
-| Training domain | Banister fitness model, TSS, VO2max, race predictor, plan generator, HR zones | `apps/mobile-rn/src/domain/training/` |
-| Pipeline | Composes `Filter[]` (Accuracy → Kalman → Jump → MinSegment), emits drop events | `apps/mobile-rn/src/pipeline/Pipeline.ts` |
-| Pipeline filters | `AccuracyFilter`, `KalmanFilter`, `JumpFilter`, `MinSegmentFilter`, `PauseDetector` | `apps/mobile-rn/src/pipeline/filters/` |
-| `LocationAdapter` | Interface for GPS source (start/stop/permission). Impl: `ExpoLocationAdapter` | `apps/mobile-rn/src/location/LocationAdapter.ts` |
-| `SensorAdapter` | Interface for BLE HR/cadence/power. Impl: `BleSensorAdapter`, `MockSensorAdapter` | `apps/mobile-rn/src/sensors/SensorAdapter.ts` |
-| `MapboxView` | Sole entry to Mapbox SDK; no `@rnmapbox/maps` import is allowed outside `src/map/` | `apps/mobile-rn/src/map/MapboxView.tsx` |
-| `RealtimeAdapter` | Interface + `WebSocketRealtimeAdapter` / `MockRealtimeAdapter` for `/ws` events | `apps/mobile-rn/src/realtime/RealtimeAdapter.ts` |
-| `NotificationsAdapter` | Push token request + foreground/response handlers (Expo Push) | `apps/mobile-rn/src/notifications/NotificationsAdapter.ts` |
-| `MediaAdapter` | Image picker + upload bridge (`ExpoMediaAdapter`) | `apps/mobile-rn/src/media/MediaAdapter.ts` |
-| `HealthAdapter` | HealthKit / Health Connect / Strava import + write workouts | `apps/mobile-rn/src/health/HealthAdapter.ts` |
-| `AuthProvider` | OAuth + OTP provider registry (`GoogleAuthProvider`, `AppleAuthProvider`) | `apps/mobile-rn/src/auth/authProviders.ts` |
-| `ApiClient` | fetch wrapper + JWT refresh + per-service base URLs | `apps/mobile-rn/src/auth/apiClient.ts` |
-| `importRepo` | Pull workouts via `HealthAdapter`, dedupe by `(source, external_uuid)`, insert into `sessions` | `apps/mobile-rn/src/health/importRepo.ts` |
-| Storage repos | One repository per domain table (points, sessions, sensors, laps, records, wallet, social, relations) | `apps/mobile-rn/src/storage/*Repository.ts` |
-| `database.ts` | SQLite singleton + migrations (target v19), Phase 0..Phase 8 schema evolution | `apps/mobile-rn/src/storage/database.ts` |
-| State stores | Zustand stores for each bounded concern: `useActivityStore`, `useAuthStore`, `useSyncStore`, `useWalletStore`, `useRealtimeStore`, … | `apps/mobile-rn/src/state/`, `apps/mobile-rn/src/state/social/` |
-| Sync engine | Outbox pattern: pending sessions → POST to `activity-sync`, batched point upload | `apps/mobile-rn/src/sync/syncEngine.ts` |
-| Modules | Self-contained slices with own `domain/state/sync/ui/index.ts`: `gamification`, `moderation`, `permissions` | `apps/mobile-rn/src/modules/` |
-| Design system | Cursona tokens + primitives (`Button`, `Card`, `Avatar`, `TabBar`, `Metric`, `XPBadge`, `GradeBadge`, …) | `apps/mobile-rn/src/design/` |
-| Util | Geo math (`douglasPeucker`, `selfIntersection`, `corridor`, `geojson`), TTS adapter, formatting | `apps/mobile-rn/src/util/` |
-
-### Backend (`services/backend/`)
-
-| Service | Responsibility | Entry point |
-|---------|----------------|-------------|
-| identity | Email/password + OTP login, JWT issuing/refresh, `/me`, user registration | `services/backend/identity/cmd/server/main.go` (`:8081`) |
-| activity-sync | Session + points upsert from mobile outbox; XP/grade ledger | `services/backend/activity-sync/cmd/server/main.go` (`:8082`) |
-| social-graph | Follow/block/profile/reports/moderation queue | `services/backend/social-graph/cmd/server/main.go` (`:8083`) |
-| messaging | Chats + messages + reactions; NATS outbox publisher; ABAC permissions | `services/backend/messaging/cmd/server/main.go` (`:8084`) |
-| feed | Stories + posts + comments + cleanup job | `services/backend/feed/cmd/server/main.go` (`:8085`) |
-| notifications | Expo Push delivery + device tokens + per-event templates | `services/backend/notifications/cmd/server/main.go` (`:8086`) |
-| media | S3-compatible upload signing, media records | `services/backend/media/cmd/server/main.go` (`:8087`) |
-| realtime-gw | WebSocket terminus; subscribes to NATS, fans out per-user/per-device | `services/backend/realtime-gw/cmd/server/main.go` (`:8090`) |
-| gateway | Caddy reverse-proxy; path-routes `/auth/*`, `/sessions*`, `/healthz`, etc. | `services/backend/gateway/Caddyfile` (`:8080`) |
-| `pkg/auth` | JWT signer + verifier shared by every service | `services/backend/pkg/auth/jwt.go` |
-| `pkg/permissions` | ABAC capability checks + role loader | `services/backend/pkg/permissions/` |
-| `pkg/ratelimit` | Token-bucket rate limit (Redis-backed) | `services/backend/pkg/ratelimit/ratelimit.go` |
-| `pkg/gamification` | XP + grade formulas reused by mobile (`pkg/gamification` mirrors mobile `modules/gamification/domain`) | `services/backend/pkg/gamification/` |
-| `pkg/audit` | Append-only audit log helpers | `services/backend/pkg/audit/audit.go` |
+| Mobile root | App bootstrap (Mapbox token, TTS adapter, ErrorBoundary, Theme, RootNavigator) | `apps/mobile-rn/App.tsx` |
+| RootNavigator | Auth gate + push deep-link + app shell | `apps/mobile-rn/src/navigation/RootNavigator.tsx` |
+| apiClient | HTTP client with 401-refresh retry + 426 force-update interception + X-Client-Version stamping | `apps/mobile-rn/src/auth/apiClient.ts` |
+| Pipeline | GPS filter chain composer (AccuracyFilter → KalmanFilter → JumpFilter → MinSegmentFilter) | `apps/mobile-rn/src/pipeline/Pipeline.ts` |
+| MapAdapter | Single import boundary for `@rnmapbox/maps` — domain never touches Mapbox directly | `apps/mobile-rn/src/map/MapboxView.tsx` |
+| LocationAdapter | Sensor-agnostic GPS source with adaptive sampling modes (active/paused/background-slc) | `apps/mobile-rn/src/location/LocationAdapter.ts` |
+| SessionManager | Run-session lifecycle (start/pause/resume/stop) | `apps/mobile-rn/src/domain/session/SessionManager.ts` |
+| AreaCalculator | Polygon area calculation with local-plane projection | `apps/mobile-rn/src/domain/AreaCalculator.ts` |
+| syncEngine | Offline-first activity sync (mobile → backend) | `apps/mobile-rn/src/sync/syncEngine.ts` |
+| identity service | OTP login, JWT issuance/refresh, profile, feature flags, client-version gate | `services/backend/identity/cmd/server/main.go` |
+| activity-sync | Session ingestion (mobile → Postgres + TimescaleDB hypertables) | `services/backend/activity-sync/cmd/server/main.go` |
+| feed | Posts, stories, comments, likes (with cleanup goroutines) | `services/backend/feed/cmd/server/main.go` |
+| media | Presigned S3 URLs + media metadata against MinIO | `services/backend/media/cmd/server/main.go` |
+| messaging | Conversations + messages + transactional outbox publisher to NATS | `services/backend/messaging/cmd/server/main.go` |
+| notifications | In-app notifications + Expo Push delivery | `services/backend/notifications/cmd/server/main.go` |
+| realtime-gw | WebSocket terminus, JWT-authed, NATS-subscribed broadcast | `services/backend/realtime-gw/cmd/server/main.go` |
+| social-graph | Profiles, follows, blocks, search-by-username | `services/backend/social-graph/cmd/server/main.go` |
+| gateway (Caddy) | HTTPS terminator + path-based reverse proxy + CORS + ACME | `services/backend/gateway/Caddyfile.prod` |
+| pkg (shared Go libs) | `auth` (JWT signer), `audit`, `clientversion`, `featureflags`, `permissions`, `ratelimit`, `gamification` | `services/backend/pkg/` |
+| migrations | Sequential SQL migrations 0000–0021 + drill 9990/9991 (golang-migrate format) | `services/backend/migrations/` |
+| Ansible deployer | OS bootstrap + UFW + docker install + sport-stack role | `infra/ansible/site.yml` |
+| sport-stack role | rsync repo → SOPS decrypt → migrations → systemd enable → smoke probe | `infra/ansible/roles/sport-stack/tasks/main.yml` |
+| backend-ci | Test + lint + gosec + govulncheck + semgrep + trivy + secrets diff + no-:latest guard | `.github/workflows/backend-ci.yml` |
+| backend-cd | Build + cosign keyless sign + SLSA L2 attest + push to GHCR | `.github/workflows/backend-cd.yml` |
+| Makefile (top) | `make rollback v=<tag>` + `make rollback-drill` (CICD-04 atomic rollback) | `Makefile` |
 
 ## Pattern Overview
 
-**Overall:** Domain-Driven Design with hexagonal-style adapters + offline-first outbox sync + microservice backend with NATS-fanout WebSocket gateway.
+**Overall:** Brownfield, two-tier architecture:
+- **Mobile:** Domain-Driven Hexagonal with explicit adapter ports (LocationAdapter, MapAdapter, SensorAdapter, RealtimeAdapter, NotificationsAdapter, HealthAdapter).
+- **Backend:** Go monorepo (via `go.work`) of 8 HTTP microservices, each following a classic 4-layer Clean Architecture (`cmd → handler → service → repository`, with a pure `domain` package). Cross-service async via NATS JetStream + transactional outbox; cross-cutting concerns live in `services/backend/pkg/`.
 
 **Key Characteristics:**
-- **Mobile** = pure-TS core (`domain/`, `pipeline/`) wrapped by **adapters** that quarantine every native SDK or vendor (Mapbox, expo-location, BLE, Expo Push, HealthKit, Strava, WebSocket).
-- **Multi-tenant from day 1**: `user_id` columns in SQLite (`wallet_balance`, `social_relations`, `feed_posts`, ...) even though only one user is logged in locally — same shape as backend Postgres.
-- **Offline-first**: every write goes through SQLite repos first; `sync/syncEngine.ts` and per-feature outbox tables (`messages.status='pending'`, `feed_posts.is_draft=1`, `stories.is_draft=1`) reconcile to backend when online.
-- **Backend** uses a uniform per-service layout (`cmd/server` + `internal/{domain,handler,service,repository}`) and a shared `pkg/` module (auth, permissions, ratelimit, gamification, audit), all wired together by `go.work`.
-- **Realtime fanout**: services publish events to NATS JetStream; `realtime-gw` is the only service that holds WebSocket connections and forwards events to mobile.
+- Offline-first mobile client (SQLite-backed local store, sync engine reconciles when online)
+- Sensor-agnostic — every external sensor source has an Adapter port; domain depends on ports only
+- Mapbox is firewalled — only `src/map/` imports `@rnmapbox/maps`
+- Go services are stateless and share one Postgres + one NATS + one Redis + one MinIO via service-name DNS in the compose network
+- 13-container production stack is wrapped under ONE systemd umbrella (`sport-stack.service`) — single unit start/stop/restart instead of per-service systemd
+- Container images are immutable: never `:latest`, always `:sha-<short>` or `:v<X.Y.Z>` — enforced by `no-latest-tag-guard` in both CI and CD workflows
+- Image supply-chain: cosign keyless via Sigstore/Fulcio + SLSA L2 build provenance via `actions/attest-build-provenance@v2`
+- Secrets at rest: SOPS-encrypted YAML (`age` recipient) — decrypted on Ansible controller and templated to `/run/sport.env` (tmpfs mode 0600) on the VPS; never sit on disk
 
 ## Layers
 
-**Domain (pure TS):**
-- Purpose: Bounded-context entities and pure functions. Zero React, zero SQLite, zero fetch.
+**Mobile — Domain (`apps/mobile-rn/src/domain/`):**
+- Purpose: Pure TypeScript value objects, entities, training-load math (Banister, TSS, VO2max, LTHR), area math, social/wallet types
 - Location: `apps/mobile-rn/src/domain/`
-- Contains: Types (`types.ts`), value objects, calculators (`AreaCalculator.ts`, `ClosureDetector.ts`), training models (`domain/training/`), social/wallet/records types.
-- Depends on: `util/geo.ts` (also pure)
-- Used by: Pipeline, state stores, UI for formatting.
+- Contains: `AreaCalculator.ts`, `ClosureDetector.ts`, `athlete.ts`, `calories.ts`, `gpx.ts`, `metrics.ts`, `records.ts`, `splits.ts`, `streak.ts`, `session/SessionManager.ts`, `training/{banister,tss,vo2max,lthr,workoutSession,planGenerator,racePredictor}.ts`
+- Depends on: Nothing platform-specific (no React, no Expo, no Mapbox)
+- Used by: `pipeline`, `state`, `ui`, `storage`
 
-**Pipeline (signal processing):**
-- Purpose: Transform `RawPoint` → `Point | null` through composable filters; emit pause events as sidecar.
+**Mobile — Pipeline (`apps/mobile-rn/src/pipeline/`):**
+- Purpose: Composable GPS filter chain
 - Location: `apps/mobile-rn/src/pipeline/`
-- Contains: `Pipeline.ts`, `Filter.ts` (interface), `filters/AccuracyFilter.ts`, `KalmanFilter.ts`, `JumpFilter.ts`, `MinSegmentFilter.ts`, `PauseDetector.ts`
-- Depends on: `domain/types.ts`
-- Used by: `state/activity.ts` (constructs default pipeline on session start).
+- Contains: `Pipeline.ts`, `Filter.ts`, `filters/` (Accuracy, Kalman, Jump, MinSegment)
+- Depends on: `domain/types.ts` only
+- Used by: `state/activity.ts`, `location/adapters/ExpoLocationAdapter.ts`
 
-**Adapter (platform isolation):**
-- Purpose: Hide every native/vendor SDK behind an interface. Concrete implementations live in `./adapters/` subfolders.
-- Location: `apps/mobile-rn/src/{location,sensors,map,realtime,notifications,media,health}/`
-- Contains: `<Name>Adapter.ts` (interface), `adapters/<Impl>Adapter.ts`, `index.ts` (singleton + public surface).
-- Depends on: Vendor SDK (Mapbox, expo-location, react-native-ble-plx, WebSocket, Expo Notifications, etc.) — but only inside `./adapters/`.
-- Used by: State stores. Domain code never imports adapters directly.
+**Mobile — Adapters (`apps/mobile-rn/src/{location,map,sensors,realtime,notifications,health}/`):**
+- Purpose: Hexagonal ports + concrete adapter implementations
+- Pattern: Each has an interface file (e.g. `LocationAdapter.ts`) + `adapters/` subdir with concrete implementations (e.g. `ExpoLocationAdapter.ts`)
+- Critical invariant: domain/state/ui code imports the interface; concrete adapters are injected at app start
 
-**State (orchestration):**
-- Purpose: Stitch domain + pipeline + adapters + storage into UI-consumable observable state.
-- Location: `apps/mobile-rn/src/state/`, `apps/mobile-rn/src/state/social/`, `apps/mobile-rn/src/modules/*/state/`
-- Contains: Zustand stores — one per bounded concern (~17 stores total).
-- Depends on: Everything above.
-- Used by: UI screens, RootNavigator side-effects.
+**Mobile — State (`apps/mobile-rn/src/state/`):**
+- Purpose: zustand stores — one per concern
+- Location: `apps/mobile-rn/src/state/`
+- Contains: `activity.ts`, `auth.ts`, `featureflags.ts`, `forceUpdate.ts`, `history.ts`, `map.ts`, `sensors.ts`, `settings.ts`, `sync.ts`, `training.ts`, `wallet.ts`, `workoutPlayer.ts`, `social/{useChatStore,useChatsStore,useNotificationsStore,useRealtimeStore,useUsersStore}.ts`
+- Pattern: Each store is invoked at module level via `useXxxStore.getState()` for non-React contexts (e.g. headless TaskManager) and via `useXxxStore(selector)` in components
 
-**Storage (persistence):**
-- Purpose: SQLite repositories — one per table; raw SQL with prepared statements.
-- Location: `apps/mobile-rn/src/storage/`
-- Contains: `database.ts` (singleton + migrations), per-table repos (`pointRepository.ts`, `sessionRepository.ts`, `sensorRepository.ts`, `lapRepository.ts`, `recordsRepository.ts`, `walletRepository.ts`, `socialRepository.ts`, `relationsRepository.ts`).
-- Depends on: `expo-sqlite`, domain types.
-- Used by: State stores, sync engine.
+**Mobile — UI (`apps/mobile-rn/src/ui/`, `apps/mobile-rn/src/navigation/`, `apps/mobile-rn/src/design/`):**
+- Purpose: Screens, modals, theme system, navigation stacks
+- Location: `apps/mobile-rn/src/ui/`, `apps/mobile-rn/src/navigation/`, `apps/mobile-rn/src/design/`
+- Navigation entry: `apps/mobile-rn/src/navigation/RootNavigator.tsx` — gates AuthStack vs AppTabs vs OnboardingStack
 
-**Sync (outbox):**
-- Purpose: Reconcile local SQLite with backend Postgres. Idempotent upserts; per-table cursors in `sync_cursors`.
-- Location: `apps/mobile-rn/src/sync/`
-- Contains: `syncEngine.ts` (sessions+points), `messageSync.ts` (chat outbox), `mediaUpload.ts` (S3 presign + upload).
-- Depends on: Storage repos, `auth/apiClient`.
-- Used by: `state/sync.ts`, `state/social/useChatStore.ts`, `RootNavigator` on auth.
+**Backend — Per-service 4-layer (`services/backend/<svc>/`):**
+- `cmd/server/main.go` — entry point; ENV parsing, pgxpool, middleware composition, http.Server lifecycle, graceful shutdown
+- `internal/domain/` — types and value objects (e.g. `identity/internal/domain/user.go`)
+- `internal/handler/` — HTTP handlers (uses Go 1.22+ method-routed `http.ServeMux`)
+- `internal/service/` — business logic (e.g. `identity/internal/service/auth.go`, `otp.go`)
+- `internal/repository/` — `repository.go` interface + `postgres/` and `memory/` implementations
+- Variant: `messaging/internal/outbox/publisher.go` and `permissions/` are service-local sidecars; `feed/internal/cleanup/` is a goroutine janitor; `realtime-gw/internal/gw/{connection,handler,registry}.go` is a connection-oriented variant (no Postgres, only NATS+JWT)
 
-**UI (presentation):**
-- Purpose: React components — screens, modals, charts. Only here do we mount adapters via state-store hooks.
-- Location: `apps/mobile-rn/src/ui/`, `apps/mobile-rn/src/navigation/screens/`, `apps/mobile-rn/src/design/`, `apps/mobile-rn/src/modules/moderation/ui/`
-- Depends on: State stores, design system, React Navigation.
+**Backend — Shared (`services/backend/pkg/`):**
+- Purpose: Cross-service Go libraries
+- Modules: `auth/` (JWT signer), `audit/` (audit-log writer to Postgres), `clientversion/` (X-Client-Version middleware + 426 force-update), `featureflags/` (Postgres-backed store with TTL cache), `permissions/`, `ratelimit/`, `gamification/`
+- Each is its own Go module imported as `github.com/runningecosystem/backend/pkg/<name>`
 
-**Backend services (per-service hexagon):**
-- Purpose: Stateless HTTP services; each owns a slice of Postgres + emits NATS events.
-- Location: `services/backend/<service>/`
-- Layout: `cmd/server/main.go` (composition root) → `internal/handler/http.go` (thin transport, `net/http`) → `internal/service/*.go` (business logic) → `internal/repository/postgres/*.go` (pgx queries) → `internal/domain/types.go` (entities).
+**Infra — Ansible (`infra/ansible/`):**
+- Two playbook plays (`site.yml`): (1) bootstrap (common + docker + ufw roles), (2) deploy (`sport-stack` role)
+- Inventory: `inventory/{dev,prod}/hosts.yml`
+- Group vars: `group_vars/all.yml` + `inventory/prod/group_vars/`
 
 ## Data Flow
 
-### Primary Request Path — Recording a run
+### Primary Request Path — Mobile → Backend (e.g. record session)
 
-1. **Sensor → pipeline**: `ExpoLocationAdapter` headless task fires raw GPS points → `useActivityStore.getState().acceptPoint(...)` from outside React lifecycle (`apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts`).
-2. **Pipeline filter chain**: `state/activity.ts` runs each `RawPoint` through `createDefaultPipeline()` — `AccuracyFilter → KalmanFilter → JumpFilter → MinSegmentFilter`. Drop events feed `droppedCount` / `lastDropFilter` (`apps/mobile-rn/src/state/activity.ts:67`+, `apps/mobile-rn/src/pipeline/index.ts:30`).
-3. **Domain calculations**: After each accepted point, `state/activity.ts` calls `totalDistance()`, `isClosed()`, `calculateArea()`, `ClosureDetector` — all pure domain logic (`apps/mobile-rn/src/domain/AreaCalculator.ts`, `domain/ClosureDetector.ts`, `util/geo.ts`).
-4. **Buffered persistence**: Accepted `Point[]` is buffered (`FLUSH_THRESHOLD = 10`) and flushed via `appendPoints()` → `pointRepository.ts` (`apps/mobile-rn/src/state/activity.ts:88`).
-5. **Finalize**: On Stop, `finalizeSession()` in `sessionRepository.ts` writes summary, `aggregateHrForSession()` rolls HR up, `estimateCaloriesBest()` writes calories, `detectNewRecords()` upserts personal records, `useWalletStore.awardForSession()` mints coins.
-6. **Background sync (online)**: `useSyncStore.pullDown()` / `runOutboxSync()` push pending sessions → `apiClient.sync('POST /sessions')` → `activity-sync` → Postgres + Timescale points (`apps/mobile-rn/src/sync/syncEngine.ts:44`, `services/backend/activity-sync/internal/service/sync.go`).
-7. **UI**: `state/activity.ts` is subscribed by `screens/record/TrackerLiveScreen.tsx`, `MetricsBar.tsx`, `TrackLayer` etc. for live metrics + map overlay.
+1. GPS tick: `ExpoLocationAdapter` push (`apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts`)
+2. Adapter calls `useActivityStore.getState().addPoint(raw)` (`apps/mobile-rn/src/state/activity.ts`) — headless TaskManager-safe path
+3. Store runs raw point through `Pipeline.process()` (`apps/mobile-rn/src/pipeline/Pipeline.ts`)
+4. Filtered point persisted via `pointRepository.insert` (`apps/mobile-rn/src/storage/pointRepository.ts`)
+5. On session stop, `SessionManager.stop()` triggers `syncEngine.upload()` (`apps/mobile-rn/src/sync/syncEngine.ts`)
+6. `apiClient.fetch()` POST to `${EXPO_PUBLIC_SYNC_URL}/sessions` (`apps/mobile-rn/src/auth/apiClient.ts`) with X-Client-Version header
+7. Caddy `handle /sessions/*` → `activity-sync:8082` (`services/backend/gateway/Caddyfile.prod`)
+8. `clientversion.Middleware` checks X-Client-Version against `CLIENT_MIN_VERSION` (`services/backend/pkg/clientversion/`) — 426 if too old
+9. `activity-sync` handler validates JWT via `pkg/auth.Verify`
+10. `activity-sync` service writes to Postgres / TimescaleDB hypertable
+11. activity-sync optionally publishes NATS event for downstream consumers (feed, social-graph, notifications)
+12. 200 OK → mobile marks session as synced in local SQLite
 
-### Auth flow
+### Async Event Path — Cross-service via NATS
 
-1. User picks provider on `screens/auth/ScreenEmail.tsx` → `useAuthStore.requestCode(email)` → `apiClient.identity('POST /auth/request-code')` (`apps/mobile-rn/src/auth/apiClient.ts`).
-2. Identity service routes via `services/backend/identity/internal/handler/http.go` → `service.OtpService` → Postgres `otp_codes`. In dev returns the code in response.
-3. `loginWithCode(email, code)` → `POST /auth/login-with-code` → token pair (access + refresh) → `apiClient.setTokens()` → SecureStore (`auth/tokenStorage.ts`).
-4. `RootNavigator` `useEffect` reacts to `authState === 'authenticated'`: hydrates wallet, fetches admin role, calls `useSyncStore.pullDown()`, connects realtime, registers push token.
+1. Source service writes domain row + outbox row in one transaction (`messaging/internal/outbox/publisher.go` pattern)
+2. Outbox publisher goroutine reads pending rows → publishes to NATS JetStream subject
+3. Subscriber service (notifications, realtime-gw) receives event, processes, ACKs
+4. `realtime-gw` fans event to active WebSocket connections by `user_id` lookup in `internal/gw/registry.go`
+5. Mobile `RealtimeAdapter` receives WS frame, updates zustand store, UI re-renders
 
-### Realtime flow
+### Auth Flow (Phase M4 — passwordless OTP)
 
-1. Mobile: `useRealtimeStore.connect(userId, accessToken, deviceId)` opens WSS to `${API_URL}/ws?token=…&device_id=…` (`apps/mobile-rn/src/realtime/index.ts:12`, `adapters/WebSocketRealtimeAdapter.ts`).
-2. Backend `realtime-gw` validates JWT via `pkg/auth.Signer.VerifyAccess`, then subscribes the connection to NATS subjects `user.<userId>.>` and `device.<deviceId>.>` (`services/backend/realtime-gw/internal/gw/handler.go`, `connection.go`, `registry.go`).
-3. Other services publish events to NATS (e.g. `messaging/internal/outbox/publisher.go` after a chat message commit; `activity-sync` after XP delta).
-4. `realtime-gw` fans out to all connections for that user → mobile `WebSocketRealtimeAdapter` decodes → `RealtimeListener` in `useRealtimeStore` dispatches to `useChatStore`, `useChatsStore`, `useXpStore`.
+1. Mobile POST `/auth/request-code` → `identity` issues OTP (logged to stdout in prod; returned in body if `IDENTITY_DEV_MODE=true` and DB URL is local)
+2. Mobile POST `/auth/login-with-code` with code → `identity` issues access JWT (short TTL) + refresh token (rotating, Postgres-backed)
+3. `apiClient` stores tokens via `tokenStorage` (Expo SecureStore)
+4. On 401, `apiClient` calls `POST /auth/refresh` → new pair → retries original request once
+5. On 426, `apiClient` sets `useForceUpdateStore.set(...)` → `ForceUpdateScreen` modal blocks UX
 
-### Wallet / currency flow
+### CI/CD + Deploy Flow
 
-1. Session finalize → `useWalletStore.awardForSession({ userId, sessionId, activity, kcal, durationS, distanceM, avgHrBpm })` (`apps/mobile-rn/src/state/wallet.ts:43`).
-2. Pure `decideCoinsForSession()` in `domain/currency.ts` runs anti-fraud + multipliers.
-3. `walletRepository.recordTransaction()` inserts into `wallet_transactions` with `UNIQUE (user_id, source_session_id)` for idempotency (`apps/mobile-rn/src/storage/walletRepository.ts`, see `database.ts` v15+v19).
-4. UI: `WalletScreen.tsx`, `ShopScreen.tsx` read from `useWalletStore`.
+1. Developer pushes to `main` (or tags `v*`) — paths filter triggers `.github/workflows/backend-ci.yml` on PR
+2. **backend-ci** (PR/main): matrix per service runs `go test -race`, `golangci-lint`, `gosec -severity high`, `govulncheck`, `semgrep --severity ERROR`, `trivy` HIGH/CRITICAL block, `gitleaks` + `trufflehog` on PR diff, `docker build` (no push), `no-latest-tag-guard`
+3. On green merge to `main`: `.github/workflows/backend-cd.yml` runs matrix (8 services)
+4. Per service: `docker buildx build` → push to `ghcr.io/ismaill01/<svc>:sha-<short>` (and `vX.Y.Z` on tags)
+5. `cosign sign --yes` (keyless via Sigstore/Fulcio, OIDC token from `id-token: write`)
+6. `actions/attest-build-provenance@v2` pushes SLSA L2 attestation to Rekor
+7. `cosign-verify-smoke` job verifies signatures + attestations against `certificate-identity-regexp 'https://github.com/IsmailL01/.*'`
+8. Operator runs `ansible-playbook -i inventory/prod --tags sport-stack site.yml -e sport_stack_tag=<tag>` from workstation
+9. Ansible `sport-stack` role: rsync `services/backend/` → `/opt/sport/services/backend/`
+10. `decrypt_sops.yml` decrypts `.secrets/prod/shared.yaml` on `localhost` (controller has age key; VPS does not) and templates `/run/sport.env` on remote (tmpfs mode 0600 owner deploy)
+11. `run_migrations.yml` runs `migrate/migrate` one-shot container against Postgres
+12. Template `sport-stack.service.j2` → `/etc/systemd/system/sport-stack.service` → `daemon-reload` + `systemctl enable --now`
+13. systemd `ExecStart=/usr/bin/docker compose -f /opt/sport/services/backend/docker-compose.prod.yml up` pulls signed images from GHCR
+14. `smoke_probe.yml` curls `https://148-253-214-156.sslip.io/healthz` until 200 — gates INFRA-07
 
-### Integrations (HealthKit / Health Connect / Strava) flow
+### Rollback Flow (top-level `Makefile`)
 
-1. `index.ts` picks platform default: `HealthKitAdapter` on iOS, `HealthConnectAdapter` on Android, `MockHealthAdapter` elsewhere (`apps/mobile-rn/src/health/index.ts:16`).
-2. UI invokes `importFromAdapter(sinceMs)` (`apps/mobile-rn/src/health/importRepo.ts:34`).
-3. Adapter `pullSince()` returns `ImportedWorkout[]`.
-4. `checkWorkoutSanity()` rejects clearly broken records (`importSanity.ts`).
-5. `INSERT OR IGNORE INTO sessions (..., source, external_uuid, ...)` deduplicates by the `UNIQUE (source, external_uuid)` index (migration v16, `database.ts:421`).
-6. Caller iterates `result.workouts` and awards coins per row.
+1. `make rollback v=<tag-or-sha>` checks git tag exists locally
+2. `git checkout <v>` (detached HEAD)
+3. SSH to VPS → `docker compose run --rm migrations -database $DATABASE_URL down 1` (undoes one migration)
+4. `ansible-playbook -i inventory/prod --tags sport-stack site.yml` (re-sync + re-templater + restart umbrella)
+5. `curl -fsS https://148-253-214-156.sslip.io/healthz` smoke probe
+6. Each step is `|| (echo ...; exit 1)` for fail-fast atomicity
 
 **State Management:**
-- Zustand stores subscribed by React components.
-- Single source of truth: SQLite. Stores hydrate from SQLite on auth + maintain in-memory caches for performance.
-- Cross-store calls allowed but explicit (e.g. `state/activity.ts` reaches into `useWalletStore.getState().awardForSession()` on finalize).
+- Mobile: zustand stores live in `apps/mobile-rn/src/state/` — selected via hook or accessed via `.getState()` from non-React paths (TaskManager, module-level code).
+- Backend: stateless services — all durable state in Postgres; ephemeral state (rate-limit counters, presence, timeline cache) in Redis.
 
 ## Key Abstractions
 
-**`LocationAdapter`** — Sensor-agnostic GPS source.
-- Purpose: Hide `expo-location` + headless `TaskManager` from domain code.
-- Examples: `apps/mobile-rn/src/location/LocationAdapter.ts` (interface), `apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts`
-- Pattern: Interface + singleton (`export const locationAdapter = new ExpoLocationAdapter()`); concrete impl pushes points directly into `useActivityStore` because the TaskManager task runs outside React.
+**MapAdapter (mobile):**
+- Purpose: Sole entry point to `@rnmapbox/maps`
+- Examples: `apps/mobile-rn/src/map/MapboxView.tsx`, `apps/mobile-rn/src/map/components/{TrackLayer,CorridorLayer,ZoneLayer,HistoryTerritoryLayer,LocationPuckLayer}.tsx`
+- Pattern: Façade — exported types/components hide Mapbox SDK; migration to MapLibre would touch only `src/map/`
 
-**`MapAdapter` (de facto `MapboxView`)** — Sole Mapbox entry point.
-- Purpose: Quarantine `@rnmapbox/maps` to `src/map/` only. Verified: grep of the whole `src/` tree finds Mapbox imports only inside `src/map/` (`MapboxView.tsx`, `offline.ts`, `components/*.tsx`).
-- Examples: `apps/mobile-rn/src/map/MapboxView.tsx`, `apps/mobile-rn/src/map/components/TrackLayer.tsx`, `apps/mobile-rn/src/map/index.ts`
-- Pattern: Public re-export from `src/map/index.ts`; layers exposed as React components (`TrackLayer`, `ZoneLayer`, `CorridorLayer`, `LocationPuckLayer`, `HistoryTerritoryLayer`). ТЗ §10.5 mandates `LineLayer + GeoJsonSource` — no `PolylineAnnotation`.
+**LocationAdapter (mobile):**
+- Purpose: Sensor-agnostic GPS abstraction with adaptive sampling
+- Examples: `apps/mobile-rn/src/location/LocationAdapter.ts`, `apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts`
+- Pattern: Port/Adapter — interface in root, implementations in `adapters/`
 
-**`SensorAdapter`** — BLE HR / cadence / power abstraction (ТЗ §7).
-- Examples: `apps/mobile-rn/src/sensors/SensorAdapter.ts`, `adapters/BleSensorAdapter.ts`, `adapters/MockSensorAdapter.ts`
-
-**`RealtimeAdapter`** — WebSocket / SSE / mock event delivery.
-- Examples: `apps/mobile-rn/src/realtime/RealtimeAdapter.ts`, `adapters/WebSocketRealtimeAdapter.ts`, `adapters/MockRealtimeAdapter.ts`
-- Pattern: Swap-able singleton (`getRealtimeAdapter()` / `setRealtimeAdapter()`).
-
-**`NotificationsAdapter`** — Push token + foreground/response (Expo Push).
-- Examples: `apps/mobile-rn/src/notifications/NotificationsAdapter.ts`, `adapters/ExpoNotificationsAdapter.ts`
-
-**`MediaAdapter`** — Image picker + upload bridge.
-- Examples: `apps/mobile-rn/src/media/MediaAdapter.ts`, `adapters/ExpoMediaAdapter.ts`
-
-**`HealthAdapter` + `HealthPlatform`** — HealthKit / Health Connect / Strava / Garmin / mock.
+**HealthAdapter (mobile):**
+- Purpose: Pluggable health-data source (HealthKit / Health Connect / Strava / Mock)
 - Examples: `apps/mobile-rn/src/health/HealthAdapter.ts`, `HealthKitAdapter.ts`, `HealthConnectAdapter.ts`, `StravaAdapter.ts`, `MockHealthAdapter.ts`
-- Pattern: Adapter chooses itself by `Platform.OS` at module load. `pullSince()` returns `ImportedWorkout[]` deduped by `(platform, sourceUuid)` in `importRepo.ts`.
+- Pattern: Strategy — platform-selected at runtime
 
-**`AuthProvider`** — OAuth + OTP provider registry.
-- Examples: `apps/mobile-rn/src/auth/authProviders.ts` (`GoogleAuthProvider`, `AppleAuthProvider`), `apps/mobile-rn/src/auth/tokenStorage.ts`, `apps/mobile-rn/src/auth/apiClient.ts`
-- Pattern: `getAuthProviders()` returns registry; `availableProviders()` filters by platform + env; `email-otp` is handled directly by `useAuthStore`.
+**RealtimeAdapter / NotificationsAdapter / SensorAdapter:**
+- Same Port/Adapter pattern at `apps/mobile-rn/src/{realtime,notifications,sensors}/`
 
-**`importRepo`** — Health import outbox (idempotent insert into `sessions`).
-- File: `apps/mobile-rn/src/health/importRepo.ts`
-- Pattern: `INSERT OR IGNORE` + sanity check + returns dedup metadata.
+**Transactional Outbox (backend):**
+- Purpose: Reliable cross-service event publishing without 2PC
+- Examples: `services/backend/messaging/internal/outbox/publisher.go`
+- Pattern: Outbox row written in same DB tx as domain row; goroutine drains to NATS
 
-**Filter chain** — Composable GPS denoiser.
-- File: `apps/mobile-rn/src/pipeline/Filter.ts`, `Pipeline.ts`
-- Pattern: `interface Filter { name; apply(p): Point|null; reset() }`. First null in chain wins → drop event.
+**Featureflags Store (backend, shared):**
+- Purpose: Postgres-backed feature flag CRUD with 30s TTL cache + cross-service invalidation
+- Example: `services/backend/pkg/featureflags/` (instantiated as `featureflags.NewPostgresStore(pool, 30*time.Second)` in each service)
+- Pattern: Repository + in-memory TTL cache
+
+**Client-Version Middleware (backend, shared):**
+- Purpose: Reject too-old mobile builds at API edge with HTTP 426
+- Example: `services/backend/pkg/clientversion/` used as `clientversion.Middleware(h.Routes(), policy, logger)` in `identity/cmd/server/main.go`
+- Pattern: net/http Middleware
 
 ## Entry Points
 
-**Mobile root (Expo):**
-- Location: `apps/mobile-rn/index.ts` → `registerRootComponent(App)` from `App.tsx`
-- Triggers: Expo loader at app start.
-- Responsibilities: Polyfills (`react-native-get-random-values`), Mapbox token init, TTS adapter, error boundary, `<ThemeProvider>`, `<RootNavigator>`.
+**Mobile App:**
+- Location: `apps/mobile-rn/index.ts` → `apps/mobile-rn/App.tsx`
+- Triggers: Expo runtime
+- Responsibilities: Install `react-native-get-random-values` polyfill, set Mapbox token from `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`, register TTS adapter, kick feature-flag refresh, mount `ErrorBoundary > SafeAreaProvider > ThemeProvider > ToastProvider > RootNavigator + ForceUpdateScreen`
 
-**RootNavigator:**
-- Location: `apps/mobile-rn/src/navigation/RootNavigator.tsx`
-- Triggers: Mount once.
-- Responsibilities: Auth hydrate on mount; on auth state change — connect realtime, register push, pull sessions, fetch admin role, hydrate wallet; push-tap deep-link router; global `navRef`.
+**Backend Services (one per service, identical shape):**
+- Locations: `services/backend/{identity,activity-sync,feed,media,messaging,notifications,realtime-gw,social-graph}/cmd/server/main.go`
+- Triggers: `docker compose up` via systemd umbrella
+- Responsibilities: Parse ENV (`envRequire` fails fast on missing required vars), build `pgxpool`, ping DB, construct domain repos/services/handlers, wire shared pkg (auth signer, audit logger, featureflags store, clientversion policy), start `http.Server` in goroutine, wait on `signal.NotifyContext(SIGINT, SIGTERM)`, 10s graceful shutdown
 
-**Backend (Go) — one `main.go` per service:**
-| Service | File | Default port |
-|---------|------|--------------|
-| identity | `services/backend/identity/cmd/server/main.go` | `:8081` |
-| activity-sync | `services/backend/activity-sync/cmd/server/main.go` | `:8082` |
-| social-graph | `services/backend/social-graph/cmd/server/main.go` | `:8083` |
-| messaging | `services/backend/messaging/cmd/server/main.go` | `:8084` |
-| feed | `services/backend/feed/cmd/server/main.go` | `:8085` |
-| notifications | `services/backend/notifications/cmd/server/main.go` | `:8086` |
-| media | `services/backend/media/cmd/server/main.go` | `:8087` |
-| realtime-gw | `services/backend/realtime-gw/cmd/server/main.go` | `:8090` |
+**Ansible Playbook:**
+- Location: `infra/ansible/site.yml`
+- Triggers: Operator from workstation: `ansible-playbook -i inventory/prod site.yml`
+- Responsibilities: Two-play orchestration — bootstrap (common, docker, ufw) then deploy (sport-stack)
 
-Common bootstrap pattern in every service `main.go`:
-1. `slog` JSON logger as default.
-2. ENV config (`<SERVICE>_HTTP_ADDR`, `<SERVICE>_DB_URL`, `IDENTITY_JWT_SECRET`, optional `NATS_URL`, `REDIS_URL`).
-3. `auth.NewSigner(jwtSecret)` from `pkg/auth`.
-4. `pgxpool.New(ctx, dbURL)` + `Ping`.
-5. (optional) NATS / Redis connect.
-6. Construct repos → service → handler.
-7. `http.Server` with `ReadHeaderTimeout=5s`, `Read/Write=15s`, `Idle=60s` (realtime-gw uses `0` to allow long-lived WS).
-8. `signal.NotifyContext(SIGINT, SIGTERM)` for graceful shutdown.
+**Top-Level Makefile (rollback):**
+- Location: `Makefile`
+- Triggers: Operator: `make rollback v=<tag>` or `make rollback-drill`
+- Responsibilities: git checkout + remote `migrate down 1` + re-run Ansible deploy + smoke probe
 
-**Gateway (Caddy):**
-- File: `services/backend/gateway/Caddyfile` (dev), `Caddyfile.prod` (prod).
-- Port: `:8080`. Path-routes `/auth/*` + `/me` → identity, `/sessions*` → activity-sync, etc. JWT validation lives in each service (`requireAuth` middleware), not in the gateway (yet).
+**CI/CD Workflows:**
+- Locations: `.github/workflows/{backend-ci,backend-cd,secret-scan-full}.yml`
+- Triggers: `push` to `main`, `pull_request` to `main`, `v*` tag push, and cron (secret-scan-full)
 
 ## Architectural Constraints
 
-- **Threading (mobile)**: Single JS thread (RN). Headless GPS task (`expo-task-manager`) runs in a native background context — that is why `ExpoLocationAdapter` pushes points directly into `useActivityStore` instead of relying on React.
-- **Threading (backend)**: Standard Go goroutines per request via `net/http`; per-WS connection goroutines in `realtime-gw/internal/gw/connection.go`.
-- **Global state**:
-  - `apps/mobile-rn/App.tsx` sets Mapbox token + TTS adapter at module load.
-  - Singletons in adapter `index.ts` (`locationAdapter`, `getHealthAdapter()`, `getRealtimeAdapter()`, `getNotificationsAdapter()`).
-  - SQLite `_db` singleton in `apps/mobile-rn/src/storage/database.ts`.
-  - Zustand stores — module-level instances.
-- **Circular imports**: None detected. `state` cross-references other stores only via `useX.getState()` at call time (not import time), e.g. `state/activity.ts` → `useWalletStore.getState().awardForSession`.
-- **No Mapbox SDK outside `src/map/`** — enforced by convention (CLAUDE.md, ТЗ §3 п.10). Verified: zero offending imports.
-- **Multi-tenant from day 1**: every relevant SQLite table carries `user_id` (`wallet_balance`, `wallet_transactions`, `social_relations`, `feed_posts.author_id`, `messages.sender_id`, …).
-- **Offline-first**: Outbox columns (`status`, `synced_at`, `client_id`, `attempts`, `last_error`) on every write-heavy table.
-- **JWT shared secret**: `IDENTITY_JWT_SECRET` (≥32 bytes) signs in identity and is verified by every other service through `pkg/auth.Signer`. Realtime-gw shares the same secret.
-- **Migrations are forward-only on mobile**: SQLite `PRAGMA user_version` linear ladder v1→v19 in `database.ts`. Server uses golang-migrate with `.up.sql/.down.sql` pairs in `services/backend/migrations/`.
+- **Mapbox firewall:** Only files under `apps/mobile-rn/src/map/` may import `@rnmapbox/maps`. Enforced by convention + reviewer guard (TZ §3 / §10.6); no automated lint rule currently.
+- **Local-plane projection mandatory:** Area calculations must project lat/lon into a local Cartesian plane before computing area — never raw degrees. See `apps/mobile-rn/src/domain/AreaCalculator.ts` and TZ §6.6.
+- **No PolylineAnnotation for the live track:** Track rendering uses `LineLayer + GeoJsonSource` only — `PolylineAnnotation` and `AnnotationManager` are forbidden for the moving track (TZ §10.5). See `apps/mobile-rn/src/map/components/TrackLayer.tsx`.
+- **Mobile single-threaded JS bridge:** Adapters running in headless contexts (TaskManager) must use `useXxxStore.getState()` — they have no React lifecycle.
+- **Backend services share one DB + one NATS + one Redis + one MinIO:** No per-service DB instance. Tables namespaced by feature, not by service.
+- **`docker compose` (space-form) only:** `sport-stack.service.j2` ExecStart uses `/usr/bin/docker compose` — never `docker-compose` (legacy v1 binary removed). Documented in template header.
+- **Immutable image tags:** Never `:latest` anywhere — enforced by `no-latest-tag-guard` jobs in `backend-ci.yml` and `backend-cd.yml`. Compose file uses `${SPORT_STACK_TAG:?need SPORT_STACK_TAG}` — refuses to start without an explicit tag.
+- **JWT secret minimum length:** `pkg/auth.NewSigner` rejects keys < 32 bytes. Enforced server-side at startup (fails the `run()` function).
+- **`IDENTITY_DEV_MODE=true` prod-guard:** Refuses to start if DB URL is not local (substring match `localhost`, `127.0.0.1`, `host.docker.internal`, `@postgres:`). See `services/backend/identity/cmd/server/main.go:isLocalDBURL`.
+- **Secrets at rest:** SOPS-encrypted (`.sops.yaml` → age recipient); decrypted on the Ansible controller via `delegate_to: localhost`; never present in the git tree unencrypted; never on VPS disk (only `/run/sport.env` on tmpfs mode 0600).
+- **UFW + key-only SSH:** OS-level firewall replaces Hetzner Cloud Firewall (post Phase 3 pivot, D-24); admin SSH allow-listed by `dev_admin_ips` CIDRs in `infra/ansible/group_vars/all.yml`.
+- **Go workspace:** `services/backend/go.work` lists all 9 modules (8 services + `pkg`). CI cannot use the root `./...` form — `golangci-lint`, `gosec`, `govulncheck` all loop per-module because there is no root `go.mod`.
+- **Migration files are immutable once merged:** sequential numbering 0000–0021, plus drill migrations 9990/9991. Up/down pairs required. Run by one-shot `migrate/migrate:v4.18.1` container before service start (`docker-compose.prod.yml` `migrations` job + `depends_on.condition: service_completed_successfully`).
 
 ## Anti-Patterns
 
-### Direct Mapbox SDK import outside `src/map/`
+### Importing `@rnmapbox/maps` outside `src/map/`
 
-**What happens:** A new screen `import Mapbox from '@rnmapbox/maps'` to draw a layer.
-**Why it's wrong:** Breaks the MapAdapter quarantine (CLAUDE.md, ТЗ §10.6). Any future migration to MapLibre / native module must touch only `src/map/`.
-**Do this instead:** Add a new layer component inside `apps/mobile-rn/src/map/components/<Name>Layer.tsx` and re-export from `apps/mobile-rn/src/map/index.ts`.
+**What happens:** A screen or domain module imports `Mapbox`, `Camera`, or `MapView` directly from `@rnmapbox/maps`.
+**Why it's wrong:** It defeats the MapAdapter firewall — migration to MapLibre or a native module would then require touching every consumer instead of only `src/map/`. Also pulls native dependencies into pure-TS test contexts.
+**Do this instead:** Import from `apps/mobile-rn/src/map/` (re-exports). Add new map layers as components under `apps/mobile-rn/src/map/components/`. Pattern in `apps/mobile-rn/src/map/MapboxView.tsx`.
 
-### Computing area on raw lat/lon
+### Computing polygon area in raw lat/lon
 
-**What happens:** Calling `shoelace` directly on degrees.
-**Why it's wrong:** Square-degrees → wildly wrong meters² (ТЗ §6.6).
-**Do this instead:** Use `calculateArea()` in `apps/mobile-rn/src/domain/AreaCalculator.ts` which projects into a local plane first.
+**What happens:** Code multiplies degree differences as if they were Euclidean meters.
+**Why it's wrong:** Latitude and longitude are not isotropic — at 60° latitude a degree of longitude is half a degree of latitude. Areas are wildly wrong, especially for elongated polygons.
+**Do this instead:** Use the projection helpers in `apps/mobile-rn/src/util/geo.ts` to convert to a local Cartesian plane centered on the polygon centroid, then apply the shoelace formula. Reference: `apps/mobile-rn/src/domain/AreaCalculator.ts`.
 
-### Using `PolylineAnnotation` / `AnnotationManager` for the live track
+### Rendering the live track with `PolylineAnnotation` / `AnnotationManager`
 
-**What happens:** Convenient `<PolylineAnnotation>` per session.
-**Why it's wrong:** Annotation managers re-render on every update — janky at 50k+ points (ТЗ §10.5).
-**Do this instead:** `TrackLayer` uses `LineLayer + GeoJsonSource` (`apps/mobile-rn/src/map/components/TrackLayer.tsx`).
+**What happens:** Track rendering uses one annotation per segment.
+**Why it's wrong:** Annotations are CPU-heavy and rebuild on every update — performance collapses past ~1000 points. TZ §10.5 forbids this.
+**Do this instead:** Single `GeoJsonSource` + `LineLayer`, mutate the GeoJSON in place. Reference: `apps/mobile-rn/src/map/components/TrackLayer.tsx`.
 
-### Importing adapters from `domain/`
+### Reading state via `useXxxStore(selector)` in a headless TaskManager handler
 
-**What happens:** A new domain helper pulls `import { locationAdapter } from '../location'`.
-**Why it's wrong:** Domain must stay platform-agnostic and trivially unit-testable (CLAUDE.md).
-**Do this instead:** Pass concrete values into the domain function; perform the I/O in `state/*` or the adapter caller.
+**What happens:** Background-location callback uses the React hook form to read state.
+**Why it's wrong:** The handler runs outside React's render tree — hooks throw. Worse, mutations made this way don't notify subscribers.
+**Do this instead:** Use `useXxxStore.getState()` and `useXxxStore.setState(...)` directly. Reference: `apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts` calling into `useActivityStore.getState().addPoint(...)`.
 
-### Skipping outbox on writes
+### Pinning `docker-compose.prod.yml` to `:latest` or unversioned image refs
 
-**What happens:** A new screen does `fetch('POST /sessions')` directly.
-**Why it's wrong:** Loses offline-first guarantee; duplicates code in `sync/syncEngine.ts`; no idempotency.
-**Do this instead:** Persist to SQLite via the corresponding repository → mark `synced_at = NULL` → let `runOutboxSync` push.
+**What happens:** Image refs lack an explicit version constraint.
+**Why it's wrong:** `:latest` is non-reproducible — rollback becomes impossible and supply-chain signatures can't be verified against a known digest.
+**Do this instead:** Use `${SPORT_STACK_TAG:?need SPORT_STACK_TAG}` — the compose file already does. Enforced by `no-latest-tag-guard` jobs (both CI and CD).
 
-### Storing tokens in plain AsyncStorage
+### Writing secrets to disk on the VPS
 
-**What happens:** `AsyncStorage.setItem('accessToken', t)`.
-**Why it's wrong:** Bypasses `expo-secure-store` (ТЗ §3, no secrets in plaintext).
-**Do this instead:** Use `apps/mobile-rn/src/auth/tokenStorage.ts` (already wraps SecureStore).
+**What happens:** Decrypted secrets land in `/opt/sport/.env` or similar persistent path.
+**Why it's wrong:** Survives reboot, ends up in backups, accessible to any process running as `deploy`.
+**Do this instead:** Always template to `/run/sport.env` (tmpfs, mode 0600 owner deploy). See `infra/ansible/roles/sport-stack/tasks/decrypt_sops.yml`. Age key lives on the dev workstation only — never copied to the VPS.
 
-### Mixing transport concerns into Go `service` layer
+### Building per-service Go commands at the repo root with `./...`
 
-**What happens:** A new endpoint puts `json.NewDecoder(r.Body)` inside `service.AuthService`.
-**Why it's wrong:** Breaks the per-service `handler → service → repository` separation. `service` must be HTTP-unaware.
-**Do this instead:** Keep DTO parsing in `internal/handler/http.go`; pass plain Go structs into `service`.
+**What happens:** A CI step runs `go test ./...` from `services/backend/`.
+**Why it's wrong:** `services/backend/` has no `go.mod` (only `go.work`). Tools error with "directory prefix . does not contain modules listed in go.work".
+**Do this instead:** Loop per module: `for SVC in pkg identity activity-sync feed media messaging notifications realtime-gw social-graph; do (cd services/backend/$SVC && go test ...); done`. Pattern in `.github/workflows/backend-ci.yml` (`lint`, `gosec`, `govulncheck` jobs).
 
 ## Error Handling
 
-**Strategy:**
-- **Mobile**: Top-level `<ErrorBoundary>` in `App.tsx` catches render-time crashes and shows a styled fail screen. Async errors are logged via `console.warn/error` with prefix tags (`[sync]`, `[wallet]`, `[RootNavigator]`, ...). Repos throw plain `Error`s; stores `try/catch` and surface a UI-friendly `loading=false, error=string` shape.
-- **Backend**: Each handler returns `(status, code, message)` JSON shape via helpers in `handler/http.go`. Domain errors are wrapped with `fmt.Errorf("op: %w", err)`. Graceful shutdown on `SIGINT/SIGTERM`.
+**Strategy:** Fail-fast on missing required configuration (server-side at startup) + structured logging via `slog` (Go) / `console.error` + ErrorBoundary (RN).
 
 **Patterns:**
-- `parseRateLimit(resp)` in `apiClient.ts` recognises HTTP 429 and surfaces `retryAfterS`.
-- Sync engine catches per-session errors and continues with the rest (`apps/mobile-rn/src/sync/syncEngine.ts:76`).
-- Realtime adapter status events (`'reconnecting' | 'error'`) feed `useRealtimeStore.status` for UI banner.
+- Go services: `envRequire(key)` in each `cmd/server/main.go` calls `exitFunc(1)` if a required ENV var is missing
+- Go services: `slog` with JSON handler; `Logger` is process-wide via `slog.SetDefault(...)`
+- Go services: passwords redacted in logs via `redactPassword(url)` helper (identity)
+- Go services: graceful shutdown — `signal.NotifyContext` + `srv.Shutdown(ctx)` with 10s timeout
+- Mobile: top-level `ErrorBoundary` in `App.tsx` shows red error screen with stack
+- Mobile: apiClient catches 401 (refresh-and-retry) and 426 (force-update modal) at low level — call sites don't see them
+- Mobile: pipeline drop events route through `PipelineHooks.onDrop` for telemetry without affecting flow
 
 ## Cross-Cutting Concerns
 
 **Logging:**
-- Mobile: `console.{log,warn,error}` with module prefix tags. No structured logger yet.
-- Backend: `slog.New(slog.NewJSONHandler(os.Stdout, ...))` set as default; per-handler `loggingMiddleware` in each `internal/handler/http.go`.
+- Go: `log/slog` with JSON handler, `LevelInfo` default. Used everywhere via `slog.Default()` after `slog.SetDefault(logger)` in each main.
+- Mobile: `console.log/warn/error`; production telemetry deferred (no Sentry yet — see TZ).
 
 **Validation:**
-- Mobile: Manual checks in repos + domain functions; no schema lib (no Zod yet).
-- Backend: Manual `if email == "" { return badRequest(...) }` style in handlers; tighter input contracts in `service` layer.
+- Go: hand-rolled in handlers (`r.ParseForm`, JSON decode, then field checks); no validator library.
+- Mobile: zod is NOT used; types enforced at the API boundary by `apiClient` JSON parsing + zustand store guards.
 
 **Authentication:**
-- Mobile: `ApiClient` injects `Authorization: Bearer <accessToken>` and auto-refreshes on 401 via the refresh-token endpoint (`apps/mobile-rn/src/auth/apiClient.ts`).
-- Backend: `pkg/auth.Signer` verifies HS256 JWTs; each service exposes a `requireAuth` middleware around protected routes (`identity/internal/handler/http.go:48`).
+- JWT via `pkg/auth.Signer` (HS256, ≥32 byte secret); refresh tokens rotating, Postgres-backed (`pkg/auth/jwt.go`, `identity/internal/repository/postgres/refresh_token.go`).
+- Server-side: every service that needs auth has its handler call `pkg/auth.Verify` (or wraps mux with `requireAuth` middleware as in `identity/internal/handler/http.go`).
+- Mobile: `apiClient` (`src/auth/apiClient.ts`) transparently refreshes on 401 + force-updates on 426.
 
-**Authorization:**
-- Backend: `pkg/permissions` implements role + capability ABAC checks. Used most heavily by `messaging/internal/permissions/permissions.go` and `social-graph/internal/handler/moderation.go`.
+**Rate limiting:** `pkg/ratelimit` (Redis-backed) — per-user/per-IP buckets.
 
-**Rate limiting:**
-- `pkg/ratelimit/ratelimit.go` — Redis-backed token bucket, wired into feed/messaging handlers.
+**Audit:** `pkg/audit` writes admin actions to a shared `audit_log` Postgres table.
 
-**Audit:**
-- `pkg/audit/audit.go` — append-only audit trail used by moderation actions.
+**Permissions:** `pkg/permissions` provides ABAC checks; `messaging/internal/permissions/permissions.go` is a service-local variant for conversation membership.
 
-**Observability:**
-- `services/backend/observability/` — Prometheus / Loki / Grafana configs; `docker-compose.observability.yml` stack lives outside the main app compose.
+**Observability:** `services/backend/docker-compose.observability.yml` + `services/backend/observability/` (Prometheus / Grafana). Not enabled in the main prod compose by default — opt-in second compose file.
 
 ---
 
-*Architecture analysis: 2026-05-14*
+*Architecture analysis: 2026-05-18*
