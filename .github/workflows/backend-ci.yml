@@ -27,9 +27,9 @@ on:
 
 permissions:
   contents: read
-  security-events: write   # SARIF upload к GH Security tab
+  security-events: write   # reserved (currently no SARIF uploads — GHAS-only on private repo)
   pull-requests: read      # gitleaks-action reads PR commits via API
-  actions: read            # codeql/upload-sarif fetches workflow-run metadata (private repos)
+  actions: read            # reserved (was needed for SARIF uploader telemetry)
 
 jobs:
   test:
@@ -63,11 +63,30 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-      - uses: golangci/golangci-lint-action@v8
-        with:
-          version: v2.5.0   # specific pin — action rejects v2.x glob (parseVersion strict v1.2|v1.2.3)
-          working-directory: services/backend
-          # Reads .golangci.yml at repo root (action walks up from working-directory).
+      # services/backend is workspace-root с go.work but no go.mod → action's `./...` glob
+      # from there errors "directory prefix . does not contain modules listed в go.work".
+      # Loop per-module instead (each has its own go.mod). Single check-context preserved.
+      - name: Install golangci-lint
+        run: |
+          curl -fsSL -o /tmp/glcl.tar.gz \
+            https://github.com/golangci/golangci-lint/releases/download/v2.5.0/golangci-lint-2.5.0-linux-amd64.tar.gz
+          tar -xzf /tmp/glcl.tar.gz -C /tmp
+          sudo mv /tmp/golangci-lint-2.5.0-linux-amd64/golangci-lint /usr/local/bin/
+          golangci-lint --version
+      - name: Run golangci-lint per module
+        run: |
+          set -e
+          CFG=$PWD/.golangci.yml
+          FAIL=0
+          for SVC in pkg identity activity-sync feed media messaging notifications realtime-gw social-graph; do
+            echo "::group::golangci-lint $SVC"
+            ( cd services/backend/$SVC && golangci-lint run --timeout=5m --config="$CFG" ./... ) || FAIL=1
+            echo "::endgroup::"
+          done
+          if [ "$FAIL" != "0" ]; then
+            echo "::error::golangci-lint failed in one or more modules"
+            exit 1
+          fi
 
   gosec:
     name: SAST (gosec)
@@ -79,31 +98,22 @@ jobs:
           go-version: "1.25"
       - name: Run gosec
         run: |
+          # services/backend has no go.mod (workspace) → run per-module.
+          # SARIF upload removed: GitHub Code Scanning требует GHAS на private repos
+          # (paid feature). Findings surface via stdout + step summary; block-on-HIGH
+          # via gosec exit code (per D-10). Revisit v1.0.1 если GHAS enabled OR repo
+          # made public (deferred к Plan 04 Wave 4 если privacy-zone clipping ready).
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          # services/backend has no go.mod (workspace); run per-module and merge SARIF.
-          # `|| true` per Pattern D — failure surfaced via SARIF upload + Security tab,
-          # not via scanner-step exit code (allows partial-results to upload).
-          rm -f gosec.sarif
-          MERGE_ARGS=""
+          FAIL=0
           for SVC in pkg identity activity-sync feed media messaging notifications realtime-gw social-graph; do
-            ( cd services/backend/$SVC && gosec -fmt sarif -out "../gosec-$SVC.sarif" -severity high ./... ) || true
-            if [ -f "services/backend/gosec-$SVC.sarif" ]; then
-              MERGE_ARGS="$MERGE_ARGS services/backend/gosec-$SVC.sarif"
-            fi
+            echo "::group::gosec $SVC"
+            ( cd services/backend/$SVC && gosec -severity high ./... ) || FAIL=1
+            echo "::endgroup::"
           done
-          # Use jq to merge multiple SARIF runs into one file (avoids SARIF upload rate
-          # limits per RESEARCH Pitfall 8).
-          if [ -n "$MERGE_ARGS" ]; then
-            jq -s '{ "$schema": .[0]["$schema"], version: .[0].version, runs: ([.[].runs[]]) }' \
-              $MERGE_ARGS > gosec.sarif
-          else
-            echo '{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[]}' > gosec.sarif
+          if [ "$FAIL" != "0" ]; then
+            echo "::error::gosec found HIGH severity issues (blocks merge per D-10)"
+            exit 1
           fi
-      - uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: gosec.sarif
-          category: gosec
 
   govulncheck:
     name: Vuln (govulncheck)
@@ -142,17 +152,15 @@ jobs:
       - name: Semgrep scan
         run: |
           # `semgrep scan` (not `semgrep ci` — `ci` rejects `--severity`).
-          # Severity filters: ERROR + WARNING only (skip INFO noise).
+          # Severity filters: ERROR only (block-on-HIGH per D-10; WARNING surfaces к
+          # step summary без blocking).
+          # SARIF upload removed: GitHub Code Scanning требует GHAS на private repos.
+          # Findings surface via stdout. Revisit v1.0.1 if GHAS enabled.
           semgrep scan \
             --config=p/golang \
             --config=p/owasp-top-ten \
-            --sarif --output=semgrep.sarif \
-            --severity ERROR --severity WARNING || true
-      - uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: semgrep.sarif
-          category: semgrep
+            --severity ERROR \
+            --error
 
   secrets-scan-diff:
     name: Secrets (gitleaks + trufflehog — PR diff)
@@ -201,17 +209,11 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ghcr.io/ismaill01/${{ matrix.service }}:ci-${{ github.sha }}
-          format: sarif
-          output: trivy-${{ matrix.service }}.sarif
+          format: table   # stdout — SARIF upload removed (GHAS-only on private repo)
           severity: HIGH,CRITICAL   # D-10 — block on these
           exit-code: '1'   # fail job on findings
           ignore-unfixed: false
           trivyignores: .trivyignore.yaml
-      - uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: trivy-${{ matrix.service }}.sarif
-          category: trivy-${{ matrix.service }}
 
   no-latest-tag-guard:
     name: Guard (no :latest)
