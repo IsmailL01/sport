@@ -19,11 +19,11 @@ type Profile struct {
 	BannedUntil   *time.Time
 	LastSeenAt    *time.Time
 	// Phase M3: gamification.
-	XPTotal       int    // cumulative xp; updated by activity-sync on finalize
-	Grade         string // cached grade letter (D / D+ / C / ... / S)
-	Verified      bool   // KYC / verified runner status (CTA gate)
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	XPTotal   int    // cumulative xp; updated by activity-sync on finalize
+	Grade     string // cached grade letter (D / D+ / C / ... / S)
+	Verified  bool   // KYC / verified runner status (CTA gate)
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Follow — отношение «follower следит за followee».
@@ -42,11 +42,11 @@ type Block struct {
 
 // Relation — агрегированное отношение между двумя пользователями (для UI button-state).
 type Relation struct {
-	IsFollowing  bool
-	IsFollower   bool
-	IsBlocked    bool
-	IsBlockedBy  bool
-	CanDM        bool
+	IsFollowing bool
+	IsFollower  bool
+	IsBlocked   bool
+	IsBlockedBy bool
+	CanDM       bool
 }
 
 var (

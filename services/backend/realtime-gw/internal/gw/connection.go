@@ -13,10 +13,10 @@ import (
 
 const (
 	// Heartbeat / timeout настройки.
-	pingInterval     = 25 * time.Second
-	writeTimeout     = 10 * time.Second
-	clientReadLimit  = 64 * 1024 // 64 KB max single frame from client
-	sendBuffer       = 64        // pending outbound frames (drop conn если переполнили)
+	pingInterval    = 25 * time.Second
+	writeTimeout    = 10 * time.Second
+	clientReadLimit = 64 * 1024 // 64 KB max single frame from client
+	sendBuffer      = 64        // pending outbound frames (drop conn если переполнили)
 )
 
 // Connection — один WebSocket к одному device.
@@ -38,6 +38,7 @@ type Connection struct {
 //   - subscribe rt.user.{userID} на NATS
 //   - запускает reader + writer goroutines
 //   - запускает heartbeat
+//
 // Возвращается сразу. Goroutines работают пока ctx не cancel.
 func NewConnection(
 	ctx context.Context,
@@ -104,6 +105,7 @@ func (c *Connection) enqueue(payload any) {
 //   - ping (мы отвечаем pong через writerLoop heartbeat — здесь просто игнорим)
 //   - typing (TODO Phase B+: переслать в rt.conv.{id}.typing для членов чата)
 //   - ack {lastEventId} (TODO: отметить где остановился)
+//
 // Сейчас всё что приходит — логируем и игнорируем.
 func (c *Connection) readerLoop(registry *Registry) {
 	defer c.Close("reader exit")

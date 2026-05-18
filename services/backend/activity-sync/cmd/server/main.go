@@ -1,10 +1,11 @@
 // activity-sync/cmd/server — entry point Activity Sync сервиса.
 //
 // Конфиг через ENV:
-//   ACTIVITY_SYNC_HTTP_ADDR  OPTIONAL  :8082
-//   ACTIVITY_SYNC_DB_URL     REQUIRED  postgres://... (содержит пароль)
-//   IDENTITY_JWT_SECRET      REQUIRED  общий с identity для verify (≥32 байта)
-//   NATS_URL                 OPTIONAL  default "" (xp realtime disabled)
+//
+//	ACTIVITY_SYNC_HTTP_ADDR  OPTIONAL  :8082
+//	ACTIVITY_SYNC_DB_URL     REQUIRED  postgres://... (содержит пароль)
+//	IDENTITY_JWT_SECRET      REQUIRED  общий с identity для verify (≥32 байта)
+//	NATS_URL                 OPTIONAL  default "" (xp realtime disabled)
 package main
 
 import (

@@ -1,14 +1,15 @@
 // Passwordless OTP login. Phase 8 / M4.
 //
 // Flow:
-//   POST /auth/request-code  → server generates 6-digit code, stores
-//     в auth_otp_codes с expires_at = now + 10 min, "doc": лог
-//     stdout в dev (mock SMTP); production — SMTP/SES в Phase N+.
-//   POST /auth/login-with-code → server validates code:
-//     - active (not used, not expired)
-//     - matches submitted code
-//     - attempts < 5 (anti-bruteforce)
-//     После success — mark used, find-or-create user, issue TokenPair.
+//
+//	POST /auth/request-code  → server generates 6-digit code, stores
+//	  в auth_otp_codes с expires_at = now + 10 min, "doc": лог
+//	  stdout в dev (mock SMTP); production — SMTP/SES в Phase N+.
+//	POST /auth/login-with-code → server validates code:
+//	  - active (not used, not expired)
+//	  - matches submitted code
+//	  - attempts < 5 (anti-bruteforce)
+//	  После success — mark used, find-or-create user, issue TokenPair.
 //
 // User auto-create: если /auth/request-code приходит с unknown email,
 // мы НЕ создаём user сразу — только при successful login-with-code.
@@ -37,10 +38,10 @@ const MaxOtpAttempts = 5
 
 // OtpService — отдельная служба (не путать с AuthService.password flow).
 type OtpService struct {
-	otps    *postgres.OtpRepo
-	users   *postgres.UserRepo
-	tokens  *postgres.RefreshTokenRepo
-	auth    *AuthService
+	otps   *postgres.OtpRepo
+	users  *postgres.UserRepo
+	tokens *postgres.RefreshTokenRepo
+	auth   *AuthService
 }
 
 func NewOtpService(

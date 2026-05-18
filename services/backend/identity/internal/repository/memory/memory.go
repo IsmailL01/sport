@@ -68,9 +68,9 @@ func cloneUser(u *domain.User) *domain.User {
 
 // RefreshTokenRepo — in-memory.
 type RefreshTokenRepo struct {
-	mu      sync.Mutex
-	byHash  map[string]*domain.RefreshToken
-	nextID  int
+	mu     sync.Mutex
+	byHash map[string]*domain.RefreshToken
+	nextID int
 }
 
 func NewRefreshTokenRepo() *RefreshTokenRepo {

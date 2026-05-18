@@ -58,7 +58,10 @@ func authedRequest(t *testing.T, method, url, token string, body any) *http.Resp
 
 func TestUpsertSession_RequiresAuth(t *testing.T) {
 	srv, _ := newTestServer(t)
-	resp, _ := http.Post(srv.URL+"/sessions", "application/json", bytes.NewReader([]byte(`{}`)))
+	resp, err := http.Post(srv.URL+"/sessions", "application/json", bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatalf("POST /sessions: %v", err)
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", resp.StatusCode)

@@ -67,17 +67,17 @@ func (s *Service) UpdatePreferences(ctx context.Context, p domain.Preferences) e
 // messaging.message.sent / rt.user.{id} payload.
 //
 // Алгоритм:
-//   1. Записать row в notifications для in-app history
-//   2. Проверить preferences (push_enabled + push_messages)
-//   3. Получить все registered tokens юзера
-//   4. Отправить через Expo Push API (collapse от same conversation 30s — TODO Phase B)
+//  1. Записать row в notifications для in-app history
+//  2. Проверить preferences (push_enabled + push_messages)
+//  3. Получить все registered tokens юзера
+//  4. Отправить через Expo Push API (collapse от same conversation 30s — TODO Phase B)
 func (s *Service) HandleMessageEvent(ctx context.Context, recipientUserID string, payload []byte) error {
 	// Распарсить минимум для preview.
 	var ev struct {
-		Event          string `json:"event"`
-		MessageID      string `json:"messageId"`
-		ConversationID string `json:"conversationId"`
-		SenderID       string `json:"senderId"`
+		Event          string  `json:"event"`
+		MessageID      string  `json:"messageId"`
+		ConversationID string  `json:"conversationId"`
+		SenderID       string  `json:"senderId"`
 		Body           *string `json:"body"`
 		Kind           string  `json:"kind"`
 	}
@@ -162,14 +162,15 @@ func (s *Service) HandleMessageEvent(ctx context.Context, recipientUserID string
 // доставил мгновенно).
 //
 // Payload форматы:
-//   feed.post.liked     {postId, authorId, userId}
-//   feed.post.commented {postId, commentId, postAuthorId, commenterId, body}
+//
+//	feed.post.liked     {postId, authorId, userId}
+//	feed.post.commented {postId, commentId, postAuthorId, commenterId, body}
 func (s *Service) HandleFeedEvent(ctx context.Context, recipientUserID string, payload []byte) error {
 	var ev struct {
 		Event        string  `json:"event"`
 		PostID       string  `json:"postId"`
-		AuthorID     string  `json:"authorId"`     // для liked
-		UserID       string  `json:"userId"`       // для liked
+		AuthorID     string  `json:"authorId"` // для liked
+		UserID       string  `json:"userId"`   // для liked
 		CommentID    string  `json:"commentId"`
 		PostAuthorID string  `json:"postAuthorId"` // для commented
 		CommenterID  string  `json:"commenterId"`  // для commented
@@ -337,5 +338,5 @@ func (s *Service) sendAndCleanup(
 	return nil
 }
 
-func IsNotFound(err error) bool { return errors.Is(err, domain.ErrNotFound) }
+func IsNotFound(err error) bool   { return errors.Is(err, domain.ErrNotFound) }
 func IsInvalidArg(err error) bool { return errors.Is(err, domain.ErrInvalidArg) }

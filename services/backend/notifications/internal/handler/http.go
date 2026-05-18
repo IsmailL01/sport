@@ -53,13 +53,13 @@ type registerDeviceRequest struct {
 }
 
 type deviceDTO struct {
-	ID        string `json:"id"`
-	UserID    string `json:"userId"`
-	ExpoToken string `json:"expoToken"`
-	Platform  string `json:"platform"`
+	ID        string  `json:"id"`
+	UserID    string  `json:"userId"`
+	ExpoToken string  `json:"expoToken"`
+	Platform  string  `json:"platform"`
 	DeviceID  *string `json:"deviceId,omitempty"`
-	LastSeen  int64  `json:"lastSeen"`
-	CreatedAt int64  `json:"createdAt"`
+	LastSeen  int64   `json:"lastSeen"`
+	CreatedAt int64   `json:"createdAt"`
 }
 
 type notificationDTO struct {

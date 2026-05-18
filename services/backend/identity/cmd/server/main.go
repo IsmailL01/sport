@@ -1,15 +1,17 @@
 // identity/cmd/server — entry point identity-сервиса.
 //
 // Конфиг через ENV:
-//   IDENTITY_HTTP_ADDR        OPTIONAL  :8081
-//   IDENTITY_DB_URL           REQUIRED  postgres://... (содержит пароль)
-//   IDENTITY_JWT_SECRET       REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
-//   IDENTITY_DEV_MODE         OPTIONAL  default false; refused if DB URL non-local
-//   CLIENT_MIN_VERSION        OPTIONAL  default 1.0.0
-//   FORCE_UPDATE_URL_*        OPTIONAL  default ""
+//
+//	IDENTITY_HTTP_ADDR        OPTIONAL  :8081
+//	IDENTITY_DB_URL           REQUIRED  postgres://... (содержит пароль)
+//	IDENTITY_JWT_SECRET       REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//	IDENTITY_DEV_MODE         OPTIONAL  default false; refused if DB URL non-local
+//	CLIENT_MIN_VERSION        OPTIONAL  default 1.0.0
+//	FORCE_UPDATE_URL_*        OPTIONAL  default ""
 //
 // Использование:
-//   make run-identity
+//
+//	make run-identity
 package main
 
 import (

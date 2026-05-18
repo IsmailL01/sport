@@ -1,11 +1,12 @@
 // social-graph/cmd/server — entry point Social Graph сервиса.
 //
 // Конфиг через ENV:
-//   SOCIAL_GRAPH_HTTP_ADDR  OPTIONAL  :8084
-//   SOCIAL_GRAPH_DB_URL     REQUIRED  postgres://... (содержит пароль)
-//   IDENTITY_JWT_SECRET     REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
-//   NATS_URL                OPTIONAL  nats://nats:4222 (Phase A unused, ready for events)
-//   REDIS_URL               OPTIONAL  redis://redis:6379/0 (ratelimit)
+//
+//	SOCIAL_GRAPH_HTTP_ADDR  OPTIONAL  :8084
+//	SOCIAL_GRAPH_DB_URL     REQUIRED  postgres://... (содержит пароль)
+//	IDENTITY_JWT_SECRET     REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//	NATS_URL                OPTIONAL  nats://nats:4222 (Phase A unused, ready for events)
+//	REDIS_URL               OPTIONAL  redis://redis:6379/0 (ratelimit)
 package main
 
 import (

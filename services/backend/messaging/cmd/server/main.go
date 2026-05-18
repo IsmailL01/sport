@@ -1,10 +1,11 @@
 // messaging/cmd/server — entry point.
 // Конфиг через ENV:
-//   MESSAGING_HTTP_ADDR    OPTIONAL  :8083
-//   MESSAGING_DB_URL       REQUIRED  postgres://... (содержит пароль)
-//   IDENTITY_JWT_SECRET    REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
-//   NATS_URL               OPTIONAL  nats://nats:4222
-//   REDIS_URL              OPTIONAL  redis://localhost:6379/0 (ratelimit)
+//
+//	MESSAGING_HTTP_ADDR    OPTIONAL  :8083
+//	MESSAGING_DB_URL       REQUIRED  postgres://... (содержит пароль)
+//	IDENTITY_JWT_SECRET    REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//	NATS_URL               OPTIONAL  nats://nats:4222
+//	REDIS_URL              OPTIONAL  redis://localhost:6379/0 (ratelimit)
 package main
 
 import (

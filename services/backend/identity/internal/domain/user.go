@@ -24,13 +24,13 @@ type User struct {
 // RefreshToken — выпущенный refresh-токен. Хранится захэшированным,
 // сравнивается ConstantTime.
 type RefreshToken struct {
-	ID         string
-	UserID     string
-	TokenHash  string
-	ExpiresAt  time.Time
-	RevokedAt  *time.Time
-	CreatedAt  time.Time
-	UserAgent  string
+	ID        string
+	UserID    string
+	TokenHash string
+	ExpiresAt time.Time
+	RevokedAt *time.Time
+	CreatedAt time.Time
+	UserAgent string
 }
 
 // Доменные ошибки. HTTP-handler конвертирует их в коды.

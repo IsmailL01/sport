@@ -5,7 +5,7 @@
 //   - Stateless через NATS: любая instance может обслуживать любого юзера;
 //     горизонтальное масштабирование работает потому что NATS делает fan-out.
 //   - Рестарт gw сбрасывает sockets, но не теряет сообщений (они в Postgres
-//     + outbox messaging-сервиса; клиент при reconnect загружает пропущенное
+//   - outbox messaging-сервиса; клиент при reconnect загружает пропущенное
 //     через GET /conversations/{id}/messages?after=<last_id>).
 package gw
 

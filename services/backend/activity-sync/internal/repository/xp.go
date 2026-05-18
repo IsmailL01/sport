@@ -8,6 +8,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -55,7 +56,7 @@ func (r *XpRepo) AwardForSession(
 		WHERE id = $2 AND xp_awarded = 0
 		RETURNING xp_awarded`, xp, sessionID).Scan(&prev)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			// Already awarded — idempotency hit.
 			return nil, tx.Commit(ctx)
 		}

@@ -97,10 +97,7 @@ func isValidSemver(s string) bool {
 	// X-Client-Version всегда полный X.Y.Z (Application.nativeApplicationVersion
 	// на mobile всегда стампит patch).
 	dots := strings.Count(s, ".")
-	if dots < 2 {
-		return false
-	}
-	return true
+	return dots >= 2
 }
 
 // isAllDigits — строго [0-9]+ (для build-number-в-скобках). Пустая строка → false.

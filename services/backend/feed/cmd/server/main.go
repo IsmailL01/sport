@@ -1,11 +1,12 @@
 // feed/cmd/server — Phase C: stories. Phase D: posts/likes/comments + home feed.
 //
 // Конфиг через ENV:
-//   FEED_HTTP_ADDR        OPTIONAL  :8085
-//   FEED_DB_URL           REQUIRED  postgres://... (содержит пароль)
-//   IDENTITY_JWT_SECRET   REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
-//   NATS_URL              OPTIONAL  nats://localhost:4222
-//   REDIS_URL             OPTIONAL  redis://localhost:6379/0 (ratelimit)
+//
+//	FEED_HTTP_ADDR        OPTIONAL  :8085
+//	FEED_DB_URL           REQUIRED  postgres://... (содержит пароль)
+//	IDENTITY_JWT_SECRET   REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//	NATS_URL              OPTIONAL  nats://localhost:4222
+//	REDIS_URL             OPTIONAL  redis://localhost:6379/0 (ratelimit)
 package main
 
 import (

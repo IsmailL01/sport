@@ -1,12 +1,13 @@
 // notifications/cmd/server — Expo push fanout + in-app notifications.
 //
 // Конфиг через ENV:
-//   NOTIFICATIONS_HTTP_ADDR  OPTIONAL  :8087
-//   NOTIFICATIONS_DB_URL     REQUIRED  postgres://... (содержит пароль)
-//   IDENTITY_JWT_SECRET      REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
-//   NATS_URL                 OPTIONAL  nats://nats:4222
-//   EXPO_ACCESS_TOKEN        OPTIONAL  v1.0 — empty => push fanout no-ops per
-//                                      docker-compose.prod.yml line 177 ${VAR:-}
+//
+//	NOTIFICATIONS_HTTP_ADDR  OPTIONAL  :8087
+//	NOTIFICATIONS_DB_URL     REQUIRED  postgres://... (содержит пароль)
+//	IDENTITY_JWT_SECRET      REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//	NATS_URL                 OPTIONAL  nats://nats:4222
+//	EXPO_ACCESS_TOKEN        OPTIONAL  v1.0 — empty => push fanout no-ops per
+//	                                   docker-compose.prod.yml line 177 ${VAR:-}
 package main
 
 import (

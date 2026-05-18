@@ -54,7 +54,7 @@ func New(redisURL string) (*Limiter, error) {
 
 // Decision — результат проверки.
 type Decision struct {
-	Allow      bool
+	Allow bool
 	// Retry-After в секундах (целое; ~через сколько освободится слот).
 	RetryAfter int
 	// Сколько запросов осталось в окне (для UI).

@@ -24,15 +24,15 @@ const (
 )
 
 type Conversation struct {
-	ID              string
-	Type            ConversationType
-	Title           *string
-	AvatarMediaID   *string
-	CreatedBy       string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	LastMessageAt   *time.Time
-	DeletedAt       *time.Time
+	ID            string
+	Type          ConversationType
+	Title         *string
+	AvatarMediaID *string
+	CreatedBy     string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	LastMessageAt *time.Time
+	DeletedAt     *time.Time
 }
 
 type Member struct {
@@ -90,7 +90,7 @@ type MessageReaction struct {
 type MessageReplyPreview struct {
 	MessageID string
 	SenderID  string
-	Body      *string  // первые 80 chars если text; nil для media
+	Body      *string // первые 80 chars если text; nil для media
 	Kind      string
 	Deleted   bool
 }

@@ -5,9 +5,10 @@ import "time"
 // Attributes — generic ABAC bag. Поля специфичны для домена.
 //
 // Examples:
-//   subject.Attributes["is_premium"] = true
-//   resource.Attributes["kind"] = "video"
-//   resource.Attributes["visibility"] = "followers"
+//
+//	subject.Attributes["is_premium"] = true
+//	resource.Attributes["kind"] = "video"
+//	resource.Attributes["visibility"] = "followers"
 type Attributes map[string]any
 
 // GetBool — typed accessor. Default = false.
@@ -88,8 +89,8 @@ type Decision struct {
 	Reason string
 }
 
-func allow() Decision               { return Decision{Allow: true, Reason: ""} }
-func deny(reason string) Decision   { return Decision{Allow: false, Reason: reason} }
+func allow() Decision             { return Decision{Allow: true, Reason: ""} }
+func deny(reason string) Decision { return Decision{Allow: false, Reason: reason} }
 
 // Time window для message edit (server-side enforcement).
 const MessageEditWindow = 24 * time.Hour

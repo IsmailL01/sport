@@ -16,7 +16,7 @@ import (
 // === DTOs ===
 
 type createPostRequest struct {
-	Kind       string  `json:"kind"`                 // text | photo | session
+	Kind       string  `json:"kind"` // text | photo | session
 	Body       *string `json:"body,omitempty"`
 	MediaID    *string `json:"mediaId,omitempty"`
 	SessionRef *string `json:"sessionRef,omitempty"`

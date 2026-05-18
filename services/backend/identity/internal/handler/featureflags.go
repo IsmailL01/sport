@@ -2,11 +2,11 @@
 //
 // Endpoints:
 //   - GET /featureflags         — public; возвращает резолвленные booleans
-//                                  для requesting user (если authenticated)
-//                                  или global enabled-state (anonymous).
+//     для requesting user (если authenticated)
+//     или global enabled-state (anonymous).
 //   - GET /admin/featureflags   — admin; full Flag[] с config + audit metadata.
 //   - PUT /admin/featureflags/{flag_name} — admin write; gated permissions
-//                                  + pkg/audit.LogQuiet.
+//   - pkg/audit.LogQuiet.
 //
 // Admin endpoints живут в identity потому что весь shared admin UI (Caddy
 // path-routing) проходит через identity для /me; profiles.global_role

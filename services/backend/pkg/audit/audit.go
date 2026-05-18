@@ -8,15 +8,16 @@
 // схема в migration 0018_moderation.up.sql.
 //
 // Usage:
-//   logger := audit.New(pool)
-//   logger.Log(ctx, audit.Entry{
-//       ActorID:    actorID,
-//       Capability: permissions.CapPostDeleteOthers,
-//       Action:     "delete_post",                 // human-readable verb
-//       TargetKind: "post",
-//       TargetID:   postID,
-//       Metadata:   map[string]any{"reason": "spam"},
-//   })
+//
+//	logger := audit.New(pool)
+//	logger.Log(ctx, audit.Entry{
+//	    ActorID:    actorID,
+//	    Capability: permissions.CapPostDeleteOthers,
+//	    Action:     "delete_post",                 // human-readable verb
+//	    TargetKind: "post",
+//	    TargetID:   postID,
+//	    Metadata:   map[string]any{"reason": "spam"},
+//	})
 //
 // Best-effort: на DB-error логирует warn и продолжает; не валит main flow.
 package audit

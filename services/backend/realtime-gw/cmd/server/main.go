@@ -1,10 +1,11 @@
 // realtime-gw/cmd/server — WebSocket terminus.
 //
 // Конфиг через ENV:
-//   REALTIME_GW_HTTP_ADDR  OPTIONAL  :8090
-//   IDENTITY_JWT_SECRET    REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
-//   NATS_URL               OPTIONAL  nats://nats:4222
-//   REALTIME_GW_DB_URL     OPTIONAL  если задан — featureflags подключаются
+//
+//	REALTIME_GW_HTTP_ADDR  OPTIONAL  :8090
+//	IDENTITY_JWT_SECRET    REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//	NATS_URL               OPTIONAL  nats://nats:4222
+//	REALTIME_GW_DB_URL     OPTIONAL  если задан — featureflags подключаются
 package main
 
 import (

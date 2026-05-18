@@ -1,16 +1,17 @@
 // media/cmd/server — entry point.
 //
 // Конфиг через ENV:
-//   MEDIA_HTTP_ADDR        OPTIONAL  :8086
-//   MEDIA_DB_URL           REQUIRED  postgres://... (содержит пароль)
-//   IDENTITY_JWT_SECRET    REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
-//   NATS_URL               OPTIONAL  nats://nats:4222 (Phase B3.2 events)
-//   S3_ENDPOINT            OPTIONAL  s3.148-253-214-156.sslip.io (public host)
-//   S3_ENDPOINT_INTERNAL   OPTIONAL  minio:9000 (для server-side stat/delete)
-//   S3_ACCESS_KEY          REQUIRED  MinIO root user
-//   S3_SECRET_KEY          REQUIRED  MinIO root password
-//   S3_BUCKET              OPTIONAL  media
-//   S3_REGION              OPTIONAL  us-east-1
+//
+//	MEDIA_HTTP_ADDR        OPTIONAL  :8086
+//	MEDIA_DB_URL           REQUIRED  postgres://... (содержит пароль)
+//	IDENTITY_JWT_SECRET    REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//	NATS_URL               OPTIONAL  nats://nats:4222 (Phase B3.2 events)
+//	S3_ENDPOINT            OPTIONAL  s3.148-253-214-156.sslip.io (public host)
+//	S3_ENDPOINT_INTERNAL   OPTIONAL  minio:9000 (для server-side stat/delete)
+//	S3_ACCESS_KEY          REQUIRED  MinIO root user
+//	S3_SECRET_KEY          REQUIRED  MinIO root password
+//	S3_BUCKET              OPTIONAL  media
+//	S3_REGION              OPTIONAL  us-east-1
 package main
 
 import (

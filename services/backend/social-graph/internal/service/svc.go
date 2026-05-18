@@ -78,7 +78,7 @@ func validUsername(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '_' && c != '-' {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' && c != '-' {
 			return false
 		}
 	}
@@ -208,7 +208,7 @@ func (s *Service) FollowCounts(ctx context.Context, userID string) (followers in
 func IsNotFound(err error) bool {
 	return errors.Is(err, domain.ErrProfileNotFound) || errors.Is(err, domain.ErrNotFound)
 }
-func IsForbidden(err error) bool      { return errors.Is(err, domain.ErrForbidden) }
-func IsSelfTarget(err error) bool     { return errors.Is(err, domain.ErrSelfTarget) }
-func IsUsernameTaken(err error) bool  { return errors.Is(err, domain.ErrUsernameTaken) }
-func IsInvalidArg(err error) bool     { return errors.Is(err, domain.ErrInvalidArg) }
+func IsForbidden(err error) bool     { return errors.Is(err, domain.ErrForbidden) }
+func IsSelfTarget(err error) bool    { return errors.Is(err, domain.ErrSelfTarget) }
+func IsUsernameTaken(err error) bool { return errors.Is(err, domain.ErrUsernameTaken) }
+func IsInvalidArg(err error) bool    { return errors.Is(err, domain.ErrInvalidArg) }
