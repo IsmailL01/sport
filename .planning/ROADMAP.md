@@ -130,11 +130,11 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 5. Deployment freeze toggle: a runbook step that pauses CD on incident declaration
 6. Branch protection: required passing checks include all matrix items above
 **Plans**: 7 plans across 4 waves
-- [ ] `04-01-PLAN.md` — GitHub repo + remote + GHCR namespace bootstrap (CICD-01 prereq) — Wave 1, autonomous=false — `gh repo create runningecosystem/sport --private` + push feat/cursona-redesign + create main; delete Phase 0 placeholder ci.yml; bookmark GHCR public-package flip for after Plan 04-03a
-- [ ] `04-02-PLAN.md` — Extend backend-ci.yml: 8-service matrix + lint + 5 scanners + Trivy + secret-scan-full.yml + .golangci.yml + .trivyignore.yaml (CICD-01, SEC-01 closure) — Wave 2, autonomous=false — iterate on scratch PR until all-green; first-green-CI-run-record is sequence guard для Plan 04-05
-- [ ] `04-03a-PLAN.md` — Create backend-cd.yml: cosign keyless + SLSA L2 (`attest-build-provenance@v2` per RESEARCH correction) + GHCR push for 8 services + docker-compose.prod.yml image-pin (CICD-02, CICD-03) — Wave 3, autonomous=false — first CD run supervision; flip GHCR package visibility=public per RESEARCH §Open Q recommendation
-- [ ] `04-03b-PLAN.md` — Top-level Makefile с `make rollback v=N` + drill migrations 9990/9991 + drill_assert_schema.sh (CICD-04 scaffold) — Wave 3, autonomous=true — scaffolding only; drill execution = Plan 04-04
-- [ ] `04-04-PLAN.md` — Execute rollback drill on prod VPS (live, supervised); extend deploy.md §6.4 с drill results (CICD-04 execution acceptance — "no-op doesn't count") — Wave 4, autonomous=false — pre-drill pg_dump snapshot mandatory; backward-compat NULLABLE migrations per RESEARCH Pitfall 5
+- [x] `04-01-PLAN.md` — GitHub repo + remote + GHCR namespace bootstrap (CICD-01 prereq) — Wave 1, autonomous=false — `gh repo create runningecosystem/sport --private` + push feat/cursona-redesign + create main; delete Phase 0 placeholder ci.yml; bookmark GHCR public-package flip for after Plan 04-03a
+- [x] `04-02-PLAN.md` — Extend backend-ci.yml: 8-service matrix + lint + 5 scanners + Trivy + secret-scan-full.yml + .golangci.yml + .trivyignore.yaml (CICD-01, SEC-01 closure) — Wave 2, autonomous=false — iterate on scratch PR until all-green; first-green-CI-run-record is sequence guard для Plan 04-05
+- [x] `04-03a-PLAN.md` — Create backend-cd.yml: cosign keyless + SLSA L2 (`attest-build-provenance@v2` per RESEARCH correction) + GHCR push for 8 services + docker-compose.prod.yml image-pin (CICD-02, CICD-03) — Wave 3, autonomous=false — first CD run supervision; flip GHCR package visibility=public per RESEARCH §Open Q recommendation
+- [x] `04-03b-PLAN.md` — Top-level Makefile с `make rollback v=N` + drill migrations 9990/9991 + drill_assert_schema.sh (CICD-04 scaffold) — Wave 3, autonomous=true — scaffolding only; drill execution = Plan 04-04
+- [x] `04-04-PLAN.md` — Execute rollback drill on prod VPS (live, supervised); extend deploy.md §6.4 с drill results (CICD-04 execution acceptance — "no-op doesn't count") — Wave 4, autonomous=false — pre-drill pg_dump snapshot mandatory; backward-compat NULLABLE migrations per RESEARCH Pitfall 5
 - [ ] `04-05-PLAN.md` — Branch protection setup: setup-branch-protection.sh + USER ACTION к run it + deploy.md §10 (CICD-06) — Wave 4, autonomous=false — depends_on=[04-02] enforces sequence guard per RESEARCH Pitfall 1 (first green CI run before lock-down); 8 required checks + 0 reviewers + no force-push + no deletes
 - [ ] `04-06-PLAN.md` — Deployment freeze toggle: deploy.md §11 с 3 paths (production env disable [future seam] / workflow disable [v1.0 PRIMARY] / immediate revert [Path #3]) + verify + incident-response log template (CICD-05) — Wave 4, autonomous=true — docs-only
 
@@ -403,6 +403,19 @@ The 8 hard criteria (mirrors AetherMorph brief, adapted with user redlines):
 - Crash reports from production → separate Sentry project from staging. Never cross.
 - Release APK must be reproducible: two independent CI runs of same tag → byte-identical APKs (modulo signature).
 - **Phase 2 → Phase 3 strict sequencing**: Ansible templates source from SOPS, never from inline values that get retroactively cleaned.
+
+## v1.0.1 Backlog (debt items surfaced during v1.0 execution)
+
+Tracked for the first post-v1.0 maintenance milestone. Not blocking v1.0-rc.1 cut.
+
+| ID | Item | Source | Rationale |
+|----|------|--------|-----------|
+| GHCR-PULL-AUTH | Direct GHCR pull on prod (replace save/scp/load) | Plan 04-04 D-04-04-A | Save/scp/load via controller adds ~5 min wall-clock per deploy. Options: flip 8 packages public via web UI (manual one-shot) OR Ansible `delegate_to: localhost` short-lived registry-token push (avoids prod-side PAT). Blocking automation: CI-only deploy без локального controller невозможен пока. |
+| MIGRATE-RSYNC-DELETE | rsync --delete for migrations subtree only | Plan 04-04 T-04-04-STALE-MIGRATIONS | Current Makefile workaround `--skip-tags=run-migrations` hides design fragility: obsolete migration files linger on prod after deploy of older code. Fix: scoped `--delete --include=migrations/` rsync invocation in synchronize task. |
+| METADATA-RAW-TAG | metadata-action `pattern={{raw}}` для semver tags | Plan 04-04 D-04-04-A discovery | CD currently strips `v` prefix from semver (publishes `1.0.0-rc.test-a` not `v1.0.0-rc.test-a`). Ansible normalizes via Jinja, но raw git tag и GHCR tag-string не совпадают — confusing для ops. |
+| CD-SMOKE-VERIFY | Fix `cosign-verify-smoke` job in backend-cd.yml | Plan 04-04 CICD-02 carry | Workflow's own verify-smoke job fails on UNAUTHORIZED for private packages. Need `cosign verify` with workflow-token auth OR retire job в favor of post-publish OCI referrer check (currently mitigated by external `gh attestation verify`). |
+| DIGEST-PINNING | SHA256 digest-pin compose images (Option (a) per RESEARCH §E) | Plan 04-03a deferred + Plan 04-04 | Current `${SPORT_STACK_TAG}` tag-pin is mutable. v1.0.1: separate workflow that commits digest-update PR + cosign-verify-pre-pull gate в Ansible (delegate_to: localhost). |
+| SECRETS-ROTATE | Rotate compromised secrets (POSTGRES_PASSWORD, JWT_SECRET, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD) | Phase 3 chat-leak 2026-05-17 | Pasted in chat during Phase 3 SOPS-fill; injected via `sops --set`. Must rotate before Phase 21 staging soak. |
 
 ## What This Replaces (Pre-v1.0 Planning Artifacts)
 

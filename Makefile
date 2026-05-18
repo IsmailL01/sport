@@ -70,9 +70,15 @@ rollback:
 	  fi; \
 	  echo "Pre-flight OK: 8/8 images for $$SEMVER_TAG already on prod (no re-transfer)."
 	@echo "==> [3/6] Run migrate down 1 on prod (undoes most recent migration)..."
-	ssh $(VPS_HOST) 'cd /opt/sport/services/backend && sudo docker compose --env-file /run/sport.env -f docker-compose.prod.yml run --rm migrations -path migrations -database "$$DATABASE_URL" down 1' || (echo "DB rollback failed — recover per deploy.md §7"; exit 1)
+	@# /run/sport.env contains placeholder values w/ literal '<', '>' (e.g. APPLE_SIGN_IN_CLIENT_SECRET=<deferred-v1.1>)
+	@# that break `set -a; . file` sourcing. Extract POSTGRES_PASSWORD via grep (single line, no shell
+	@# interpretation) and rebuild DATABASE_URL inline; matches the URL pattern used in compose YAML.
+	ssh $(VPS_HOST) "PASSWD=\$$(grep '^POSTGRES_PASSWORD=' /run/sport.env | cut -d= -f2-) && cd /opt/sport/services/backend && sudo docker compose --env-file /run/sport.env -f docker-compose.prod.yml run --rm migrations -path /migrations -database \"postgres://re:\$${PASSWD}@postgres:5432/running_ecosystem?sslmode=disable\" down 1" || (echo "DB rollback failed — recover per deploy.md §7"; exit 1)
 	@echo "==> [4/6] Ansible re-deploy sport-stack on prod (tag pin → systemd restart)..."
-	cd infra/ansible && ansible-playbook -i inventory/prod --tags sport-stack site.yml -e sport_stack_tag=$(v) || (echo "Ansible re-deploy failed; recover per deploy.md §7"; exit 1)
+	@# --skip-tags=run-migrations: we just ran `migrate down 1` explicitly in step [3/6]; ansible's
+	@# `migrate up` would re-apply the rolled-back migration because rsync delete:false leaves the
+	@# new (post-rollback obsolete) migration files on prod. Skip the migrations task during rollback.
+	cd infra/ansible && ansible-playbook -i inventory/prod --tags sport-stack --skip-tags=run-migrations site.yml -e sport_stack_tag=$(v) || (echo "Ansible re-deploy failed; recover per deploy.md §7"; exit 1)
 	@echo "==> [5/6] Smoke probe ($(SMOKE_URL))..."
 	@curl -fsS -o /dev/null -w "HTTP %{http_code}\n" $(SMOKE_URL) || (echo "Smoke probe failed; investigate immediately (deploy.md §7 troubleshooting)"; exit 1)
 	@echo "==> [6/6] Rollback к $(v) complete ✓"

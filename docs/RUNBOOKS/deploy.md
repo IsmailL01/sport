@@ -162,59 +162,121 @@ curl -fsS -o /dev/null -w "HTTP %{http_code}\n" \
 
 ## 5. Routine deploy (после code change)
 
-```bash
-# 5.1. Commit + push code changes (если используешь git как deploy source — пока что нет remote, Ansible rsync'ит worktree напрямую)
+### 5.1. New tag → CI builds images → deploy via save/scp/load
 
-# 5.2. Re-run sport-stack tag — idempotent, only changed bits redeploy
+Phase 4 CI/CD pipeline (`backend-cd.yml`) автоматически билдит, signs (cosign keyless), и attests (SLSA L2) образы при push tag `v*`. Образы залетают в GHCR (`ghcr.io/ismaill01/<svc>:<semver>`). Prod НЕ pull'ит из GHCR; controller (dev workstation) делает transfer.
+
+```bash
+# 5.1.1. Tag + push (triggers backend-cd.yml в GH Actions)
+git tag v1.0.x
+git push origin v1.0.x
+gh run watch    # ~3-5 min for cosign sign + SLSA attest + GHCR push
+
+# 5.1.2. Pre-flight: controller docker daemon up + GHCR login active
+docker info >/dev/null && echo OK
+gh auth token | docker login ghcr.io -u IsmailL01 --password-stdin
+
+# 5.1.3. Deploy с image transfer
 cd infra/ansible
-ansible-playbook -i inventory/prod --tags sport-stack site.yml
+SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt \
+  ansible-playbook -i inventory/prod --tags sport-stack site.yml -e sport_stack_tag=v1.0.x
 
 # Что произойдёт:
-#  - rsync синхронизирует services/backend/ tree (только diff)
-#  - SOPS-decrypt + re-render /run/sport.env (idempotent unless secrets changed)
-#  - migrations one-shot container (golang-migrate skips applied)
-#  - sport-stack.service restart ТОЛЬКО если systemd unit template changed
-#  - smoke probe verify
-
-# 5.3. Ожидаемый output: PLAY RECAP: changed=0 or 1 (migration always reports changed)
+#  - rsync синхронизирует services/backend/ tree
+#  - transfer_images.yml: controller docker pull (--platform=linux/amd64) → gh-attest verify →
+#    docker save | gzip → synchronize tarballs → remote docker load (per service, 8 services)
+#  - SOPS-decrypt + re-render /run/sport.env с SPORT_STACK_TAG=<semver-stripped>
+#  - migrations one-shot (golang-migrate skips applied)
+#  - sport-stack.service restart ONLY if systemd unit template changed
+#  - smoke probe POST /auth/request-code → HTTP 200/202
 ```
 
-**Image rebuild (если Dockerfile changed):**
+Expected first-clean wall-clock: ~5-6 min (image transfer ~3-4 min + rest). Subsequent deploys with same tag: `transfer_images.yml` is idempotent if tarballs already on prod (synchronize copies only changed files); ~25-30s.
+
+### 5.2. Config-only redeploy (no tag, no image change)
+
+```bash
+cd infra/ansible
+ansible-playbook -i inventory/prod --tags sport-stack site.yml   # NO -e sport_stack_tag
+```
+
+Transfer-images block skips (`when: sport_stack_tag is defined and ... | length > 0`). Compose continues using last-loaded `${SPORT_STACK_TAG}` set in `/run/sport.env`.
+
+### 5.3. Image rebuild fallback (если хочешь bypass GHCR)
+
 ```bash
 # На VPS:
 ssh deploy@<vps-ip> 'cd /opt/sport/services/backend && sudo docker compose --env-file /run/sport.env -f docker-compose.prod.yml build && sudo systemctl restart sport-stack.service'
 ```
 
+Используется только если CI/CD pipeline недоступен; нет cosign signatures + SLSA attestation gate в этом сценарии.
+
 ---
 
 ## 6. Rollback (manual emergency)
 
-> v1.0 не имеет CI-driven rollback drill (Phase 4 owner). Для v1.0 closed-beta — manual.
-
 ### 6.1. Code-level rollback
 
 ```bash
-# В worktree: переключаемся на предыдущий tag/commit
-git checkout <previous-tag-or-sha>
-
-# Re-deploy:
-cd infra/ansible
-ansible-playbook -i inventory/prod --tags sport-stack site.yml
+make rollback v=<previous-tag-or-sha>     # automated — see §6.4 для шагов
 ```
+
+Wraps: `git checkout` → preflight (images-present check) → `migrate down 1` → `ansible-playbook --skip-tags=run-migrations` → smoke probe.
 
 ### 6.2. DB migration rollback (если N+1 включал migration)
 
 ```bash
-ssh deploy@<vps-ip> 'cd /opt/sport/services/backend && sudo docker compose --env-file /run/sport.env -f docker-compose.prod.yml run --rm migrations down 1'
+ssh deploy@<vps-ip> 'PASSWD=$(grep "^POSTGRES_PASSWORD=" /run/sport.env | cut -d= -f2-); \
+  cd /opt/sport/services/backend && \
+  sudo docker compose --env-file /run/sport.env -f docker-compose.prod.yml run --rm migrations \
+  -path /migrations \
+  -database "postgres://re:${PASSWD}@postgres:5432/running_ecosystem?sslmode=disable" \
+  down 1'
 ```
 
 **WARNING:** `down 1` откатывает ОДНУ migration. Если их было несколько в новой версии — повторить нужное количество раз. golang-migrate сохраняет порядок в schema_migrations table.
+
+**WHY the inline PASSWD grep:** `/run/sport.env` содержит placeholder values с literal `<`, `>` (i.e. `APPLE_SIGN_IN_CLIENT_SECRET=<deferred-v1.1>`) которые ломают bash `set -a; . file` sourcing. Single-line grep экстракт работает корректно.
 
 ### 6.3. Emergency fallback к manual `/opt/sport/deploy.sh` flow
 
 Если Ansible-driven deploy упёрся во что-то неразрешимое — fallback к manual scp/git pull + docker compose. Каталог `/opt/running-ecosystem/` остаётся на VPS как legacy после Phase 3 cutover (deprecated но не удалён); там лежит pre-cutover compose stack который можно поднять через `sudo docker compose --env-file .env.prod -f docker-compose.prod.yml up -d`.
 
-**Phase 4** (CI/CD) проведёт rollback drill с реальной DB migration в path → CICD-04 acceptance.
+### 6.4. Drill execution log — CICD-04 (closed 2026-05-18)
+
+**Цель:** доказать что rollback path (code revert + DB migration down) работает на реальном проде с реальной schema mutation.
+
+**Scenario:** two backward-compat drill migrations:
+- `9990_drill_metadata_col` — ADD COLUMN users.metadata JSONB DEFAULT NULL
+- `9991_drill_drop_metadata_col` — DROP COLUMN users.metadata
+
+Tags `v1.0.0-rc.test-a` (схема state A — only 9990) и `v1.0.0-rc.test-b` (state B — 9990+9991) указывают на разные SHA с соответствующими migration tree subsets. Локальный тег `v1.0.0-rc.test-a` retargeted для приёма транзитной cherry-pick (Ansible `transfer_images.yml` + Makefile fixes); GHCR images остаются tag-string-matched (CD не re-run).
+
+| Stage | Action | Wall-clock | users.metadata | schema_migrations.version | Smoke |
+|---|---|---|---|---|---|
+| Pre-drill backup | `pg_dump` ~65 KB на /tmp/pre-drill-backup-20260518-174447.sql.gz | ~5s | absent | 21 | n/a |
+| Deploy A | `ansible-playbook -e sport_stack_tag=v1.0.0-rc.test-a` (save/scp/load + migrate up 9990) | ~5 min | **PRESENT ✓** | 9990 | HTTP 202 |
+| Deploy B | `-e sport_stack_tag=v1.0.0-rc.test-b` (migrate up 9991) | ~5 min | **ABSENT ✓** | 9991 | HTTP 202 |
+| Rollback step 3 | `migrate down 1` (revert 9991) | 20ms | PRESENT | 9990 | n/a |
+| Rollback steps 4-6 | ansible re-deploy `--skip-tags=run-migrations` + smoke | ~25s | **PRESENT ✓** | 9990 | HTTP 202 (internal) + HTTP 200 (external /healthz) |
+
+**Verdict: DRILL PASS** — CICD-04 acceptance closed. Backward-compat schema design + `--skip-tags=run-migrations` + image pre-flight check make rollback recoverable in <2 min for fresh-migration scenario.
+
+### 6.5. Deferred — direct GHCR pull from prod (v1.0.1 follow-up)
+
+Текущий flow: controller-side `docker pull` → `cosign verify` → `docker save | gzip` → `synchronize` → remote `docker load`. Prod НЕ pull'ит из GHCR (нет network auth setup).
+
+**Что блокирует direct GHCR pull from prod:**
+- GHCR personal-account package visibility flip требует web UI (REST API не поддерживает `PATCH /user/packages/container/<name>/visibility`)
+- Если packages приватные — prod VPS получит 401 без `docker login ghcr.io` с PAT
+- Setting up long-lived PAT на проде = security debt (rotation, secret-of-secret problem)
+
+**v1.0.1 follow-up options:**
+- (a) Flip all 8 packages public via web UI (one-shot manual; eliminates auth complexity)
+- (b) Generate short-lived registry token via `gh auth token` + push to prod via Ansible `delegate_to: localhost` template
+- (c) Stay with save/scp/load (current) — works, just adds ~5 min wall-clock per deploy
+
+See ROADMAP backlog — debt item "GHCR pull auth setup".
 
 ---
 

@@ -58,7 +58,7 @@
 - name: "Run migrations (D-14 — one-shot, before service-up)"
   ansible.builtin.import_tasks: run_migrations.yml
   when: not ansible_check_mode    # migration container can't run during --check (no live docker exec)
-  tags: [sport-stack]
+  tags: [sport-stack, run-migrations]
 
 - name: "Install sport-stack.service systemd unit"
   ansible.builtin.template:

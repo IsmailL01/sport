@@ -3,14 +3,36 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Closure
 status: executing
-stopped_at: Phase 4 Wave 1 CLOSED 2026-05-18 — repo created at github.com/IsmailL01/sport (PRIVATE), default branch main, namespace pivot runningecosystem→IsmailL01 (case-aware) applied across 11 files, ci.yml Phase 0 placeholder deleted. Ready for /gsd-execute-phase 4 --wave 2 (Plan 04-02 backend-ci.yml EXTEND).
-last_updated: "2026-05-17T13:39:47.534Z"
+stopped_at: |
+  Phase 4 Plan 04-04 CLOSED 2026-05-18 — live rollback drill PASS on prod 148.253.214.156.
+  3-stage assertion sequence proven (A: PRESENT → B: ABSENT → rollback: PRESENT). pg_dump
+  baseline captured. CICD-02 + CICD-04 acceptance closed.
+
+  STRATEGY pivot: image transport changed from GHCR-pull-on-prod к save/scp/load via
+  controller (dev workstation pulls + cosign+SLSA verify via `gh attestation verify` + docker
+  save | gzip → synchronize → prod docker load). Prod never auths to GHCR. Trade-off:
+  +5 min wall-clock per deploy; eliminates personal-account package visibility manual flip
+  and prod-side PAT secret-of-secret bootstrap. See deploy.md §5.1 + §6.4.
+
+  Discoveries cooked into solution:
+  - metadata-action strips `v` prefix for semver — GHCR tag is `1.0.0-rc.test-a` not `v1.0.0-rc.test-a`;
+    Ansible normalizes via Jinja regex_replace; deploy.md §5 documents
+  - rsync delete:false leaves obsolete migrations on prod → ansible migrate up re-applies
+    rolled-back migration; mitigated via Makefile `--skip-tags=run-migrations` during rollback
+  - sport.env placeholder values (`<deferred-v1.1>`) break `set -a; .` sourcing; Makefile
+    uses grep-extracted POSTGRES_PASSWORD for migrate down
+  - local cosign 3.0.6 can't validate v2 attest-build-provenance bundles (no GitHub TSA chain
+    в Sigstore trusted-root); `gh attestation verify` is canonical local verify tool
+
+  Next: Plan 04-05 (branch protection: `gh api -X PUT` with 8 pinned check contexts pinned
+  in Plan 04-02 contract, deploy.md §10) → Plan 04-06 (deploy.md §11 freeze docs) → Phase 4 closeout.
+last_updated: "2026-05-18T20:55:00.000Z"
 progress:
   total_phases: 21
-  completed_phases: 2
-  total_plans: 13
-  completed_plans: 10
-  percent: 10
+  completed_phases: 3
+  total_plans: 16
+  completed_plans: 16
+  percent: 15
 ---
 
 # Project State
