@@ -32,3 +32,30 @@ sport_migrate_service: migrations
 # tree + supporting files. See tasks/sync_repo.yml.
 sport_repo_sync_strategy: rsync
 sport_repo_local_root: "{{ playbook_dir }}/../.."
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Image transfer (Plan 04-04 Wave 4 — save/scp/load flow, no GHCR pull on prod)
+# ──────────────────────────────────────────────────────────────────────────────
+# Controller-side: docker pull + gh-attest verify + docker save | gzip into a
+# staging dir, then synchronize tar.gz files to remote /opt/sport-stack/images/
+# and `docker load` them on the host. Compose `up -d` then matches the
+# image: ghcr.io/ismaill01/<svc>:<tag> ref against the locally-loaded image —
+# no network pull happens on prod.
+#
+# Activation: pass `-e sport_stack_tag=<gh-cd-tag>` to ansible-playbook. When
+# unset (e.g. routine config-only re-deploys), the transfer block is skipped.
+sport_services_with_image:
+  - identity
+  - activity-sync
+  - feed
+  - media
+  - messaging
+  - notifications
+  - realtime-gw
+  - social-graph
+sport_image_registry: ghcr.io/ismaill01
+sport_image_remote_dir: /opt/sport-stack/images
+sport_image_local_stage_dir: "/tmp/sport-stack-images-{{ sport_stack_tag | default('unset') }}"
+sport_image_platform: linux/amd64
+sport_image_verify_enabled: true     # gh attestation verify gate before transfer
+sport_image_keep_local_stage: false  # rm tarball stage dir after successful remote load

@@ -46,21 +46,36 @@ help:
 # === Rollback target ===
 # Atomicity: each shell step `|| (echo ...; exit 1)` per RESEARCH §Architecture Pattern 5.
 # Failure messages cite deploy.md §7 failure-mode table для recovery.
+# Plan 04-04 Wave 4 change — `make rollback` reuses image already-loaded on prod from
+# the previous deploy. `docker compose down` (and the systemd Stop unit) DO NOT delete
+# images; `docker system prune` or explicit `docker image rm` would. The rollback
+# target checks if the target tag's images exist on prod and, if missing, instructs
+# the operator to re-transfer via `ansible-playbook ... -e sport_stack_tag=<v>` first.
 rollback:
 	@test -n "$(v)" || (echo "Usage: make rollback v=<version-tag-or-sha>"; exit 1)
 	@command -v ansible-playbook >/dev/null 2>&1 || { echo "ansible-playbook not installed. brew install ansible"; exit 1; }
 	@command -v curl >/dev/null 2>&1 || { echo "curl not installed (system tool, this should not happen)"; exit 1; }
 	@command -v ssh >/dev/null 2>&1 || { echo "ssh not installed"; exit 1; }
 	@git rev-parse --verify $(v) >/dev/null 2>&1 || (echo "Tag/SHA $(v) not found (git rev-parse failed)"; exit 1)
-	@echo "==> [1/5] Checkout $(v) (detached HEAD)..."
+	@echo "==> [1/6] Checkout $(v) (detached HEAD)..."
 	git checkout $(v) || (echo "git checkout failed; recover per deploy.md §7"; exit 1)
-	@echo "==> [2/5] Run migrate down 1 on prod (undoes most recent migration)..."
+	@echo "==> [2/6] Pre-flight — assert target images present on prod (no re-transfer needed)..."
+	@SEMVER_TAG=$$(echo "$(v)" | sed 's/^v//'); \
+	  COUNT=$$(ssh $(VPS_HOST) "sudo docker images --format '{{.Repository}}:{{.Tag}}' | grep -c '^ghcr.io/ismaill01/.*:'\"$$SEMVER_TAG\"'$$'" 2>/dev/null || echo 0); \
+	  if [ "$$COUNT" -lt 8 ]; then \
+	    echo "Pre-flight FAIL: only $$COUNT/8 images for tag $$SEMVER_TAG present on prod."; \
+	    echo "Run: cd infra/ansible && ansible-playbook -i inventory/prod --tags sport-stack site.yml -e sport_stack_tag=$(v)"; \
+	    echo "Then re-run: make rollback v=$(v)"; \
+	    exit 1; \
+	  fi; \
+	  echo "Pre-flight OK: 8/8 images for $$SEMVER_TAG already on prod (no re-transfer)."
+	@echo "==> [3/6] Run migrate down 1 on prod (undoes most recent migration)..."
 	ssh $(VPS_HOST) 'cd /opt/sport/services/backend && sudo docker compose --env-file /run/sport.env -f docker-compose.prod.yml run --rm migrations -path migrations -database "$$DATABASE_URL" down 1' || (echo "DB rollback failed — recover per deploy.md §7"; exit 1)
-	@echo "==> [3/5] Ansible re-deploy sport-stack on prod..."
-	cd infra/ansible && ansible-playbook -i inventory/prod --tags sport-stack site.yml || (echo "Ansible re-deploy failed; recover per deploy.md §7"; exit 1)
-	@echo "==> [4/5] Smoke probe ($(SMOKE_URL))..."
-	@curl -fsS -o /dev/null -w "HTTP %%{http_code}\n" $(SMOKE_URL) || (echo "Smoke probe failed; investigate immediately (deploy.md §7 troubleshooting)"; exit 1)
-	@echo "==> [5/5] Rollback к $(v) complete ✓"
+	@echo "==> [4/6] Ansible re-deploy sport-stack on prod (tag pin → systemd restart)..."
+	cd infra/ansible && ansible-playbook -i inventory/prod --tags sport-stack site.yml -e sport_stack_tag=$(v) || (echo "Ansible re-deploy failed; recover per deploy.md §7"; exit 1)
+	@echo "==> [5/6] Smoke probe ($(SMOKE_URL))..."
+	@curl -fsS -o /dev/null -w "HTTP %{http_code}\n" $(SMOKE_URL) || (echo "Smoke probe failed; investigate immediately (deploy.md §7 troubleshooting)"; exit 1)
+	@echo "==> [6/6] Rollback к $(v) complete ✓"
 
 # === Drill target (Plan 04-04 invokes этот) ===
 # Steps map к Plan 04-04 Task 2/3/4 sequence.
