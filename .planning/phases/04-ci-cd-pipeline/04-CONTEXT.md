@@ -13,7 +13,7 @@
 
 **3 GitHub Actions workflows:**
 1. `backend-ci.yml` (EXTEND existing) — PR-triggered: test/race + lint + scanners + multi-stage build (no push) — required-checks for branch protection
-2. `backend-cd.yml` (NEW) — push-to-main + tag-triggered: build + cosign sign + SLSA attest + push к `ghcr.io/runningecosystem/<service>:<sha>` (and `:v1.0.0-rc.N` for release tags)
+2. `backend-cd.yml` (NEW) — push-to-main + tag-triggered: build + cosign sign + SLSA attest + push к `ghcr.io/ismaill01/<service>:<sha>` (and `:v1.0.0-rc.N` for release tags)
 3. `ci.yml` (DELETE) — Phase 0 placeholder noop, superseded
 
 **Top-level `Makefile` (NEW):** `make rollback v=N` target wraps git-checkout + ansible-redeploy + golang-migrate down. Separate from `services/backend/Makefile` (which scopes only to backend dev ops). Drill scenario lives in `docs/RUNBOOKS/deploy.md §6`.
@@ -35,7 +35,7 @@
 ## Current State (verified 2026-05-17)
 
 ### Pre-existing partial CI
-- **`.github/workflows/backend-ci.yml`** (May 7, 2540 bytes) — Go 1.25 test job (matrix-less: pkg + identity + activity-sync — 2 of 8 services + pkg). `go mod download` + `go vet` + `go test -race -coverprofile`. Docker build job: matrix `[identity, activity-sync]` only, `push: false`, registry login commented out. Tags reference `ghcr.io/runningecosystem/<service>:<sha>`. **GHCR namespace `runningecosystem` already established in code** → assumes future GitHub repo under organization or user `runningecosystem`.
+- **`.github/workflows/backend-ci.yml`** (May 7, 2540 bytes) — Go 1.25 test job (matrix-less: pkg + identity + activity-sync — 2 of 8 services + pkg). `go mod download` + `go vet` + `go test -race -coverprofile`. Docker build job: matrix `[identity, activity-sync]` only, `push: false`, registry login commented out. Tags reference `ghcr.io/ismaill01/<service>:<sha>`. **GHCR namespace `IsmailL01` already established in code** → assumes future GitHub repo under organization or user `IsmailL01`.
 - **`.github/workflows/ci.yml`** (May 6, 1184 bytes) — Phase 0 placeholder noop. Single job prints TODO list. **DELETE in Phase 4** (superseded).
 - **NO `.github/workflows/backend-cd.yml`** — needs creation.
 
@@ -67,8 +67,8 @@
 ### Repository & CI provider
 
 - **D-01 (LOCKED upstream by ROADMAP CICD-01):** GitHub Actions as CI provider. Not relitigated.
-- **D-02:** **Preserve existing GHCR namespace `ghcr.io/runningecosystem/<service>`.** Already hardcoded в `backend-ci.yml` (commit May 7). Implies GitHub repo lives at `github.com/runningecosystem/<repo>` (organization OR personal account "runningecosystem"). If user-side namespace differs, ALL `<image>` references в CI + compose + ansible need parallel rename — flag for user-action checkpoint Plan 04-01 Task 0.
-- **D-03:** **USER ACTION CHECKPOINT (Plan 04-01 Task 0):** create private GitHub repo (recommended: `runningecosystem/sport` or matching D-02 namespace), add as `origin` remote, push `feat/cursona-redesign` + `main` branches. Without this, no CI runs, no images push.
+- **D-02:** **Preserve existing GHCR namespace `ghcr.io/ismaill01/<service>`.** Already hardcoded в `backend-ci.yml` (commit May 7). Implies GitHub repo lives at `github.com/IsmailL01/<repo>` (organization OR personal account "IsmailL01"). If user-side namespace differs, ALL `<image>` references в CI + compose + ansible need parallel rename — flag for user-action checkpoint Plan 04-01 Task 0.
+- **D-03:** **USER ACTION CHECKPOINT (Plan 04-01 Task 0):** create private GitHub repo (recommended: `IsmailL01/sport` or matching D-02 namespace), add as `origin` remote, push `feat/cursona-redesign` + `main` branches. Without this, no CI runs, no images push.
 - **D-04:** **GitHub-hosted runners (`ubuntu-latest`)** для всех jobs. Free для solo-dev / private repos (GH free-tier covers ~2000 CI-minutes/month, plenty для closed-beta). Self-hosted runners deferred к v1.1 если CI-minutes становятся bottleneck.
 
 ### CI scope (build vs deploy split)
@@ -99,13 +99,13 @@
 
 ### Image signing + provenance (CICD-02 + CICD-03)
 
-- **D-13:** **cosign keyless signing via Sigstore/Fulcio.** No KMS, no key rotation, no GH-secrets-stored cosign key. Uses GH-Actions native OIDC token (`id-token: write` permission) → Fulcio issues short-lived signing cert → cosign signs → signature stored в Rekor transparency log. Verification: `cosign verify --certificate-identity-regexp 'https://github.com/runningecosystem/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com <image>`. Documented в RUNBOOK.
+- **D-13:** **cosign keyless signing via Sigstore/Fulcio.** No KMS, no key rotation, no GH-secrets-stored cosign key. Uses GH-Actions native OIDC token (`id-token: write` permission) → Fulcio issues short-lived signing cert → cosign signs → signature stored в Rekor transparency log. Verification: `cosign verify --certificate-identity-regexp 'https://github.com/IsmailL01/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com <image>`. Documented в RUNBOOK.
 - **D-14:** **SLSA Level 2 attestation via `actions/attest-build-provenance@v1`** (GitHub-native action). Generates provenance describing how the image was built (commit SHA, workflow file, runner, dependencies). Attached к image via cosign, queryable via `cosign verify-attestation`. Level 2 = "build platform identity authenticated" (GitHub Actions OIDC token). Level 3 (hermetic builds) deferred к v1.1.
 - **D-15:** **Image tagging convention:**
   - Always: `:<git-sha>` (immutable, points к specific commit)
   - On release tags `vX.Y.Z`: also `:vX.Y.Z` (e.g., `:v1.0.0-rc.1`)
   - **NEVER `:latest`** (ROADMAP hard rule §"No latest image tags ever — pin to immutable SHA256 digests").
-  - Production manifests (`docker-compose.prod.yml`) MUST reference `image: ghcr.io/runningecosystem/<service>@sha256:<digest>` (NOT a tag) per CICD-02. Phase 4 plan includes Ansible task to look up digest after push and template into compose at deploy time, OR a separate step that updates compose with digests on each release.
+  - Production manifests (`docker-compose.prod.yml`) MUST reference `image: ghcr.io/ismaill01/<service>@sha256:<digest>` (NOT a tag) per CICD-02. Phase 4 plan includes Ansible task to look up digest after push and template into compose at deploy time, OR a separate step that updates compose with digests on each release.
 
 ### Rollback drill (CICD-04 — user redline)
 
@@ -138,7 +138,7 @@
   - `backend-ci / image-scan` (Trivy на built images)
   Block direct push к main (PR-only). Block force-push. Block branch deletion.
 - **D-20:** **0 required reviewers** (solo dev — admin self-approves PR). User-level setting "Allow specified actors to bypass required pull requests" stays OFF (admin still must open PR, can self-approve). When DEV_B onboards (post-v1.0), bump к 1 required reviewer.
-- **D-21:** **USER ACTION CHECKPOINT (Plan 04-XX):** apply branch protection via GitHub UI OR via `gh api repos/runningecosystem/<repo>/branches/main/protection` (script provided в plan). Cannot be automated by Ansible since GitHub Console interaction. Documented в `docs/RUNBOOKS/deploy.md §10 (NEW — Branch protection setup)`.
+- **D-21:** **USER ACTION CHECKPOINT (Plan 04-XX):** apply branch protection via GitHub UI OR via `gh api repos/IsmailL01/<repo>/branches/main/protection` (script provided в plan). Cannot be automated by Ansible since GitHub Console interaction. Documented в `docs/RUNBOOKS/deploy.md §10 (NEW — Branch protection setup)`.
 
 ### Secrets in CI (D-06 implication)
 
@@ -160,7 +160,7 @@ Open questions where research clarifies best-practice details:
 2. **golangci-lint config** — what `.golangci.yml` config matches current code-style? Сначала run против существующего code, tune `disable:` list для legacy false-positives, document tuning.
 3. **gitleaks + trufflehog CI invocation paths** — full-history scan на каждый PR может быть slow (5-10 min on large history). Either: incremental scan (--since-commit) OR weekly full-scan cron + PR-only diff-scan. Researcher picks.
 4. **Trivy severity threshold + CVE-ignore mechanism** — when ground-truth CVE has no fix yet OR is irrelevant к our threat model (e.g., CVE in test-only dep), need `.trivyignore` mechanism с rationale-per-CVE. Researcher proposes format.
-5. **GHCR private repo image pull from VPS** — for `docker compose pull` from `ghcr.io/runningecosystem/<service>@sha256:<digest>` to work on prod VPS, deploy user needs GHCR auth. Options: (a) personal access token с `read:packages` stored в SOPS, (b) GitHub deploy key, (c) keep images public (no auth needed). Researcher recommends; v1.0 simplest = public images (no proprietary algorithms in our Go services that need hiding).
+5. **GHCR private repo image pull from VPS** — for `docker compose pull` from `ghcr.io/ismaill01/<service>@sha256:<digest>` to work on prod VPS, deploy user needs GHCR auth. Options: (a) personal access token с `read:packages` stored в SOPS, (b) GitHub deploy key, (c) keep images public (no auth needed). Researcher recommends; v1.0 simplest = public images (no proprietary algorithms in our Go services that need hiding).
 
 </deferred>
 
@@ -205,7 +205,7 @@ Open questions where research clarifies best-practice details:
 
 - **`.github/workflows/backend-ci.yml`** is the SEED для Phase 4's extended CI. Plan keeps test-job structure (Go 1.25, `go test -race -coverprofile`), expands matrix from 2 → 8 services + pkg, adds 5 scanner jobs, splits docker-build into separate PR-time (no push) vs main-time (push + sign + attest).
 - **`services/backend/Makefile`** has `migrate` + `migrate-down` targets — `make rollback v=N` (top-level) делегирует к these for DB rollback piece.
-- **`services/backend/docker-compose.prod.yml`** with `name: running-ecosystem` pin (commit `4ceece7`) — Phase 4 task updates `image:` field per service from `build: context` к `image: ghcr.io/runningecosystem/<service>@sha256:<digest>` for digest-pinned deploys.
+- **`services/backend/docker-compose.prod.yml`** with `name: running-ecosystem` pin (commit `4ceece7`) — Phase 4 task updates `image:` field per service from `build: context` к `image: ghcr.io/ismaill01/<service>@sha256:<digest>` for digest-pinned deploys.
 - **`docs/RUNBOOKS/deploy.md`** has §6 Rollback manual procedure that Phase 4 wraps в Make target (preserves manual fallback но adds automated path).
 
 ## New Files Expected (per ROADMAP success criteria)
@@ -248,7 +248,7 @@ services/backend/
 Expected plan breakdown (refined в `/gsd-plan-phase 4` after research):
 
 - **Wave 1 (sequential — blocks everything):**
-  - `04-01` — **GitHub repo setup + push** (CICD-01 prereq). USER ACTION: create repo `runningecosystem/sport` (или matching D-02 namespace), generate GH-Actions-ready visibility settings, add `origin` remote, push `feat/cursona-redesign` + `main`. Verify existing partial CI (`backend-ci.yml`, `ci.yml`) shows up в Actions tab on first push.
+  - `04-01` — **GitHub repo setup + push** (CICD-01 prereq). USER ACTION: create repo `IsmailL01/sport` (или matching D-02 namespace), generate GH-Actions-ready visibility settings, add `origin` remote, push `feat/cursona-redesign` + `main`. Verify existing partial CI (`backend-ci.yml`, `ci.yml`) shows up в Actions tab on first push.
 - **Wave 2 (sequential after Wave 1):**
   - `04-02` — **Extend backend-ci.yml** к full 8-service matrix + golangci-lint + 5 scanners + Trivy image-scan. Delete `ci.yml` placeholder. Iterate on failing jobs until green (allowed to `[skip ci]` commits до stable). REQUIREMENTS: CICD-01, SEC-01 (closure).
 - **Wave 3 (parallel after Wave 2):**
@@ -278,7 +278,7 @@ Expected plan breakdown (refined в `/gsd-plan-phase 4` after research):
 
 Phase 4 has 3-4 `autonomous: false` checkpoints:
 
-1. **Plan 04-01 Task 0 — GitHub repo + remote setup** (Wave 1): User logs into GitHub, creates private repo `runningecosystem/sport` (или confirms alternative namespace + Claude updates D-02 references throughout). `gh repo create runningecosystem/sport --private --source=. --remote=origin --push`. Claude verifies via `git remote -v` then watches Actions tab confirm first CI run triggers.
+1. **Plan 04-01 Task 0 — GitHub repo + remote setup** (Wave 1): User logs into GitHub, creates private repo `IsmailL01/sport` (или confirms alternative namespace + Claude updates D-02 references throughout). `gh repo create IsmailL01/sport --private --source=. --remote=origin --push`. Claude verifies via `git remote -v` then watches Actions tab confirm first CI run triggers.
 2. **Plan 04-04 Task X — Rollback drill on prod** (Wave 4): User supervises live drill on 148.253.214.156 (5-10 min wall-clock + observation). Confirms each step (deploy A, deploy B, rollback к A, integration test) interactively OR pre-approves автоном run. Recommends за-window когда no active mobile-client traffic.
 3. **Plan 04-05 Task X — Branch protection** (Wave 4): User runs `gh api` script OR clicks through GitHub UI to enable 5 required checks. Trivially undoable, low-risk.
 4. **(Optional) — Phase 2 secret rotation trigger** (carry-forward, recommended но не Phase 4 critical-path): rotate POSTGRES_PASSWORD + JWT_SECRET + MINIO_ROOT_USER/PASSWORD before Phase 21 staging soak. Can happen в parallel к Phase 4 OR deferred к Phase 21 prep. NOT a Phase 4 blocker.

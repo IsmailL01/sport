@@ -19,14 +19,14 @@ tags: [cd, cosign, slsa, ghcr, image-signing, attestation]
 Создать NEW `.github/workflows/backend-cd.yml` per RESEARCH §Code Examples §B verbatim, реализующий CICD-02 (signed images pinned к SHA256 digests) + CICD-03 (SLSA L2 build provenance attestation). On `push: branches: [main]` + `push: tags: [v*]`, для каждого of 8 services:
 
 1. Build multi-arch (amd64 only для v1.0 per RESEARCH §Standard Stack §Alternatives) image via `docker/build-push-action@v5` с per-service GHA cache scope
-2. Push к `ghcr.io/runningecosystem/<service>:<sha>` (always) + `:vX.Y.Z` (on tag push) — **NEVER `:latest`** per D-15 hard rule (`flavor: latest=false` в `docker/metadata-action@v5`)
+2. Push к `ghcr.io/ismaill01/<service>:<sha>` (always) + `:vX.Y.Z` (on tag push) — **NEVER `:latest`** per D-15 hard rule (`flavor: latest=false` в `docker/metadata-action@v5`)
 3. Sign image via cosign keyless (Sigstore + Fulcio OIDC) — `sigstore/cosign-installer@v3` + `cosign sign --yes`
 4. Generate SLSA Build L2 attestation via `actions/attest-build-provenance@v2` (**CRITICAL CORRECTION** per RESEARCH §State of the Art line 1167: D-14's `@v1` is deprecation shim; planner MUST use `@v2` LTS or `@v4` latest)
 5. Push attestation к GHCR via `push-to-registry: true` (Sigstore reference convention)
 
 Также добавить SEPARATE `no-latest-tag-guard` job в backend-cd.yml (mirror of backend-ci.yml's guard — defense-in-depth: CD pipeline must независимо verify it doesn't tag `:latest`).
 
-Также: MODIFY `services/backend/docker-compose.prod.yml` per CICD-02 — switch service `image:` fields от `build: context` К `image: ghcr.io/runningecosystem/<svc>:${SPORT_STACK_TAG:?...}` (RESEARCH §Code Examples §E Option (b) — tag-based pin + cosign-verify-в-Ansible deferred к v1.0.1). **Fail-fast default:** SPORT_STACK_TAG MUST be set explicitly (either via Ansible `-e sport_stack_tag=...` OR exported в shell); no silent fallback к non-existent tag. Hybrid mode для closed-beta: keep `build:` ALSO so dev workstation can still build locally; Ansible decides at deploy time which path активен via env var.
+Также: MODIFY `services/backend/docker-compose.prod.yml` per CICD-02 — switch service `image:` fields от `build: context` К `image: ghcr.io/ismaill01/<svc>:${SPORT_STACK_TAG:?...}` (RESEARCH §Code Examples §E Option (b) — tag-based pin + cosign-verify-в-Ansible deferred к v1.0.1). **Fail-fast default:** SPORT_STACK_TAG MUST be set explicitly (either via Ansible `-e sport_stack_tag=...` OR exported в shell); no silent fallback к non-existent tag. Hybrid mode для closed-beta: keep `build:` ALSO so dev workstation can still build locally; Ansible decides at deploy time which path активен via env var.
 
 Purpose: deliver CICD-02 + CICD-03 acceptance.
 Output: 2 files committed (1 new workflow + 1 modified compose); first CD run validates cosign signing + SLSA attestation; cosign verify command exit 0 on published image.
@@ -71,7 +71,7 @@ permissions:
   attestations: write   # actions/attest-build-provenance push к Rekor
 ```
 
-**GHCR namespace:** `ghcr.io/runningecosystem/<service>` (from 04-01-SUMMARY — sed-updated если user picked alt namespace).
+**GHCR namespace:** `ghcr.io/ismaill01/<service>` (from 04-01-SUMMARY — sed-updated если user picked alt namespace).
 
 **Service matrix (D-08):** `[identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]` — 8 entries (pkg has no Dockerfile).
 
@@ -83,24 +83,24 @@ permissions:
 **Cosign verify command (для smoke step + Ansible future pre-pull gate — RESEARCH §Code Examples §J):**
 ```bash
 cosign verify \
-  --certificate-identity-regexp 'https://github.com/runningecosystem/.*' \
+  --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/runningecosystem/<service>@sha256:<digest>
+  ghcr.io/ismaill01/<service>@sha256:<digest>
 ```
 
 **SLSA verify command:**
 ```bash
 cosign verify-attestation \
   --type slsaprovenance \
-  --certificate-identity-regexp 'https://github.com/runningecosystem/.*' \
+  --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/runningecosystem/<service>@sha256:<digest>
+  ghcr.io/ismaill01/<service>@sha256:<digest>
 ```
 
 **Compose modification path (D-15 + RESEARCH §Code Examples §E Option (b) recommended for v1.0):**
 Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
 - BEFORE: `build: { context: ., dockerfile: identity/Dockerfile }`
-- AFTER: `image: ghcr.io/runningecosystem/identity:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible -e OR export}` + KEEP `build:` (hybrid: env var `SPORT_STACK_USE_REGISTRY=true` selects image; default = build locally to preserve dev workflow). Final compose file decision: planner picks Option (b) per RESEARCH recommendation; cosign-verify-в-Ansible deferred к v1.0.1.
+- AFTER: `image: ghcr.io/ismaill01/identity:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible -e OR export}` + KEEP `build:` (hybrid: env var `SPORT_STACK_USE_REGISTRY=true` selects image; default = build locally to preserve dev workflow). Final compose file decision: planner picks Option (b) per RESEARCH recommendation; cosign-verify-в-Ansible deferred к v1.0.1.
 
 **Why `:?` (required-or-fail) instead of `:-` (default value) for SPORT_STACK_TAG:**
 - `${SPORT_STACK_TAG:-v1.0.0-rc.1}` (previous draft) silently falls back к `v1.0.0-rc.1` even когда no such tag exists в GHCR — produces a confusing "manifest not found" pull error AFTER ansible has already started swapping containers.
@@ -165,9 +165,9 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
          ```
       e. **`docker/build-push-action@v5` (`id: build`)** с `push: true`, `tags: ${{ steps.meta.outputs.tags }}`, `labels: ${{ steps.meta.outputs.labels }}`, `cache-from: type=gha,scope=${{ matrix.service }}`, `cache-to: type=gha,mode=max,scope=${{ matrix.service }}`
       f. `sigstore/cosign-installer@v3`
-      g. **`cosign sign --yes ghcr.io/runningecosystem/${{ matrix.service }}@${DIGEST}`** (DIGEST env from `${{ steps.build.outputs.digest }}`)
-      h. **`actions/attest-build-provenance@v2`** (NOT @v1 — RESEARCH §State of the Art correction) с `subject-name: ghcr.io/runningecosystem/${{ matrix.service }}` + `subject-digest: ${{ steps.build.outputs.digest }}` + `push-to-registry: true`
-      i. Notice step: `echo "::notice title=Published::ghcr.io/runningecosystem/${{ matrix.service }}@${{ steps.build.outputs.digest }}"`
+      g. **`cosign sign --yes ghcr.io/ismaill01/${{ matrix.service }}@${DIGEST}`** (DIGEST env from `${{ steps.build.outputs.digest }}`)
+      h. **`actions/attest-build-provenance@v2`** (NOT @v1 — RESEARCH §State of the Art correction) с `subject-name: ghcr.io/ismaill01/${{ matrix.service }}` + `subject-digest: ${{ steps.build.outputs.digest }}` + `push-to-registry: true`
+      i. Notice step: `echo "::notice title=Published::ghcr.io/ismaill01/${{ matrix.service }}@${{ steps.build.outputs.digest }}"`
 
     **4. `cosign-verify-smoke` job** (self-check per RESEARCH §Architecture Pattern 4 — verifies publish job's own output):
     ```yaml
@@ -183,16 +183,16 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
         - name: Verify signature
           run: |
             cosign verify \
-              --certificate-identity-regexp 'https://github.com/runningecosystem/.*' \
+              --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              ghcr.io/runningecosystem/${{ matrix.service }}:${{ github.sha }}
+              ghcr.io/ismaill01/${{ matrix.service }}:${{ github.sha }}
         - name: Verify SLSA attestation
           run: |
             cosign verify-attestation \
               --type slsaprovenance \
-              --certificate-identity-regexp 'https://github.com/runningecosystem/.*' \
+              --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              ghcr.io/runningecosystem/${{ matrix.service }}:${{ github.sha }}
+              ghcr.io/ismaill01/${{ matrix.service }}:${{ github.sha }}
     ```
 
     **5. `no-latest-tag-guard` job (defense-in-depth — mirror of backend-ci's guard но on CD side):**
@@ -249,7 +249,7 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
     Pattern (apply к each service) — **fail-fast `:?` required-or-error syntax, NOT `:-` default-value**:
     ```yaml
     identity:
-      image: ghcr.io/runningecosystem/identity:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — first set via `ansible-playbook -e sport_stack_tag=v1.0.0-rc.test-a` OR `export SPORT_STACK_TAG=<tag>` locally; no default к non-existent GHCR tag}
+      image: ghcr.io/ismaill01/identity:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — first set via `ansible-playbook -e sport_stack_tag=v1.0.0-rc.test-a` OR `export SPORT_STACK_TAG=<tag>` locally; no default к non-existent GHCR tag}
       build:
         context: .
         dockerfile: identity/Dockerfile
@@ -267,7 +267,7 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
 
     Add file-header comment explaining the hybrid mode + fail-fast rationale (insert после existing header comment block, before line 21 `name: running-ecosystem`):
     ```yaml
-    # Phase 4 / CICD-02: service `image:` fields pin к ghcr.io/runningecosystem/<svc>:${SPORT_STACK_TAG}
+    # Phase 4 / CICD-02: service `image:` fields pin к ghcr.io/ismaill01/<svc>:${SPORT_STACK_TAG}
     # — `:latest` NEVER allowed (D-15; backend-cd.yml no-latest-tag-guard enforces).
     # — `${SPORT_STACK_TAG:?...}` is REQUIRED-OR-FAIL (NOT defaulted via `:-`) — prevents
     #   silent fallback к non-existent GHCR tag. Set via:
@@ -284,10 +284,10 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
     Commit message: `feat(deploy): pin docker-compose.prod.yml service images к ghcr.io tags (CICD-02, hybrid build/image mode, fail-fast SPORT_STACK_TAG)`.
   </action>
   <verify>
-    <automated>grep -c 'image: ghcr.io/runningecosystem/' services/backend/docker-compose.prod.yml | grep -q '^8$' &amp;&amp; ! (grep -v '^#' services/backend/docker-compose.prod.yml | grep -E ':latest["\x27]?\s*$') &amp;&amp; grep -q 'SPORT_STACK_TAG:?' services/backend/docker-compose.prod.yml &amp;&amp; ! grep -q 'SPORT_STACK_TAG:-' services/backend/docker-compose.prod.yml &amp;&amp; SPORT_STACK_TAG=v1.0.0-rc.test-a docker compose -f services/backend/docker-compose.prod.yml config &gt;/dev/null 2>&amp;1 &amp;&amp; (unset SPORT_STACK_TAG; ! docker compose -f services/backend/docker-compose.prod.yml config &gt;/dev/null 2>&amp;1) &amp;&amp; echo "COMPOSE CONFIG OK — fail-fast SPORT_STACK_TAG works"</automated>
+    <automated>grep -c 'image: ghcr.io/ismaill01/' services/backend/docker-compose.prod.yml | grep -q '^8$' &amp;&amp; ! (grep -v '^#' services/backend/docker-compose.prod.yml | grep -E ':latest["\x27]?\s*$') &amp;&amp; grep -q 'SPORT_STACK_TAG:?' services/backend/docker-compose.prod.yml &amp;&amp; ! grep -q 'SPORT_STACK_TAG:-' services/backend/docker-compose.prod.yml &amp;&amp; SPORT_STACK_TAG=v1.0.0-rc.test-a docker compose -f services/backend/docker-compose.prod.yml config &gt;/dev/null 2>&amp;1 &amp;&amp; (unset SPORT_STACK_TAG; ! docker compose -f services/backend/docker-compose.prod.yml config &gt;/dev/null 2>&amp;1) &amp;&amp; echo "COMPOSE CONFIG OK — fail-fast SPORT_STACK_TAG works"</automated>
   </verify>
   <acceptance_criteria>
-    - Exactly 8 `image: ghcr.io/runningecosystem/` lines added (one per Go service; postgres/nats/redis/minio/caddy/migrations untouched)
+    - Exactly 8 `image: ghcr.io/ismaill01/` lines added (one per Go service; postgres/nats/redis/minio/caddy/migrations untouched)
     - **`${SPORT_STACK_TAG:?...}` fail-fast required form** present (allows Ansible/dev override; NO silent default к non-existent GHCR tag)
     - **Negative check — no defaulted form:** `! grep -q 'SPORT_STACK_TAG:-' services/backend/docker-compose.prod.yml` exits 0 (no `:-v1.0.0-rc.1` legacy syntax remains anywhere)
     - **Negative check — no `:latest`:** `grep -v '^#' services/backend/docker-compose.prod.yml | grep -E ':latest["\x27]?\s*$'` exits 1
@@ -330,17 +330,17 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
        # Pick any of 8 services (e.g. identity); use commit SHA от main HEAD:
        export GIT_SHA=$(git rev-parse --short HEAD)
        cosign verify \
-         --certificate-identity-regexp 'https://github.com/runningecosystem/.*' \
+         --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
          --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-         ghcr.io/runningecosystem/identity:${GIT_SHA}
+         ghcr.io/ismaill01/identity:${GIT_SHA}
        # Expected: "Verification for ... — The following checks were performed ..."
        echo "Exit code: $?"  # должно быть 0
 
        cosign verify-attestation \
          --type slsaprovenance \
-         --certificate-identity-regexp 'https://github.com/runningecosystem/.*' \
+         --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
          --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-         ghcr.io/runningecosystem/identity:${GIT_SHA}
+         ghcr.io/ismaill01/identity:${GIT_SHA}
        echo "Exit code: $?"  # должно быть 0
        ```
 
@@ -353,14 +353,14 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
        # Verify:
        gh api "/user/packages/container/identity" --jq '.visibility'  # → "public"
        ```
-       Если ownership=organization, substitute `/orgs/runningecosystem/packages/container/<svc>/visibility`.
+       Если ownership=organization, substitute `/orgs/IsmailL01/packages/container/<svc>/visibility`.
 
     6. Tell user the result + summarize: any iterations needed, final image count, SLSA attestation verified, GHCR visibility flipped.
   </how-to-verify>
   <acceptance_criteria>
     - `gh run watch` (или `gh run view <id>`) shows publish + cosign-verify-smoke + no-latest-tag-guard ALL green (SUCCESS conclusion)
-    - 8 images visible at https://github.com/runningecosystem/sport/packages (или equivalent if alt namespace)
-    - `cosign verify ... ghcr.io/runningecosystem/identity:<sha>` exits 0 — signature valid
+    - 8 images visible at https://github.com/IsmailL01/sport/packages (или equivalent if alt namespace)
+    - `cosign verify ... ghcr.io/ismaill01/identity:<sha>` exits 0 — signature valid
     - `cosign verify-attestation --type slsaprovenance ... ` exits 0 — SLSA L2 attestation queryable
     - 8 GHCR packages set к `visibility=public` (verify via `gh api /user/packages/container/identity --jq '.visibility'` returns `"public"`)
     - **CICD-02 acceptance demonstrated:** signed image references resolvable + cosign-verifiable
@@ -411,7 +411,7 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
     - "Published-image tag scheme is `:${{ github.sha }}` (NO `ci-` prefix). CI verify-builds use `:ci-${{ github.sha }}` (Plan 04-02). Two distinct namespaces, never overlap — distinguishable in GHCR listing."
   behaviors:
     - "`actionlint .github/workflows/backend-cd.yml` exits 0"
-    - "First push к main triggers `backend-cd.yml`; publish job pushes 8 images к ghcr.io/runningecosystem/<svc>:<sha>"
+    - "First push к main triggers `backend-cd.yml`; publish job pushes 8 images к ghcr.io/ismaill01/<svc>:<sha>"
     - "`cosign verify --certificate-identity-regexp ... <image>` exits 0 for any of the 8 published images"
     - "`cosign verify-attestation --type slsaprovenance ... <image>` exits 0 (SLSA L2 attestation queryable)"
     - "8 GHCR packages set к visibility=public after Task 3 user-action"
@@ -432,9 +432,9 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
 - `actionlint .github/workflows/backend-cd.yml` exits 0
 - `grep -q 'attest-build-provenance@v2' .github/workflows/backend-cd.yml && ! grep -q 'attest-build-provenance@v1' .github/workflows/backend-cd.yml` (both conditions must succeed — v2 present AND v1 absent)
 - `gh run view <first-cd-run-id> --json status,conclusion --jq '.conclusion'` returns `"success"`
-- `cosign verify --certificate-identity-regexp 'https://github.com/runningecosystem/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/runningecosystem/identity:<sha>` exits 0
-- `cosign verify-attestation --type slsaprovenance --certificate-identity-regexp 'https://github.com/runningecosystem/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/runningecosystem/identity:<sha>` exits 0
-- `SPORT_STACK_TAG=v1.0.0-rc.test-a docker compose -f services/backend/docker-compose.prod.yml config | grep -c 'ghcr.io/runningecosystem'` returns ≥8 (when var set, config resolves)
+- `cosign verify --certificate-identity-regexp 'https://github.com/IsmailL01/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/ismaill01/identity:<sha>` exits 0
+- `cosign verify-attestation --type slsaprovenance --certificate-identity-regexp 'https://github.com/IsmailL01/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/ismaill01/identity:<sha>` exits 0
+- `SPORT_STACK_TAG=v1.0.0-rc.test-a docker compose -f services/backend/docker-compose.prod.yml config | grep -c 'ghcr.io/ismaill01'` returns ≥8 (when var set, config resolves)
 - `unset SPORT_STACK_TAG && ! docker compose -f services/backend/docker-compose.prod.yml config 2>/dev/null` exits 0 (fail-fast fires)
 - `! grep -q 'SPORT_STACK_TAG:-' services/backend/docker-compose.prod.yml` exits 0 (no `:-` default form remains)
 - `! (grep -v '^#' services/backend/docker-compose.prod.yml .github/workflows/backend-cd.yml | grep -E ':latest["\x27]?\s*$')` exits 0 (no `:latest`)
@@ -442,7 +442,7 @@ Switch each Go-service block в `services/backend/docker-compose.prod.yml`:
 </verification>
 
 <success_criteria>
-1. CICD-02 acceptance: 8 services have cosign-keyless signatures + image references в `docker-compose.prod.yml` use ghcr.io/runningecosystem/<svc>:tag (digest-pin Option (a) deferred к v1.0.1; accept_risk documented).
+1. CICD-02 acceptance: 8 services have cosign-keyless signatures + image references в `docker-compose.prod.yml` use ghcr.io/ismaill01/<svc>:tag (digest-pin Option (a) deferred к v1.0.1; accept_risk documented).
 2. CICD-03 acceptance: SLSA L2 attestation attached к each image; queryable via `cosign verify-attestation --type slsaprovenance`.
 3. backend-cd.yml + docker-compose.prod.yml committed; first CD run green; 8 images public in GHCR.
 4. RESEARCH §State of the Art correction applied: `@v2` (NOT `@v1`).

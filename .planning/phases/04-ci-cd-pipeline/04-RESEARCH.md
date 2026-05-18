@@ -17,7 +17,7 @@
 
 **Repository & CI provider:**
 - **D-01 (LOCKED upstream by ROADMAP CICD-01):** GitHub Actions as CI provider. Not relitigated.
-- **D-02:** Preserve existing GHCR namespace `ghcr.io/runningecosystem/<service>`. Already hardcoded в `backend-ci.yml`. Implies GitHub repo lives at `github.com/runningecosystem/<repo>`.
+- **D-02:** Preserve existing GHCR namespace `ghcr.io/ismaill01/<service>`. Already hardcoded в `backend-ci.yml`. Implies GitHub repo lives at `github.com/IsmailL01/<repo>`.
 - **D-03 (USER ACTION CHECKPOINT, Plan 04-01 Task 0):** create private GitHub repo, add as `origin` remote, push `feat/cursona-redesign` + `main` branches.
 - **D-04:** GitHub-hosted runners (`ubuntu-latest`) для всех jobs.
 
@@ -117,7 +117,7 @@ Phase 4 — это **plumbing phase**: 95% работы — wiring провер�
 **5 critical findings из research:**
 
 1. **`actions/attest-build-provenance` теперь v4, не v1.** CONTEXT D-14 written с outdated assumption. v4 (released Feb 26, 2025) is the current major; v1 still works но "wraps `actions/attest`" as compatibility shim. Recommendation: pin к `@v2` (LTS-style) или `@v4` (latest). Both produce SLSA Build L2 attestations. Action stays GitHub-maintained, not deprecated. `[VERIFIED: github.com/actions/attest-build-provenance/releases]`
-2. **`gitleaks-action@v2` требует license key для organization repos.** Если GitHub repo создаётся под organization `runningecosystem` (per D-02) — license key обязателен (free, но требует регистрации в gitleaks.io). Если под personal account — без license. Recommendation: проверить namespace в Plan 04-01 Task 0; если organization → set `GITLEAKS_LICENSE` secret. **Alternative: use `trufflesecurity/trufflehog@main` standalone и skip gitleaks** (single-tool sufficient для secondary CI defense — Phase 2 SEC-08 pre-commit hook is primary). `[VERIFIED: github.com/gitleaks/gitleaks-action README]`
+2. **`gitleaks-action@v2` требует license key для organization repos.** Если GitHub repo создаётся под organization `IsmailL01` (per D-02) — license key обязателен (free, но требует регистрации в gitleaks.io). Если под personal account — без license. Recommendation: проверить namespace в Plan 04-01 Task 0; если organization → set `GITLEAKS_LICENSE` secret. **Alternative: use `trufflesecurity/trufflehog@main` standalone и skip gitleaks** (single-tool sufficient для secondary CI defense — Phase 2 SEC-08 pre-commit hook is primary). `[VERIFIED: github.com/gitleaks/gitleaks-action README]`
 3. **Trivy `.trivyignore.yaml` (YAML format) НЕ auto-load.** Требует `--ignorefile .trivyignore.yaml` flag. Plain `.trivyignore` (text format) auto-loads но не support fields для rationale/expiry — только inline comments. Recommendation: **use `.trivyignore.yaml`** для production hygiene (rationale + expired_at fields), explicitly pass `--ignorefile` в trivy-action input. `[VERIFIED: trivy.dev/docs/latest/configuration/filtering/]`
 4. **GHCR pull from prod VPS = PAT с `read:packages` scope.** Fine-grained tokens НЕ работают с GHCR (long-standing GitHub community issue, unresolved per 2025). Alternatives: public images (simplest, no IP concerns для Go backend), или classic PAT. **Recommendation: public images для v1.0 closed-beta** — no proprietary algorithms в 8 Go services. Document IP-protection decision в SUMMARY. `[VERIFIED: github.com/orgs/community/discussions/38467]`
 5. **GitHub Actions free tier для private repos = 2000 minutes/month, persists в 2026.** Estimated budget Phase 4 usage: 10-20 PRs/month × ~12 min full matrix run + 5-10 push-to-main × ~8 min build+sign = ~200-360 min/month. **Well within 2000-minute budget** (~10-18% utilization). Self-hosted runners deferred к v1.1 unless usage spikes. `[VERIFIED: docs.github.com/billing/managing-billing-for-github-actions]`
@@ -135,7 +135,7 @@ Phase 4 — это **plumbing phase**: 95% работы — wiring провер�
 | Secret detection (gitleaks, trufflehog) | CI runner | Pre-commit hook (already exists, Phase 2 SEC-08) | Two layers: pre-commit prevents push; CI catches anything pre-commit missed |
 | Image signing (cosign keyless via Fulcio) | CI runner (OIDC token) | Sigstore Rekor (transparency log) | Keyless = no key on disk; OIDC token short-lived; signature persisted в Rekor public log |
 | SLSA provenance attestation | CI runner (`actions/attest-build-provenance`) | GHCR (attestation attached к image) | GH-native action generates + uploads attestation as part of GHCR push |
-| Image registry (push + pull) | GHCR (`ghcr.io/runningecosystem/*`) | — | GHCR = standard для GitHub-hosted projects; integrates с GITHUB_TOKEN auth |
+| Image registry (push + pull) | GHCR (`ghcr.io/ismaill01/*`) | — | GHCR = standard для GitHub-hosted projects; integrates с GITHUB_TOKEN auth |
 | Production deploy | Dev workstation (Ansible) | Prod VPS (sport-stack.service) | **Per D-05 — CI does NOT deploy в v1.0.** Manual `ansible-playbook` остаётся seam. |
 | Rollback execution | Dev workstation (`make rollback v=N`) | Prod VPS (git + docker compose + ansible) | Make target wraps git checkout + docker migrations down + ansible re-deploy |
 | DB migration on rollback | Migrations container (golang-migrate) running ON prod VPS | Postgres (target DB) | Rollback Make target invokes `docker compose run migrations down 1`; container runs migration SQL against in-cluster Postgres |
@@ -213,7 +213,7 @@ trivy --version         # expect: 0.55+ (YAML ignore-file support)
 
 # gh CLI for branch protection setup (D-21 user-action)
 gh auth login
-gh api repos/runningecosystem/sport/branches/main/protection ...
+gh api repos/IsmailL01/sport/branches/main/protection ...
 ```
 
 **Version verification:** все versions выше verified либо via WebFetch к official release pages (`actions/attest-build-provenance`, `cosign-installer`, `gitleaks-action`, `trufflehog`), либо via cross-referenced 2025 documentation. **One critical correction:** CONTEXT.md §D-14 wrote `@v1` for `actions/attest-build-provenance` — research confirms v4 is current major as of Feb 2026. **Planner must update D-14 reference к `@v2` LTS or `@v4` latest.** `[VERIFIED: github.com/actions/attest-build-provenance/releases]`
@@ -234,7 +234,7 @@ gh api repos/runningecosystem/sport/branches/main/protection ...
                                ▼
                   ┌─────────────────────────────────────┐
                   │  GITHUB.COM (origin remote)         │
-                  │  github.com/runningecosystem/sport  │
+                  │  github.com/IsmailL01/sport  │
                   │  Branch: main (protected)           │
                   └────────────┬────────────────────────┘
                                │ trigger
@@ -267,7 +267,7 @@ gh api repos/runningecosystem/sport/branches/main/protection ...
        │                                              │
        │                                              ▼
        │                            ┌─────────────────────────────────┐
-       │                            │  GHCR (ghcr.io/runningecosystem)│
+       │                            │  GHCR (ghcr.io/ismaill01)│
        │                            │  - Image @sha256:<digest>       │
        │                            │  - cosign signature (in Rekor)  │
        │                            │  - SLSA provenance attestation  │
@@ -361,7 +361,7 @@ jobs:
 # docker-compose.prod.yml (AFTER Phase 4 modification)
 services:
   identity:
-    image: ghcr.io/runningecosystem/identity@sha256:abc123...
+    image: ghcr.io/ismaill01/identity@sha256:abc123...
     # NO `build:` block in prod — pulled from GHCR
 ```
 **How digest gets there:** see §Code Examples §E — CD job captures digest from `docker/build-push-action` output → optional separate workflow commits update PR.
@@ -454,8 +454,8 @@ permissions:
 **What goes wrong:** Org-scoped repo runs gitleaks-action without `GITLEAKS_LICENSE` env var → action exits с "license key required" error.
 **Why it happens:** gitleaks-action v2 monetization (free для open-source + personal, paid для orgs > X users; free org license с registration).
 **How to avoid:** During Plan 04-01 Task 0 — when user creates GitHub repo, **note namespace ownership**:
-- If `runningecosystem` is **personal account** → no license needed.
-- If `runningecosystem` is **organization** → register at gitleaks.io (free), get license key, add as repo secret `GITLEAKS_LICENSE`, reference в workflow.
+- If `IsmailL01` is **personal account** → no license needed.
+- If `IsmailL01` is **organization** → register at gitleaks.io (free), get license key, add as repo secret `GITLEAKS_LICENSE`, reference в workflow.
 **Warning signs:** First CI run fails с "gitleaks-action: a license key is required".
 
 ### Pitfall 5: Rollback drill on prod без staging — backward-compat migration is non-negotiable
@@ -477,7 +477,7 @@ If drill halts after migration B applied but before code rollback — prod runs 
 ```yaml
 - uses: docker/metadata-action@v5
   with:
-    images: ghcr.io/runningecosystem/${{ matrix.service }}
+    images: ghcr.io/ismaill01/${{ matrix.service }}
     flavor: |
       latest=false   # ← critical
     tags: |
@@ -666,13 +666,13 @@ jobs:
           file: services/backend/${{ matrix.service }}/Dockerfile
           push: false
           load: true   # load into local Docker для trivy scan
-          tags: ghcr.io/runningecosystem/${{ matrix.service }}:ci-${{ github.sha }}
+          tags: ghcr.io/ismaill01/${{ matrix.service }}:ci-${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ghcr.io/runningecosystem/${{ matrix.service }}:ci-${{ github.sha }}
+          image-ref: ghcr.io/ismaill01/${{ matrix.service }}:ci-${{ github.sha }}
           format: sarif
           output: trivy-${{ matrix.service }}.sarif
           severity: HIGH,CRITICAL   # D-10 — block on these
@@ -746,7 +746,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/runningecosystem/${{ matrix.service }}
+          images: ghcr.io/ismaill01/${{ matrix.service }}
           flavor: |
             latest=false    # CRITICAL — D-15 hard rule
           tags: |
@@ -775,18 +775,18 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           cosign sign --yes \
-            ghcr.io/runningecosystem/${{ matrix.service }}@${DIGEST}
+            ghcr.io/ismaill01/${{ matrix.service }}@${DIGEST}
 
       - name: Generate SLSA Build L2 attestation
         uses: actions/attest-build-provenance@v2   # NOT v1; v2 = LTS, v4 = latest
         with:
-          subject-name: ghcr.io/runningecosystem/${{ matrix.service }}
+          subject-name: ghcr.io/ismaill01/${{ matrix.service }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true   # attaches к image via Sigstore
 
       - name: Output digest for downstream
         run: |
-          echo "::notice title=Published::ghcr.io/runningecosystem/${{ matrix.service }}@${{ steps.build.outputs.digest }}"
+          echo "::notice title=Published::ghcr.io/ismaill01/${{ matrix.service }}@${{ steps.build.outputs.digest }}"
 ```
 
 ### C. SLSA attestation — minimal `actions/attest-build-provenance@v2` example
@@ -795,7 +795,7 @@ jobs:
 # Inline in cd workflow (see B above)
 - uses: actions/attest-build-provenance@v2
   with:
-    subject-name: ghcr.io/runningecosystem/identity
+    subject-name: ghcr.io/ismaill01/identity
     subject-digest: sha256:abc123...
     push-to-registry: true
 # Produces SLSA Build Level 2 attestation:
@@ -807,9 +807,9 @@ jobs:
 # Verification (any consumer):
 # cosign verify-attestation \
 #   --type slsaprovenance \
-#   --certificate-identity-regexp 'https://github.com/runningecosystem/.*' \
+#   --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
 #   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-#   ghcr.io/runningecosystem/identity@sha256:abc123...
+#   ghcr.io/ismaill01/identity@sha256:abc123...
 ```
 
 ### D. `.golangci.yml` v2 — conservative starter config
@@ -926,9 +926,9 @@ jobs:
       - name: Fetch digests from GHCR
         run: |
           for SVC in identity activity-sync feed media messaging notifications realtime-gw social-graph; do
-            DIGEST=$(docker manifest inspect ghcr.io/runningecosystem/$SVC:${{ github.event.workflow_run.head_sha }} \
+            DIGEST=$(docker manifest inspect ghcr.io/ismaill01/$SVC:${{ github.event.workflow_run.head_sha }} \
                      | jq -r '.config.digest')
-            sed -i.bak "s|image: ghcr.io/runningecosystem/$SVC@sha256:[a-f0-9]\\+|image: ghcr.io/runningecosystem/$SVC@sha256:${DIGEST#sha256:}|g" \
+            sed -i.bak "s|image: ghcr.io/ismaill01/$SVC@sha256:[a-f0-9]\\+|image: ghcr.io/ismaill01/$SVC@sha256:${DIGEST#sha256:}|g" \
                 services/backend/docker-compose.prod.yml
           done
           rm services/backend/docker-compose.prod.yml.bak
@@ -951,7 +951,7 @@ jobs:
 # docker-compose.prod.yml
 services:
   identity:
-    image: ghcr.io/runningecosystem/identity:${SPORT_STACK_TAG:-v1.0.0-rc.1}
+    image: ghcr.io/ismaill01/identity:${SPORT_STACK_TAG:-v1.0.0-rc.1}
     # Ansible deploy step verifies cosign signature BEFORE docker compose pull:
     #   cosign verify --certificate-identity-regexp ... <image>:<tag>
     #   docker compose pull
@@ -1029,7 +1029,7 @@ rollback-drill:
 
 set -euo pipefail
 
-REPO=runningecosystem/sport   # adjust if namespace differs
+REPO=IsmailL01/sport   # adjust if namespace differs
 BRANCH=main
 
 gh api -X PUT "repos/${REPO}/branches/${BRANCH}/protection" \
@@ -1138,12 +1138,12 @@ licenses: []
 ```bash
 # Run on prod VPS before `docker compose pull`:
 cosign verify \
-  --certificate-identity-regexp 'https://github.com/runningecosystem/.*' \
+  --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/runningecosystem/identity@sha256:abc123...
+  ghcr.io/ismaill01/identity@sha256:abc123...
 
 # Expected output:
-# Verification for ghcr.io/runningecosystem/identity@sha256:abc123... --
+# Verification for ghcr.io/ismaill01/identity@sha256:abc123... --
 # The following checks were performed on each of these signatures:
 #   - The cosign claims were validated
 #   - Existence of the claims in the transparency log was verified offline
@@ -1153,9 +1153,9 @@ cosign verify \
 # Verify SLSA provenance attestation:
 cosign verify-attestation \
   --type slsaprovenance \
-  --certificate-identity-regexp 'https://github.com/runningecosystem/.*' \
+  --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/runningecosystem/identity@sha256:abc123...
+  ghcr.io/ismaill01/identity@sha256:abc123...
 
 # Exit 0 = verification passed. Exit non-zero = blocks Ansible pull step.
 ```
@@ -1188,7 +1188,7 @@ Claims tagged `[ASSUMED]` (require user confirmation before locking):
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | `runningecosystem` GitHub namespace will be a **personal account** (not organization), thus no gitleaks license required | §Standard Stack §Core (Quality gates); Pitfall 4 | If org: planner must add `GITLEAKS_LICENSE` secret config; minor — 30 min user-action к register at gitleaks.io. |
+| A1 | `IsmailL01` GitHub namespace will be a **personal account** (not organization), thus no gitleaks license required | §Standard Stack §Core (Quality gates); Pitfall 4 | If org: planner must add `GITLEAKS_LICENSE` secret config; minor — 30 min user-action к register at gitleaks.io. |
 | A2 | Backend Go services contain no proprietary algorithms whose source-code-equivalent in compiled binaries needs IP protection | §Summary §Recommendation; §Standard Stack §Alternatives (GHCR public) | If proprietary IP exists: planner must use private GHCR + PAT-based auth on VPS deploy. Adds SOPS slot для PAT, ansible login step. |
 | A3 | Existing prod VPS Postgres allows ad-hoc schema changes (drill migrations) outside normal business hours (no live-tester traffic) | Pitfall 5; §Code Examples §F | If 24/7 testers active: drill needs maintenance window + comms. v1.0 closed-beta likely no active testers yet (Phase 21 not reached). |
 | A4 | `pkg/clientversion`, `pkg/featureflags`, `pkg/ratelimit` shared modules pass golangci-lint v2 conservative config without major refactor | §Code Examples §D | If false-positive avalanche: planner adds к `exclusions.rules:` или disables specific linters; tune timing ~30-60 min iteration. |
@@ -1202,7 +1202,7 @@ Claims tagged `[ASSUMED]` (require user confirmation before locking):
 ## Open Questions
 
 1. **GHCR namespace ownership (personal vs org) — affects gitleaks license + future workflow scoping**
-   - What we know: D-02 preserves `runningecosystem` namespace; D-03 USER ACTION creates repo
+   - What we know: D-02 preserves `IsmailL01` namespace; D-03 USER ACTION creates repo
    - What's unclear: will namespace be personal account OR organization?
    - Recommendation: User to decide at Plan 04-01 Task 0 execution. Document choice в SUMMARY. Default to personal account (simpler) если no org currently exists.
 
@@ -1271,13 +1271,13 @@ Claims tagged `[ASSUMED]` (require user confirmation before locking):
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
 | CICD-01 | Full matrix on PR — test+lint+5scanners+build+image-scan all green on a passing PR | integration (CI workflow status) | `gh pr create --base main --head test-pr && gh pr checks <pr-num> --watch` | ❌ Wave 0 (needs PR fixture) |
-| CICD-02 | Container image signed; `cosign verify` returns 0 | integration | `cosign verify --certificate-identity-regexp 'https://github.com/runningecosystem/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/runningecosystem/identity:<sha>` | ❌ Wave 0 (image must exist) |
-| CICD-02 | `docker-compose.prod.yml` references `@sha256:` digest, NOT `:tag` | unit (grep) | `grep -E '^[[:space:]]+image: ghcr\\.io/runningecosystem/[a-z-]+@sha256:[a-f0-9]{64}$' services/backend/docker-compose.prod.yml \| wc -l` should equal 8 | ❌ Wave 0 (compose currently uses `build:` not `image:`) |
+| CICD-02 | Container image signed; `cosign verify` returns 0 | integration | `cosign verify --certificate-identity-regexp 'https://github.com/IsmailL01/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/ismaill01/identity:<sha>` | ❌ Wave 0 (image must exist) |
+| CICD-02 | `docker-compose.prod.yml` references `@sha256:` digest, NOT `:tag` | unit (grep) | `grep -E '^[[:space:]]+image: ghcr\\.io/IsmailL01/[a-z-]+@sha256:[a-f0-9]{64}$' services/backend/docker-compose.prod.yml \| wc -l` should equal 8 | ❌ Wave 0 (compose currently uses `build:` not `image:`) |
 | CICD-02 | NO `:latest` anywhere | unit (negative grep) | `! grep -rE ':latest["\\x27]?$' .github/workflows/ services/backend/docker-compose.prod.yml` | ✓ (current state already lacks `:latest`) |
 | CICD-03 | SLSA provenance attestation queryable | integration | `cosign verify-attestation --type slsaprovenance --certificate-identity-regexp ... --certificate-oidc-issuer ... <image>` | ❌ Wave 0 (image must exist with attestation) |
 | CICD-04 | `make rollback v=N` returns exit 0 on drill scenario; `users.metadata` column restored | integration | `make rollback-drill` (defined in top-level Makefile) | ❌ Wave 0 (Makefile + drill migrations don't exist) |
 | CICD-05 | `docs/RUNBOOKS/deploy.md §7` exists and contains "Deployment freeze" subsection | doc | `grep -A 10 '## 7\\..*Freeze\\|## 7\\..*freeze' docs/RUNBOOKS/deploy.md` | ❌ Wave 0 (deploy.md ends at §9; new §7-stub doesn't exist yet) |
-| CICD-06 | Branch protection — 8 required checks listed | integration | `gh api repos/runningecosystem/sport/branches/main/protection --jq '.required_status_checks.contexts \| length'` should ≥ 8 | ❌ Wave 0 (no remote yet) |
+| CICD-06 | Branch protection — 8 required checks listed | integration | `gh api repos/IsmailL01/sport/branches/main/protection --jq '.required_status_checks.contexts \| length'` should ≥ 8 | ❌ Wave 0 (no remote yet) |
 
 ### Sampling Rate
 
@@ -1302,7 +1302,7 @@ Claims tagged `[ASSUMED]` (require user confirmation before locking):
 - [ ] `docs/RUNBOOKS/deploy.md §10 Branch protection setup` — NEW (CICD-06)
 - [ ] `services/backend/docker-compose.prod.yml` — MODIFY image: references (CICD-02)
 - [ ] Framework installs (already covered): Go 1.25, docker, ansible — все Phase 3 deliverables ✓
-- [ ] Wave 0 user action: `gh repo create runningecosystem/sport --private` + `git push -u origin main feat/cursona-redesign` (D-03)
+- [ ] Wave 0 user action: `gh repo create IsmailL01/sport --private` + `git push -u origin main feat/cursona-redesign` (D-03)
 
 ## Security Domain
 
@@ -1327,7 +1327,7 @@ Claims tagged `[ASSUMED]` (require user confirmation before locking):
 | Workflow injection via `pull_request_target` + untrusted PR head | Tampering, EoP | Use `pull_request` (not `pull_request_target`); never checkout untrusted code в privileged context |
 | Compromised action pulls в untrusted code | Tampering | Pin action versions к specific tags (`@v8` not `@main`); ideal — pin к SHA (`@abc123...`) для critical actions like cosign |
 | Secret exfiltration via PR comment / logs | Info disclosure | D-22/23 — no production secrets in CI. Only `GITHUB_TOKEN` (scoped, short-lived). Even if leaked, blast radius = repo-scoped writes (revocable). |
-| Cosign keyless = signer impersonation via OIDC | Spoofing | Verify `--certificate-identity-regexp` matches `https://github.com/runningecosystem/.*`; verify `--certificate-oidc-issuer` matches GH Actions token issuer |
+| Cosign keyless = signer impersonation via OIDC | Spoofing | Verify `--certificate-identity-regexp` matches `https://github.com/IsmailL01/.*`; verify `--certificate-oidc-issuer` matches GH Actions token issuer |
 | Image substitution attack (push к GHCR с malicious image, prod pulls "latest") | Tampering | D-15 — pin к `@sha256:<digest>`; cosign-verify before pull (proposed pre-deploy step) |
 | Supply chain — compromised npm dep / Go module | Tampering | govulncheck (Go); Trivy (image-level deps); semgrep (code patterns); Dependabot deferred к v1.1 |
 | Secret в git history (legacy leak) | Info disclosure | Pre-commit gitleaks (Phase 2 SEC-08) + CI gitleaks PR diff + cron gitleaks full-history. Three-layer defense (§Architecture Pattern 2) |

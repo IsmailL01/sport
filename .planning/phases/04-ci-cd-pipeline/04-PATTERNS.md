@@ -100,7 +100,7 @@ docker:
         context: services/backend
         file: services/backend/${{ matrix.service }}/Dockerfile
         push: false
-        tags: ghcr.io/runningecosystem/${{ matrix.service }}:${{ github.sha }}
+        tags: ghcr.io/ismaill01/${{ matrix.service }}:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 ```
@@ -170,7 +170,7 @@ on:
   id: meta
   uses: docker/metadata-action@v5
   with:
-    images: ghcr.io/runningecosystem/${{ matrix.service }}
+    images: ghcr.io/ismaill01/${{ matrix.service }}
     flavor: |
       latest=false    # CRITICAL — D-15 hard rule (RESEARCH Pitfall 6)
     tags: |
@@ -197,12 +197,12 @@ on:
     DIGEST: ${{ steps.build.outputs.digest }}
   run: |
     cosign sign --yes \
-      ghcr.io/runningecosystem/${{ matrix.service }}@${DIGEST}
+      ghcr.io/ismaill01/${{ matrix.service }}@${DIGEST}
 
 - name: Generate SLSA Build L2 attestation
   uses: actions/attest-build-provenance@v2   # NOT v1 — RESEARCH §State of the Art correction
   with:
-    subject-name: ghcr.io/runningecosystem/${{ matrix.service }}
+    subject-name: ghcr.io/ismaill01/${{ matrix.service }}
     subject-digest: ${{ steps.build.outputs.digest }}
     push-to-registry: true
 ```
@@ -383,11 +383,11 @@ services:
     restart: unless-stopped
 ```
 
-**Modification per CICD-02 + D-15:** for each Go service (identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph) replace `build: context: ...` with `image: ghcr.io/runningecosystem/<svc>@sha256:<digest>`.
+**Modification per CICD-02 + D-15:** for each Go service (identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph) replace `build: context: ...` with `image: ghcr.io/ismaill01/<svc>@sha256:<digest>`.
 
 **Two-option path per RESEARCH §Code Examples §E:**
 - **Option (a) — full SHA256 digest pinning** (lines 904-946) — requires post-CD-run digest capture + sed-replace. Cleaner immutability guarantee but adds PR churn.
-- **Option (b) — tag-based pin + cosign-verify-in-Ansible wrap** (lines 948-960) — `image: ghcr.io/runningecosystem/identity:${SPORT_STACK_TAG:-v1.0.0-rc.1}` + Ansible pre-pull step runs `cosign verify`.
+- **Option (b) — tag-based pin + cosign-verify-in-Ansible wrap** (lines 948-960) — `image: ghcr.io/ismaill01/identity:${SPORT_STACK_TAG:-v1.0.0-rc.1}` + Ansible pre-pull step runs `cosign verify`.
 
 **RESEARCH recommendation for v1.0 solo-dev:** Option (b) — simpler, defers digest-tooling complexity к v1.1. Plan can ship either; flag в SUMMARY which was chosen.
 
@@ -455,7 +455,7 @@ Drill run results (CICD-04 acceptance):
 
 **Body:** RESEARCH §Code Examples §G (lines 1024-1067 — full `gh api PUT` invocation с JSON body via heredoc).
 
-**Convention:** `set -euo pipefail` header; `REPO=runningecosystem/sport` + `BRANCH=main` as top-level vars (override-able via env if namespace differs per D-02).
+**Convention:** `set -euo pipefail` header; `REPO=IsmailL01/sport` + `BRANCH=main` as top-level vars (override-able via env if namespace differs per D-02).
 
 ---
 
