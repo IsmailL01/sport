@@ -1,0 +1,87 @@
+# .golangci.yml — golangci-lint v2 config для Running Ecosystem Go monorepo
+# Source: RESEARCH §Code Examples §D. Conservative-first config: explicit-enable mode
+# with 15 low-false-positive linters. Tune by adding к exclusions.rules: с rationale.
+#
+# Never silently disable linters to "make CI green" — every disabled linter / rule MUST
+# have inline `# Disabled — <rationale>; revisit v1.0.1` annotation.
+
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.25"
+  modules-download-mode: readonly
+  tests: true
+
+linters:
+  default: none   # explicit-enable only — safest для first run
+  enable:
+    # Core correctness (always-on, low false-positive)
+    - govet           # standard go vet checks
+    - ineffassign     # unused assignments
+    - unused          # unused variables/funcs/types
+    - errcheck        # unchecked errors
+    - staticcheck     # comprehensive static analysis (bundles former gosimple/stylecheck)
+    # Bug prevention (moderate false-positive, worth fighting)
+    - bodyclose       # http.Response body unclosed
+    - errorlint       # wrong errors.Is/As patterns
+    - rowserrcheck    # sql.Rows.Err() unchecked
+    - sqlclosecheck   # sql.Rows/Stmt unclosed
+    - contextcheck    # context propagation
+    - copyloopvar     # Go 1.22 loop-var capture (relevant Go 1.25)
+    - nilerr          # returning nil error after handling
+    # Style / consistency (low-friction)
+    - misspell        # typos in comments/strings
+
+    # Deferred initially (enable in v1.0.1 after baseline green):
+    # - gocyclo       # cyclomatic complexity (noise on existing code)
+    # - dupl          # duplicate code (noise on copy-paste-driven services)
+    # - revive        # opinionated style (false-positive heavy)
+    # - gocritic      # advanced patterns (config-heavy)
+    # - paralleltest  # all tests must use t.Parallel() (debatable policy)
+    # - testifylint   # only if migrating to testify; not currently used
+
+  exclusions:
+    presets:
+      - comments              # don't lint // TODO comments
+      - common-false-positives # known false-positive patterns
+      - legacy                # legacy code exclusions
+      - std-error-handling    # standard Go error-handling patterns
+    rules:
+      # Test files — relax some rules.
+      # bodyclose: response-body close is best-effort в коротких тестах; revisit v1.0.1
+      # when integration tests grow longer-running.
+      - path: _test\.go
+        linters: [errcheck, dupl, gocyclo, bodyclose, govet]
+      # Generated files
+      - path: "(.+)\\.gen\\.go|.+_gen\\.go"
+        linters: [govet, gocyclo, errcheck]
+      # `defer nc.Drain()` — NATS connection drain on shutdown; error returned only when
+      # connection already closed (idempotent shutdown). Standard idiom; revisit v1.0.1
+      # if we move к explicit graceful-shutdown with logged drain errors.
+      - linters: [errcheck]
+        text: "Error return value of `nc.Drain` is not checked"
+      # `defer tx.Rollback(ctx)` — pgx idiom: Rollback after a successful Commit returns
+      # `tx.ErrTxClosed` which is intentional fallthrough (Commit already happened).
+      # Revisit v1.0.1 with explicit ignore-via-_ pattern OR pgx.BeginFunc wrapper.
+      - linters: [errcheck]
+        text: "Error return value of `tx.Rollback` is not checked"
+      # realtime-gw: WebSocket per-connection goroutines `go c.writerLoop()` /
+      # `go c.heartbeatLoop()` deliberately use serverCtx (long-lived) — not the
+      # request ctx (would cancel on HTTP handler exit). Architectural; revisit v1.0.1
+      # if we adopt explicit lifetime-tracking pattern.
+      - path: realtime-gw/internal/gw/.*\.go
+        linters: [contextcheck]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0    # no cap — show all on first run
+  max-same-issues: 0
+  new: false                  # lint all code, not just new
+
+severity:
+  default: error
