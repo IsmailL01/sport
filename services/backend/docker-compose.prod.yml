@@ -113,6 +113,7 @@ services:
     restart: "no"
 
   identity:
+    image: ghcr.io/ismaill01/identity:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible-playbook -e sport_stack_tag=<tag>}
     build:
       context: .
       dockerfile: identity/Dockerfile
@@ -129,6 +130,7 @@ services:
     restart: unless-stopped
 
   activity-sync:
+    image: ghcr.io/ismaill01/activity-sync:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible-playbook -e sport_stack_tag=<tag>}
     build:
       context: .
       dockerfile: activity-sync/Dockerfile
@@ -149,6 +151,7 @@ services:
 
   # media — presigned S3 URLs + media metadata (Phase B3).
   media:
+    image: ghcr.io/ismaill01/media:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible-playbook -e sport_stack_tag=<tag>}
     build:
       context: .
       dockerfile: media/Dockerfile
@@ -175,6 +178,7 @@ services:
 
   # notifications — in-app + Expo Push (Phase A4).
   notifications:
+    image: ghcr.io/ismaill01/notifications:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible-playbook -e sport_stack_tag=<tag>}
     build:
       context: .
       dockerfile: notifications/Dockerfile
@@ -196,6 +200,7 @@ services:
 
   # realtime-gw — WebSocket terminus, NATS-subscribed (Phase A3).
   realtime-gw:
+    image: ghcr.io/ismaill01/realtime-gw:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible-playbook -e sport_stack_tag=<tag>}
     build:
       context: .
       dockerfile: realtime-gw/Dockerfile
@@ -211,6 +216,7 @@ services:
 
   # messaging — conversations + messages + outbox publisher (Phase A2).
   messaging:
+    image: ghcr.io/ismaill01/messaging:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible-playbook -e sport_stack_tag=<tag>}
     build:
       context: .
       dockerfile: messaging/Dockerfile
@@ -234,6 +240,7 @@ services:
 
   # feed — stories + posts + comments + likes (Phase C: stories only).
   feed:
+    image: ghcr.io/ismaill01/feed:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible-playbook -e sport_stack_tag=<tag>}
     build:
       context: .
       dockerfile: feed/Dockerfile
@@ -258,6 +265,7 @@ services:
   # social-graph — profiles, follows, blocks, search-by-username
   # (см. план: Phase A1, Phase 8 / messenger).
   social-graph:
+    image: ghcr.io/ismaill01/social-graph:${SPORT_STACK_TAG:?need SPORT_STACK_TAG — set via ansible-playbook -e sport_stack_tag=<tag>}
     build:
       context: .
       dockerfile: social-graph/Dockerfile

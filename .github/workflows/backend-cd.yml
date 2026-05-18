@@ -1,0 +1,145 @@
+name: backend-cd
+
+# Continuous delivery — builds + signs (cosign keyless) + attests (SLSA L2 @v2) +
+# pushes images к GHCR. Triggers on push к main (with paths filter) AND on any
+# `v*` tag push (regardless of paths — release tag forces full build).
+#
+# Image refs:
+#   • ghcr.io/ismaill01/<service>:<sha>           — always
+#   • ghcr.io/ismaill01/<service>:<short-sha>     — Docker convention
+#   • ghcr.io/ismaill01/<service>:vX.Y.Z          — only on `v*` tag pushes
+#   • ghcr.io/ismaill01/<service>:vX.Y            — semver major.minor on tag pushes
+#
+# NEVER `:latest` — ROADMAP hard rule + D-15 + RESEARCH §Open Q 3.
+# Enforced via `flavor: latest=false` в metadata-action + no-latest-tag-guard job.
+#
+# Cosign: KEYLESS via Sigstore/Fulcio (no KMS, no key rotation). OIDC token из GH
+# Actions (`id-token: write` permission) → Fulcio issues short-lived signing cert
+# → signature pushed к Rekor transparency log.
+#
+# SLSA L2: `actions/attest-build-provenance@v2` (LTS, NOT @v1 deprecation shim per
+# RESEARCH §State of the Art correction).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/backend/**"
+      - ".github/workflows/backend-cd.yml"
+    tags:
+      - "v*"
+
+permissions:
+  contents: read           # checkout
+  packages: write          # GHCR push
+  id-token: write          # cosign keyless OIDC token from Fulcio (CRITICAL — RESEARCH Pitfall 3)
+  attestations: write      # actions/attest-build-provenance push к Rekor
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login к GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ismaill01/${{ matrix.service }}
+          flavor: |
+            latest=false
+          tags: |
+            type=sha,format=short
+            type=raw,value={{sha}},enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+
+      - name: Build + push ${{ matrix.service }}
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: services/backend
+          file: services/backend/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Cosign sign (keyless via Sigstore/Fulcio)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes ghcr.io/ismaill01/${{ matrix.service }}@${DIGEST}
+
+      - name: SLSA L2 build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/ismaill01/${{ matrix.service }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Notice — published
+        run: |
+          echo "::notice title=Published::ghcr.io/ismaill01/${{ matrix.service }}@${{ steps.build.outputs.digest }}"
+
+  cosign-verify-smoke:
+    name: Cosign verify smoke (CICD-02 self-check)
+    runs-on: ubuntu-latest
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]
+    steps:
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Verify cosign signature
+        run: |
+          cosign verify \
+            --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            ghcr.io/ismaill01/${{ matrix.service }}:${{ github.sha }}
+
+      - name: Verify SLSA attestation
+        run: |
+          cosign verify-attestation \
+            --type slsaprovenance \
+            --certificate-identity-regexp 'https://github.com/IsmailL01/.*' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            ghcr.io/ismaill01/${{ matrix.service }}:${{ github.sha }}
+
+  no-latest-tag-guard:
+    name: Guard (no :latest in CD outputs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Negative grep — forbid `:latest` in any workflow OR compose
+        run: |
+          # `grep -v '^#'` filter excludes comment lines (prevents self-invalidation).
+          if grep -v '^#' .github/workflows/*.yml services/backend/docker-compose.prod.yml \
+               | grep -E ':latest["'"'"']?\s*$' ; then
+            echo "FAIL: \`:latest\` tag found (non-comment) — D-15 violation"
+            exit 1
+          fi
+          echo "PASS — no :latest tags"
