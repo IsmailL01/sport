@@ -146,7 +146,7 @@ None.
 ~~**H1 (FIXED in this round): 05-06 body has 7 stale references that the executor might follow verbatim if it doesn't read the frontmatter `revision_summary` first.**~~ — **FIXED** by adding `⚠ CARRIER SWAP REQUIRED` callout immediately after `<objective>` block. Callout covers 9 patterns + tells executor to default to the NEW column when in doubt + record any deviation in 05-06-SUMMARY.
 
 ### MEDIUM
-**M1.** 05-06 file is now 660+45 ≈ 705 lines (was 660 pre-callout). Larger than the original ~520-line average. Acceptable for v1.0 closeout — the callout is the dominant authoritative reference and the verbose body is left intact as the executor's working notes. v1.1 can rewrite from scratch if Phase 5 is revisited.
+**M1.** 05-06 file is now 660+45 ≈ 705 lines (was 660 pre-callout). Larger than the original ~520-line average. Acceptable for v1.0 closeout — the callout is the dominant authoritative reference and the verbose body remains in place for the gsd-executor agent to use as working notes. v1.1 can rewrite from scratch if Phase 5 is revisited.
 
 **M2.** Plan 05-04 was not touched at all in this reshape pass. It depends on `[05-03, 05-07]`. 05-03 is already shipped + 05-07 v2's deploy script handles dashboard rsync. So 05-04 sees the same architecture as before EXCEPT the Grafana host moved from sentry VPS → srv1561293. Plan 05-04 references "dashboards onto sentry VPS Grafana" in its done-clause prose — this is stale but harmless (the dashboards are JSONs, Grafana picks them up from any host's provisioning dir). Executor for 05-04 doesn't need to know the host; only Plan 05-07 v2 does. ✓ Carry forward as MEDIUM note in 05-04 SUMMARY.
 
