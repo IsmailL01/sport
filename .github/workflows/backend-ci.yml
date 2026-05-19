@@ -230,3 +230,14 @@ jobs:
             exit 1
           fi
           echo "PASS — no :latest tags found in non-comment lines"
+
+  pii-audit:
+    # Phase 5 / OBS-06 / D-14 — block PR merge if a new slog.*Context call
+    # uses a PII attribute key (D-12 deny-list). Defense-in-depth alongside
+    # the pkg/observability slog handler that drops these attrs at emit time.
+    name: PII Audit (slog grep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run PII grep audit
+        run: bash scripts/pii_audit.sh

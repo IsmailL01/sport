@@ -28,6 +28,7 @@ import (
 	"github.com/runningecosystem/backend/messaging/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
+	"github.com/runningecosystem/backend/pkg/observability"
 	"github.com/runningecosystem/backend/pkg/featureflags"
 	"github.com/runningecosystem/backend/pkg/ratelimit"
 )
@@ -40,7 +41,12 @@ func main() {
 }
 
 func run() error {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := observability.NewSlogJSONHandler(observability.Config{
+		ServiceName: "messaging",
+		Env:         envOr("ENV", "prod"),
+		Version:     envOr("BUILD_VERSION", "dev"),
+		Level:       observability.ParseLevel(envOr("LOG_LEVEL", "info")),
+	})
 	slog.SetDefault(logger)
 
 	addr := envOr("MESSAGING_HTTP_ADDR", ":8083")

@@ -33,6 +33,7 @@ import (
 	"github.com/runningecosystem/backend/media/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
+	"github.com/runningecosystem/backend/pkg/observability"
 	"github.com/runningecosystem/backend/pkg/featureflags"
 )
 
@@ -44,7 +45,12 @@ func main() {
 }
 
 func run() error {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := observability.NewSlogJSONHandler(observability.Config{
+		ServiceName: "media",
+		Env:         envOr("ENV", "prod"),
+		Version:     envOr("BUILD_VERSION", "dev"),
+		Level:       observability.ParseLevel(envOr("LOG_LEVEL", "info")),
+	})
 	slog.SetDefault(logger)
 
 	addr := envOr("MEDIA_HTTP_ADDR", ":8086")
