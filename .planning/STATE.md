@@ -3,61 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Closure
 status: executing
-stopped_at: |
-  Phase 4 (CI/CD pipeline) CLOSED 2026-05-18 — all 7 plans + 4 acceptance IDs delivered:
-  - CICD-01 (PR matrix + scanners): backend-ci.yml 8-service × 5 scanners + Trivy; 23/23 green
-  - CICD-02 (cosign keyless + SLSA L2 + local verify): 16/16 PASS via `gh attestation verify`;
-    canonical local tool (cosign 3.0.6 cannot validate v2 attest-build-provenance bundles —
-    no GitHub TSA chain в Sigstore trusted-root)
-  - CICD-03 (no :latest tags): metadata-action `flavor: latest=false` + negative-grep guard
-  - CICD-04 (live rollback drill PASS on prod): 3-stage assertion A:PRESENT → B:ABSENT →
-    rollback:PRESENT; pg_dump baseline captured; backward-compat migrations 9990/9991
-  - CICD-05 (deployment freeze procedure): deploy.md §11 — 3 paths (env disable future seam /
-    workflow disable PRIMARY v1.0 / immediate revert via make rollback)
-  - CICD-06 (branch protection): IsmailL01/sport:main locked с 8 required checks + 0 reviewers
-    + no force-push + no deletes + enforce_admins:false
-
-  STRATEGY pivot landed: image transport = save/scp/load via controller (no prod-side GHCR auth).
-  Trade-off: +5 min wall-clock per deploy; eliminates personal-account package visibility
-  manual flip and prod-side PAT secret-of-secret bootstrap. See deploy.md §5.1 + §6.4.
-
-  v1.0.1 backlog populated в ROADMAP §"v1.0.1 Backlog" with 6 debt items:
-  GHCR-PULL-AUTH, MIGRATE-RSYNC-DELETE, METADATA-RAW-TAG, CD-SMOKE-VERIFY,
-  DIGEST-PINNING, SECRETS-ROTATE.
-
-  Next: Phase 5 — Observability (backend). Sentry self-hosted on separate VPS с separate DNS,
-  Prom + OTLP, OTP log redaction (CONCERNS.md P0).
-
-  Phase 5 CONTEXT captured 2026-05-18 (autonomous mode). 24 D-XX decisions auto-resolved:
-  - Sentry на separate VPS (D-01 locked by redline) + 4 vCPU/16 GB sizing (D-03) +
-    sslip.io DNS pattern `sentry.<sentry-ip>.sslip.io` (D-04)
-  - 4 Sentry projects (D-06): prod-backend / staging-backend / prod-mobile / staging-mobile
-    (mobile DSNs ship here, consumed by Phase 17)
-  - slog (Go stdlib, 81 existing call-sites, D-09) + custom JSON handler с PII-scrub (D-10)
-  - PII deny-list (D-12): code/phone/displayName/lat/lon/coords/external_uuid/DM-content/tokens
-    dropped; email → SHA256[:8] hash
-  - OBS-04 OTP fix (D-13): drop `code` attr from prod path + emit only via `slog.DebugContext`
-    (gated by LOG_LEVEL=debug + handler scrub = defense-in-depth)
-  - CI grep-audit gate (D-14) + cardinality probe (D-18) block new PII attrs / user_id labels
-  - prometheus/client_golang for /metrics (D-15) + OpenTelemetry OTLP/HTTP к Sentry (D-20)
-  - Telegram bot alerts (D-24, NOT PagerDuty — $40/mo overkill for 2-dev team)
-  - Loki on sentry VPS + promtail на prod VPS shipping logs (D-27..29)
-  - Sentry deploy: new `sentry-prep` Ansible role wrapping `getsentry/self-hosted/install.sh`
-    (D-30) + `sentry-stack.service` systemd unit on sentry VPS (D-31)
-  - 6 plans across 4 waves (3 autonomous=false USER ACTION checkpoints:
-    sentry-VPS provisioning, Telegram bot + DSN extraction, final acceptance walkthrough)
-
-  10 questions deferred к researcher (Sentry version pin, OTLP auth, Caddy-vs-nginx,
-  Telegram webhook formatter, promtail vs Vector vs Fluent Bit, cardinality probe lang,
-  X-Debug-Session + JWT coupling, DSN per-service vs shared, Sentry retention, sentry-cli
-  vs HTTP API project bootstrap).
-last_updated: "2026-05-18T22:00:00.000Z"
+stopped_at: Wave 1 Plan 03-01 — sshd wedge HALT on prod VPS, awaiting out-of-band console recovery by user.
+last_updated: "2026-05-19T19:25:25.523Z"
 progress:
   total_phases: 21
-  completed_phases: 4
-  total_plans: 18
-  completed_plans: 18
-  percent: 19
+  completed_phases: 3
+  total_plans: 19
+  completed_plans: 20
+  percent: 14
 ---
 
 # Project State
@@ -69,15 +22,16 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 **Milestone:** v1.0 Production Readiness — IN PROGRESS, **REDEFINED 2026-05-15** as 21-phase hardening scope. Earlier 8-phase feature scope superseded. Feature work (privacy zones, segments, coaching, premium, GDPR) slides to v1.1+. Target close: tagged `v1.0-rc.1` after 48h staging soak with ≥8 real runners.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** Phase 5 — Observability (backend) (Phase 4 closed 2026-05-18)
+**Current focus:** Phase 05 — observability-backend
 
 **Brownfield note:** Codebase remains at Phase 8 / M10 code-complete on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors landed under the superseded scope — kept as-is in git history; planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`). Pixel + iPhone field-test acceptance criteria inherited by new Phase 16 (CONTEXT skeleton seeded).
 
 ## Current Position
 
-Phase: **5 of 21** (Observability — backend) — `backend` workstream — next, ready to plan
+Phase: 05 (observability-backend) — EXECUTING
+Plan: 1 of 6
 Last completed: Phase 4 (CI/CD pipeline) — 7 plans across 4 waves, 2026-05-18. All 6 acceptance IDs delivered (CICD-01..06). Live rollback drill PASS on prod. Branch protection on main с 8 required checks. Strategy pivot mid-Wave-4: GHCR-pull-on-prod → save/scp/load via controller (eliminates prod-side GHCR auth). v1.0.1 backlog populated с 6 debt items.
-Status: Ready to execute
+Status: Executing Phase 05
 
 Progress: [▓▓▓░░░░░░░] ~22% of new v1.0 scope (REL-01..05 + SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 — 22-of-96 REQ-IDs complete)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
