@@ -8,9 +8,11 @@ muteTimes:
   - orgId: 1
     name: night-mute-msk
     time_intervals:
+      # Two time ranges to cover the 21:00–04:00 UTC window
+      # (single ranges can't cross midnight in Grafana's parser).
+      # 'weekdays' omitted — applies all days, which is what D-26 specifies.
       - times:
           - start_time: "21:00"
             end_time: "23:59"
           - start_time: "00:00"
             end_time: "04:00"
-        weekdays: ["monday:sunday"]

@@ -113,12 +113,18 @@ fi
 echo -n "$GRAFANA_PWD" > "$RENDER_DIR/grafana/secrets/admin_password"
 chmod 600 "$RENDER_DIR/grafana/secrets/admin_password"
 
-# Write Caddy secrets.env (rendered separately — scp'd to /etc/caddy/)
+# Write Caddy bcrypt hash to a separate file (Caddyfile uses {file./etc/caddy/bcrypt.hash})
+# Avoids systemd EnvironmentFile $-escaping (this systemd version does NOT collapse $$ → $,
+# Caddy then sees literal $$ and fails basicauth parsing).
+CADDY_BCRYPT=$(mktemp /tmp/caddy-bcrypt.hash.XXXXXX)
+chmod 600 "$CADDY_BCRYPT"
+printf '%s' "$GRAFANA_BCRYPT" > "$CADDY_BCRYPT"
+
+# Write Caddy secrets.env for non-bcrypt env vars (Loki IP allowlist — safe from $ issues)
 CADDY_SECRETS=$(mktemp /tmp/caddy-secrets.env.XXXXXX)
 chmod 600 "$CADDY_SECRETS"
 cat > "$CADDY_SECRETS" <<EOF
-GRAFANA_ADMIN_PASSWORD_BCRYPT='$GRAFANA_BCRYPT'
-LOKI_PUSH_ALLOWED_SOURCE='$PROD_VPS_IP/32'
+LOKI_PUSH_ALLOWED_SOURCE=$PROD_VPS_IP/32
 EOF
 
 echo "  templates substituted + render dir ready ($(du -sh "$RENDER_DIR" | cut -f1))"
@@ -146,10 +152,11 @@ rsync -az --delete \
     --exclude='.gitkeep' \
     "$RENDER_DIR/" "$REMOTE_TARGET/"
 
-echo "[remote] scp Caddy secrets.env → /etc/caddy/secrets.env"
+echo "[remote] scp Caddy secrets.env + bcrypt.hash → /etc/caddy/"
 scp -q "$CADDY_SECRETS" myvps:/etc/caddy/secrets.env
-ssh myvps 'chmod 600 /etc/caddy/secrets.env'
-rm -P "$CADDY_SECRETS" 2>/dev/null || rm -f "$CADDY_SECRETS"
+scp -q "$CADDY_BCRYPT" myvps:/etc/caddy/bcrypt.hash
+ssh myvps 'chmod 600 /etc/caddy/secrets.env /etc/caddy/bcrypt.hash'
+rm -P "$CADDY_SECRETS" "$CADDY_BCRYPT" 2>/dev/null || rm -f "$CADDY_SECRETS" "$CADDY_BCRYPT"
 
 echo "[remote] scp Caddyfile → /etc/caddy/Caddyfile"
 scp -q "$RENDER_DIR/caddy/Caddyfile" myvps:/etc/caddy/Caddyfile

@@ -1,0 +1,34 @@
+=== docker ps PIDs ===
+observability-grafana 2d996ebb25d2
+observability-loki 3ec16a8e623a
+observability-prometheus 71aa4d7e043d
+niko-prod-frontend-1 ca266d8ad127
+niko-prod-admin-1 b7d059c4834f
+niko-prod-api-1 5641e997aed8
+niko-prod-signer-1 aca4511cfe06
+niko-prod-db-backup-1 aa7e43efd520
+niko-prod-db-1 54afdaebcb1e
+niko-prod-redis-1 a3bf68ee8386
+niko-prod-rabbitmq-1 3eccc9e0c244
+=== nginx PIDs ===
+2733838 nginx: master process /usr/sbin/nginx -c /etc/nginx/nginx.conf
+3109920 nginx: worker process
+3109921 nginx: worker process
+3109922 nginx: worker process
+3109923 nginx: worker process
+=== /etc/nginx hash ===
+75c947b91203d6780373cd0b738cf37e  /etc/nginx/sites-available/project.conf
+aee66943cc45283b313ea76c4197e1c4  /etc/nginx/nginx.conf
+=== ss listening ===
+LISTEN 0      4096               *:8443             *:*    users:(("caddy",pid=2963638,fd=3))                                                                                                            
+LISTEN 0      4096            [::]:22            [::]:*    users:(("sshd",pid=1194658,fd=4),("systemd",pid=1,fd=177))                                                                                    
+LISTEN 0      4096         0.0.0.0:22         0.0.0.0:*    users:(("sshd",pid=1194658,fd=3),("systemd",pid=1,fd=176))                                                                                    
+LISTEN 0      4096       127.0.0.1:3000       0.0.0.0:*    users:(("docker-proxy",pid=2244028,fd=8))                                                                                                     
+LISTEN 0      4096       127.0.0.1:3030       0.0.0.0:*    users:(("docker-proxy",pid=2954367,fd=8))                                                                                                     
+LISTEN 0      4096       127.0.0.1:3100       0.0.0.0:*    users:(("docker-proxy",pid=2952365,fd=8))                                                                                                     
+LISTEN 0      4096       127.0.0.1:8000       0.0.0.0:*    users:(("docker-proxy",pid=2231675,fd=8))                                                                                                     
+LISTEN 0      4096       127.0.0.1:9090       0.0.0.0:*    users:(("docker-proxy",pid=2952337,fd=8))                                                                                                     
+LISTEN 0      511             [::]:443           [::]:*    users:(("nginx",pid=3109923,fd=9),("nginx",pid=3109922,fd=9),("nginx",pid=3109921,fd=9),("nginx",pid=3109920,fd=9),("nginx",pid=2733838,fd=9))
+LISTEN 0      511             [::]:80            [::]:*    users:(("nginx",pid=3109923,fd=7),("nginx",pid=3109922,fd=7),("nginx",pid=3109921,fd=7),("nginx",pid=3109920,fd=7),("nginx",pid=2733838,fd=7))
+LISTEN 0      511          0.0.0.0:443        0.0.0.0:*    users:(("nginx",pid=3109923,fd=8),("nginx",pid=3109922,fd=8),("nginx",pid=3109921,fd=8),("nginx",pid=3109920,fd=8),("nginx",pid=2733838,fd=8))
+LISTEN 0      511          0.0.0.0:80         0.0.0.0:*    users:(("nginx",pid=3109923,fd=6),("nginx",pid=3109922,fd=6),("nginx",pid=3109921,fd=6),("nginx",pid=3109920,fd=6),("nginx",pid=2733838,fd=6))

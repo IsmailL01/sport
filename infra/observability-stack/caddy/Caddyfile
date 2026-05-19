@@ -13,7 +13,10 @@
 
 {
     admin off
-    auto_https off
+    # auto_https disable_redirects keeps internal cert issuance (tls internal)
+    # while skipping the :80 → :443 redirect we don't want (we're on alt port).
+    # `auto_https off` would disable EVERYTHING including cert issuance — broken.
+    auto_https disable_redirects
     log {
         output stdout
         format console
@@ -21,7 +24,10 @@
     }
 }
 
-:8443 {
+# Bind to sslip.io hostname (resolves to 82.25.71.215) per Phase 3 D-18 pattern.
+# tls internal can issue certs for DNS names but not IP literals; sslip.io
+# is the established workaround in this repo.
+82-25-71-215.sslip.io:8443 {
     tls internal
 
     log {
@@ -30,22 +36,29 @@
         level INFO
     }
 
-    # Loki push endpoint — IP-allowlisted to prod VPS only (D-36)
-    @allowed_loki remote_ip {$LOKI_PUSH_ALLOWED_SOURCE}
+    # Loki: health endpoints (/ready, /metrics) open to anyone for monitoring;
+    # push + query API restricted to prod VPS source IP per D-36 allowlist.
+    # Matcher checks pre-handle_path path (the prefix is still /loki/api/v1/push at match time).
+    @loki_push_from_other {
+        path /loki/api/v1/push*
+        not remote_ip {$LOKI_PUSH_ALLOWED_SOURCE}
+    }
+    handle @loki_push_from_other {
+        respond "403 Forbidden — Loki push restricted to prod VPS source IP" 403
+    }
+
     handle_path /loki/* {
-        @not_allowed_loki not remote_ip {$LOKI_PUSH_ALLOWED_SOURCE}
-        handle @not_allowed_loki {
-            respond "403 Forbidden — Loki push restricted to prod VPS source IP" 403
-        }
         reverse_proxy 127.0.0.1:3100
     }
 
-    # Grafana UI (basicauth)
+    # Grafana UI (basicauth) — port 3030 (3000 owned by niko-prod-frontend)
     handle_path /grafana/* {
         basic_auth {
-            admin {$GRAFANA_ADMIN_PASSWORD_BCRYPT}
+            # bcrypt hash loaded from file — avoids systemd EnvironmentFile $-escaping bug
+            # File written 0600 by deploy script; raw $2y$14$... no escaping needed.
+            admin {file./etc/caddy/bcrypt.hash}
         }
-        reverse_proxy 127.0.0.1:3000 {
+        reverse_proxy 127.0.0.1:3030 {
             header_up Host {http.request.host}
         }
     }
@@ -53,7 +66,9 @@
     # Prometheus UI / API (basicauth — rarely used; Grafana is primary consumer)
     handle_path /prometheus/* {
         basic_auth {
-            admin {$GRAFANA_ADMIN_PASSWORD_BCRYPT}
+            # bcrypt hash loaded from file — avoids systemd EnvironmentFile $-escaping bug
+            # File written 0600 by deploy script; raw $2y$14$... no escaping needed.
+            admin {file./etc/caddy/bcrypt.hash}
         }
         reverse_proxy 127.0.0.1:9090
     }
