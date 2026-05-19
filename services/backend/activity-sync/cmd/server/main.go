@@ -22,15 +22,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/runningecosystem/backend/activity-sync/internal/handler"
 	"github.com/runningecosystem/backend/activity-sync/internal/repository"
 	"github.com/runningecosystem/backend/activity-sync/internal/repository/postgres"
 	"github.com/runningecosystem/backend/activity-sync/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
-	"github.com/runningecosystem/backend/pkg/observability"
 	"github.com/runningecosystem/backend/pkg/featureflags"
+	"github.com/runningecosystem/backend/pkg/observability"
 )
+
+// serviceName — Phase 5 / D-32. Используется как:
+//   - "service" label на всех Prometheus метриках (Plan 05-04 / D-17)
+//   - Sentry tag (Plan 05-05 — TBD)
+//   - "service" attr в slog default attrs (Plan 05-03 / D-10)
+const serviceName = "activity-sync"
 
 func main() {
 	if err := run(); err != nil {
@@ -41,7 +49,7 @@ func main() {
 
 func run() error {
 	logger := observability.NewSlogJSONHandler(observability.Config{
-		ServiceName: "activity-sync",
+		ServiceName: serviceName,
 		Env:         envOr("ENV", "prod"),
 		Version:     envOr("BUILD_VERSION", "dev"),
 		Level:       observability.ParseLevel(envOr("LOG_LEVEL", "info")),
@@ -118,11 +126,21 @@ func run() error {
 		ForceUpdateURLiOS:     envOr("FORCE_UPDATE_URL_IOS", ""),
 		SkipPaths:             []string{"/healthz", "/metrics"},
 	}
-	versionedMux := clientversion.Middleware(h.Routes(), versionPolicy, logger)
+	// Phase 5 / OBS-05 / D-19 — Prometheus /metrics endpoint + PromhttpMiddleware
+	// chain. /metrics регистрируется в outer mux (clientversion SkipPaths уже
+	// содержит "/metrics", так что clientversion проходит сквозь). Plan 05-05
+	// будет дополнительно оборачивать OtelHTTP + SentryRecovery между
+	// PromhttpMiddleware и versionedMux.
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", h.Routes())
+
+	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
+	rootHandler := observability.PromhttpMiddleware(serviceName, versionedMux)
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           versionedMux,
+		Handler:           rootHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,
