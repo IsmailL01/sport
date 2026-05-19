@@ -1,0 +1,26 @@
+# Phase 5 / Plan 05-07 v2 / D-31-replacement — observability-stack.service
+# Sibling-of-pattern to Phase 3's sport-stack.service on prod VPS;
+# scoped to srv1561293 (colocated with niko-prod per D-34).
+# MemoryHigh=4G mitigates R-02 (colocation resource contention).
+
+[Unit]
+Description=Observability stack (Loki + Prometheus + Grafana) for sport project
+Documentation=docs/RUNBOOKS/sentry-ops.md
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/observability-stack
+ExecStart=/usr/bin/docker compose -f /opt/observability-stack/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f /opt/observability-stack/docker-compose.yml down
+MemoryHigh=4G
+TimeoutStartSec=300
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

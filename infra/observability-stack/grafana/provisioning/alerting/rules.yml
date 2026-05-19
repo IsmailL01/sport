@@ -1,0 +1,285 @@
+# Phase 5 / Plan 05-07 v2 / D-26 — Grafana alert rules (3 critical + 3 warning)
+# Per CONTEXT.md §D-26:
+#   Critical (immediate Telegram, no night-mute):
+#     - 5xx rate > 5% over 5 min (per service)
+#     - JWT validation failure spike > 20/min
+#     - NATS consumer lag > 1000 msgs
+#   Warning (Telegram, night-muted 21:00-04:00 UTC):
+#     - P99 latency > 2× rolling-baseline
+#     - db_query_duration_seconds P99 > 500 ms
+#     - external API error rate > 10% (mapbox / strava)
+#
+# All rules use PromQL against the `Prometheus` datasource (UID: PBFA97CFB590B2093 is Grafana's default).
+# Rules fire as the routing-policy targets `telegram-alerts` contact point per policies.yml.
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: backend-critical
+    folder: alerts
+    interval: 1m
+    rules:
+      - uid: 5xx-rate-over-5pct
+        title: 5xx_rate_over_5pct
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                sum by (port) (rate(http_requests_total{status=~"5.."}[5m]))
+                / sum by (port) (rate(http_requests_total[5m]))
+              instant: false
+              intervalMs: 30000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.05]
+              expression: B
+              refId: C
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "5xx rate > 5% on port {{ $labels.port }} for 5 min"
+          description: "Backend service on port {{ $labels.port }} is returning HTTP 5xx for >5% of requests over the last 5 minutes. Likely needs immediate attention."
+          runbook_url: "docs/RUNBOOKS/sentry-ops.md#13-resource-ceiling-watch"
+
+      - uid: jwt-validation-failure-spike
+        title: jwt_validation_failure_spike
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(rate(jwt_validation_total{result!="ok"}[1m]))
+              instant: false
+              intervalMs: 15000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.333]   # 0.333/sec = 20/min
+              expression: B
+              refId: C
+        noDataState: OK
+        execErrState: Alerting
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "JWT validation failures > 20/min"
+          description: "Sustained JWT validation failures — possible auth attack, key rotation issue, or client misconfiguration."
+
+      - uid: nats-consumer-lag-gt-1000
+        title: nats_consumer_lag_gt_1000
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max by (consumer) (nats_consumer_pending)
+              instant: false
+              intervalMs: 30000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1000]
+              expression: B
+              refId: C
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "NATS consumer {{ $labels.consumer }} lag > 1000 msgs"
+          description: "Consumer is falling behind producer — investigate consumer health + message processing rate."
+
+  - orgId: 1
+    name: backend-warning
+    folder: alerts
+    interval: 5m
+    rules:
+      - uid: http-p99-over-2x-baseline
+        title: http_p99_over_2x_baseline
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                histogram_quantile(0.99, sum by (port, le) (rate(http_request_duration_seconds_bucket[5m])))
+                > 2 * histogram_quantile(0.99, sum by (port, le) (rate(http_request_duration_seconds_bucket[1h])))
+              instant: false
+              intervalMs: 60000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              expression: B
+              refId: C
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "P99 latency on port {{ $labels.port }} > 2× rolling 1h baseline"
+          description: "Sustained P99 latency regression. Investigate slow paths."
+
+      - uid: db-p99-over-500ms
+        title: db_p99_over_500ms
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, sum by (le) (rate(db_query_duration_seconds_bucket[5m])))
+              instant: false
+              intervalMs: 60000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.5]
+              expression: B
+              refId: C
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "DB query P99 > 500ms"
+          description: "Sustained DB query latency regression. Investigate slow queries or DB load."
+
+      - uid: external-api-error-rate-over-10pct
+        title: external_api_error_rate_over_10pct
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                sum by (provider) (rate(external_api_duration_seconds_count{status=~"err.*"}[5m]))
+                / sum by (provider) (rate(external_api_duration_seconds_count[5m]))
+              instant: false
+              intervalMs: 60000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.10]
+              expression: B
+              refId: C
+        noDataState: OK
+        execErrState: Alerting
+        for: 15m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "External API {{ $labels.provider }} error rate > 10%"
+          description: "Mapbox / Strava / Expo Push error rate elevated. May indicate provider outage or quota issue."

@@ -1,0 +1,71 @@
+# Phase 5 / Plan 05-07 v2 / D-34 — observability-stack on srv1561293 (colocated with niko-prod)
+# All 3 containers bound to 127.0.0.1 only; Caddy on :8443 (self-signed) is the sole public ingress.
+# Docker network namespaced `observability_internal` — never shares with niko-prod_* networks.
+# Memory caps mitigate R-02 (colocation resource contention).
+
+services:
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: observability-loki
+    restart: unless-stopped
+    networks: [observability_internal]
+    ports: ["127.0.0.1:3100:3100"]
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    mem_limit: 512m
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: observability-prometheus
+    restart: unless-stopped
+    networks: [observability_internal]
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=14d"
+      - "--web.external-url=https://82.25.71.215:8443/prometheus/"
+      - "--web.route-prefix=/"
+    mem_limit: 512m
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: observability-grafana
+    restart: unless-stopped
+    networks: [observability_internal]
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      GF_SERVER_ROOT_URL: "https://82.25.71.215:8443/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD__FILE: "/run/secrets/admin_password"
+      GF_PATHS_PROVISIONING: "/etc/grafana/provisioning"
+      GF_LOG_LEVEL: "info"
+    volumes:
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/secrets:/run/secrets:ro
+      - grafana_data:/var/lib/grafana
+    mem_limit: 768m
+    depends_on:
+      - loki
+      - prometheus
+
+networks:
+  observability_internal:
+    name: observability_internal
+    driver: bridge
+
+volumes:
+  loki_data:
+    name: observability_loki_data
+  prometheus_data:
+    name: observability_prometheus_data
+  grafana_data:
+    name: observability_grafana_data

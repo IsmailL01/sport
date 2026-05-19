@@ -340,7 +340,184 @@ A DSN is a **shared secret** — anyone holding the DSN can submit events to tha
 
 ## observability-stack
 
-> ⏳ **TODO anchor** — Plan 05-07 task 6 will append §7–§14 here (observability-stack deploy + Grafana provisioning + Caddy edits + D-26 alert rule maintenance + Loki retention tuning + niko-prod hands-off invariants).
+> Shipped by Plan 05-07 v2 (commit `<plan-05-07-commit>`); covers operations of Loki + Prometheus + Grafana + Caddy on `srv1561293`.
+
+### §7 observability-stack deploy
+
+The full stack ships via `scripts/deploy_observability_stack.sh`. Idempotent — re-running applies deltas only.
+
+**Pre-reqs:**
+- `SOPS_AGE_KEY_FILE` set (see §2.0)
+- `ssh myvps` works passwordless (`~/.ssh/config` Host alias for `srv1561293`)
+- `.secrets/prod/sentry.yaml` populated (Plan 05-02 — Grafana password/bcrypt + Telegram token + chat ID)
+- `infra/observability-stack/` staged in repo (Plan 05-07 Tasks 1–3)
+
+**Deploy:**
+
+```bash
+# Dry-run first to inspect what would be rsync'd (no remote touch):
+bash scripts/deploy_observability_stack.sh --dry-run
+
+# Live deploy:
+bash scripts/deploy_observability_stack.sh
+```
+
+The script does, in order: (a) SOPS-decrypts secrets to ephemeral shell vars, (b) substitutes `{{PROD_VPS_IP}}` + `{{TELEGRAM_BOT_TOKEN}}` + `{{TELEGRAM_CHAT_ID}}` templates into a `/tmp/observability-stack-render.XXXXXX` dir, (c) rsyncs to `myvps:/opt/observability-stack/`, (d) scps `Caddyfile` + `secrets.env` to `/etc/caddy/`, (e) installs Caddy binary at `/usr/local/bin/caddy` if absent, (f) installs both systemd units + reloads daemon, (g) opens UFW :8443 if not already, (h) `systemctl enable --now` both services in order.
+
+Total deploy time on a clean run: ~2–3 minutes (mostly: Caddy binary download + first-time Docker image pulls).
+
+**Verify:**
+
+```bash
+GRAFANA_PASS=$(sops -d .secrets/prod/sentry.yaml | awk -F'"' '/^GRAFANA_ADMIN_PASSWORD:/ {print $2}') \
+    python3 scripts/smoke_observability_stack.py
+
+GRAFANA_PASS=$(sops -d .secrets/prod/sentry.yaml | awk -F'"' '/^GRAFANA_ADMIN_PASSWORD:/ {print $2}') \
+    python3 scripts/smoke_grafana_alerts.py
+```
+
+### §8 GRAFANA_ADMIN_PASSWORD rotation
+
+```bash
+export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
+
+# Generate new pwd + bcrypt offline (umask 077 — values never echoed)
+NEW_PWD=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 16)
+NEW_BCRYPT=$(htpasswd -bnBC 14 admin "$NEW_PWD" | cut -d: -f2)
+
+# Edit SOPS — paste NEW_PWD + NEW_BCRYPT in editor; save
+sops .secrets/prod/sentry.yaml
+
+# Redeploy: deploy script picks up new values from SOPS at next run
+bash scripts/deploy_observability_stack.sh
+
+# Or, if only the password changed and you want a faster path:
+ssh myvps 'systemctl restart observability-caddy.service'
+# (Grafana reads admin password from /run/secrets/admin_password mount,
+#  re-rendered by deploy script. The caddy restart picks up the new
+#  bcrypt from /etc/caddy/secrets.env.)
+
+unset NEW_PWD NEW_BCRYPT
+```
+
+### §9 D-26 alert rule modification
+
+To edit a rule: change `infra/observability-stack/grafana/provisioning/alerting/rules.yml`, commit, run `bash scripts/deploy_observability_stack.sh`. Grafana provisioning reloads YAML on every Grafana restart (provider.yml `updateIntervalSeconds: 30` also picks up changes within 30 sec without restart for dashboards; alerting rules need restart).
+
+To verify rules loaded:
+
+```bash
+GRAFANA_PASS=... python3 scripts/smoke_grafana_alerts.py
+```
+
+To add a new rule: append a `- uid: <new>` block to `rules.yml` in the appropriate group (`backend-critical` or `backend-warning`), redeploy, re-smoke.
+
+### §10 Dashboard sync (Plan 05-04 → 05-07)
+
+Plan 05-04 (Wave 3 of Phase 5) ships dashboard JSONs to `services/backend/observability/dashboards/`. The deploy script automatically rsyncs them into the Grafana provisioning dir on every run:
+
+```bash
+# After adding a new dashboard JSON in services/backend/observability/dashboards/:
+git add services/backend/observability/dashboards/<new>.json
+git commit -m "feat(05-04): add <new> Grafana dashboard"
+bash scripts/deploy_observability_stack.sh
+# Grafana auto-loads within 30 sec (provider.yml updateIntervalSeconds)
+```
+
+### §11 Caddy allowlist debugging
+
+`@allowed_loki { remote_ip {$LOKI_PUSH_ALLOWED_SOURCE} }` matcher controls who can POST to `/loki/api/v1/push`. Source IP comes from the TCP socket (Caddy doesn't trust X-Forwarded-For unless explicitly configured).
+
+**Debugging 403s:**
+
+```bash
+# Tail Caddy logs to see the IP being rejected:
+ssh myvps 'journalctl -u observability-caddy.service -f -n 100'
+# Look for "@not_allowed_loki" matches; the line includes "remote_ip" of the rejected client
+
+# Verify the allowlist value matches expected prod-VPS IP:
+ssh myvps 'cat /etc/caddy/secrets.env | grep LOKI_PUSH_ALLOWED_SOURCE'
+# Should print: LOKI_PUSH_ALLOWED_SOURCE='148.253.214.156/32'
+```
+
+**Common 403 causes:**
+
+- Alloy on a different VPS than `LOKI_PUSH_ALLOWED_SOURCE` — update the SOPS slot + redeploy
+- NAT/proxy in front of Alloy → Caddy sees the NAT's IP, not Alloy's; either pin to NAT IP or remove the NAT layer
+- IPv6 — `148.253.214.156/32` is IPv4; if prod VPS uses IPv6 for outbound, add a `/128` allowlist entry too
+
+### §12 Self-signed cert handling
+
+Per D-37: Caddy on `srv1561293:8443` uses `tls internal` (Caddy's local CA generates a cert on first run). v1.0 closed-beta acceptance: browser warning on first dev visit, accept-once.
+
+**For browsers:** Click through the warning. Add cert to OS trust store for permanent acceptance:
+
+```bash
+# macOS — extract + trust the Caddy cert
+ssh myvps 'cat /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt' > /tmp/caddy-root.crt
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/caddy-root.crt
+rm /tmp/caddy-root.crt
+```
+
+**For Alloy / smoke scripts:** set `tls_config { insecure_skip_verify = true }` in Alloy config (Plan 05-06); Python smoke scripts already use `ssl.CERT_NONE`.
+
+**v1.1 fix paths:** (a) migrate to a real domain + Let's Encrypt (requires nginx-side coexistence), (b) pinned-cert workflow (compile cert into Alloy image / Python smoke probes).
+
+### §13 Resource ceiling watch (R-02)
+
+`srv1561293` has 15 GB RAM / no swap and is **colocated with niko-prod** (currently using ~3 GB). observability-stack containers cap at:
+- Loki: 512 MB
+- Prometheus: 512 MB
+- Grafana: 768 MB
+- Total stack: ~1.8 GB hard cap (systemd `MemoryHigh=4G` soft cap)
+
+**Watch signals:**
+
+```bash
+# Check observability-stack memory usage:
+ssh myvps 'docker stats --no-stream observability-loki observability-prometheus observability-grafana'
+
+# Check overall VPS memory pressure:
+ssh myvps 'free -h && uptime'
+
+# Check niko-prod for any regression correlated with observability spikes:
+ssh myvps 'docker stats --no-stream $(docker ps --filter "name=niko-prod-" -q)'
+```
+
+**Revisit ADR-0010 if any of these fire sustained for >30 min:**
+- Memory usage >12 GB total
+- niko-prod container restarts correlate with observability-stack memory spikes
+- `journalctl | grep -i "OOM\|out of memory"` shows OOM-kills
+
+**Mitigations (in escalation order):**
+1. Drop Loki retention to 7 days: edit `loki/loki-config.yaml` (`retention_period: 168h`); redeploy
+2. Add 4 GB swap file on `srv1561293`: `ssh myvps 'fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo "/swapfile none swap sw 0 0" >> /etc/fstab'`
+3. Migrate observability-stack to a dedicated VPS (revisit D-34 → re-run Plans 05-01 + 05-02 v1 from SUPERSEDED)
+
+### §14 niko-prod hands-off invariants
+
+`srv1561293` runs an unrelated production project (`niko-prod` Docker stack + system nginx). The observability-stack is colocated but must NEVER touch any niko-prod resource. Hard invariants:
+
+| Allowed (our domain) | Forbidden (niko-prod's domain) |
+|----------------------|--------------------------------|
+| `/opt/observability-stack/*` | `/opt/niko-prod/*` (or wherever niko-prod lives) |
+| `/etc/caddy/*` | `/etc/nginx/*` (system nginx — owns `:80`/`:443`) |
+| `/etc/systemd/system/observability-*.service` | niko-prod-related systemd units |
+| `/usr/local/bin/caddy` (single binary, separate from system nginx) | system nginx binary at `/usr/sbin/nginx` |
+| UFW rule for `:8443/tcp` | UFW rules for `:80`/`:443`/`:22` (already in place; we leave them) |
+| Docker network `observability_internal` | `niko-prod_data_net` / `niko-prod_egress_net` / `niko-prod_public_net` / `niko-prod_signer_net` (4 networks; we never join them) |
+| Docker volumes `observability_loki_data` / `observability_prometheus_data` / `observability_grafana_data` | volumes named `niko-prod_*` |
+| Containers `observability-loki` / `observability-prometheus` / `observability-grafana` | the 8 niko-prod-* containers (frontend / admin / api / signer / postgres / redis / rabbitmq / db-backup) |
+| Loopback ports `127.0.0.1:3000` / `:3100` / `:9090` (Caddy is sole public bridge to public `:8443`) | niko-prod's loopback ports `:3000` / `:3002` / `:5434` / `:5672` / `:6380` / `:7001` / `:8000` / `:15672` |
+
+**Pre-deploy invariant snapshot** captured at `.planning/phases/05-observability-backend/evidence/srv1561293-pre-deploy.txt` (PIDs, nginx config md5s, listening sockets). Post-deploy delta verified by Plan 05-07 SUMMARY.
+
+**If you discover invariant drift in the future:**
+1. Don't touch niko-prod — open a discussion thread first
+2. Document the drift in `.planning/phases/05-observability-backend/incidents/<date>.md`
+3. Revisit ADR-0010 R-05 (operator accidentally edits niko-prod nginx)
+
+---
 
 ---
 

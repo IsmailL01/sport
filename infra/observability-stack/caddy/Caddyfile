@@ -1,0 +1,70 @@
+# Phase 5 / Plan 05-07 v2 / D-35 / D-36 / D-37 — Caddy on srv1561293:8443
+# Self-signed TLS via `tls internal` (Caddy's local CA — no Let's Encrypt for v1.0).
+# Existing system nginx on :80/:443 untouched — niko-prod no-touch invariant.
+#
+# 3 reverse-proxy paths:
+#   /grafana/*       → 127.0.0.1:3000 (basicauth)
+#   /prometheus/*    → 127.0.0.1:9090 (basicauth)
+#   /loki/api/v1/*   → 127.0.0.1:3100 (@allowed_loki matcher per D-36)
+#
+# Env vars from /etc/caddy/secrets.env (EnvironmentFile in observability-caddy.service):
+#   GRAFANA_ADMIN_PASSWORD_BCRYPT — basicauth hash for admin user
+#   LOKI_PUSH_ALLOWED_SOURCE      — prod VPS IP/32 (e.g., 148.253.214.156/32)
+
+{
+    admin off
+    auto_https off
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+:8443 {
+    tls internal
+
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+
+    # Loki push endpoint — IP-allowlisted to prod VPS only (D-36)
+    @allowed_loki remote_ip {$LOKI_PUSH_ALLOWED_SOURCE}
+    handle_path /loki/* {
+        @not_allowed_loki not remote_ip {$LOKI_PUSH_ALLOWED_SOURCE}
+        handle @not_allowed_loki {
+            respond "403 Forbidden — Loki push restricted to prod VPS source IP" 403
+        }
+        reverse_proxy 127.0.0.1:3100
+    }
+
+    # Grafana UI (basicauth)
+    handle_path /grafana/* {
+        basic_auth {
+            admin {$GRAFANA_ADMIN_PASSWORD_BCRYPT}
+        }
+        reverse_proxy 127.0.0.1:3000 {
+            header_up Host {http.request.host}
+        }
+    }
+
+    # Prometheus UI / API (basicauth — rarely used; Grafana is primary consumer)
+    handle_path /prometheus/* {
+        basic_auth {
+            admin {$GRAFANA_ADMIN_PASSWORD_BCRYPT}
+        }
+        reverse_proxy 127.0.0.1:9090
+    }
+
+    # Root / health-check
+    handle / {
+        respond "observability-stack :8443 — see docs/RUNBOOKS/sentry-ops.md §7+" 200
+    }
+
+    # Catch-all 404
+    handle {
+        respond "404 Not Found" 404
+    }
+}

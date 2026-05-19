@@ -1,0 +1,33 @@
+# Phase 5 / Plan 05-07 v2 / D-35 — Caddy on srv1561293:8443
+# Runs Caddy binary (NOT containerized — avoids Docker socket UID/GID hassle per RESEARCH §P17).
+# Depends on observability-stack.service so loopback ports 3000/3100/9090 exist before Caddy proxies.
+
+[Unit]
+Description=Caddy reverse proxy on :8443 fronting observability-stack
+Documentation=docs/RUNBOOKS/sentry-ops.md
+After=observability-stack.service network-online.target
+Wants=network-online.target
+Requires=observability-stack.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+EnvironmentFile=/etc/caddy/secrets.env
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=60
+
+# Caddy's local CA writes to ~/.local/share/caddy — give it a writable HOME
+Environment="HOME=/var/lib/caddy"
+WorkingDirectory=/var/lib/caddy
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/caddy /var/log/caddy
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
