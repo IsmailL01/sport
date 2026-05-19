@@ -77,15 +77,21 @@
 </scout_findings>
 
 <decisions>
-## Implementation Decisions (24 D-XX auto-resolved)
+## Implementation Decisions (24 → 29 D-XX; 7 SUPERSEDED 2026-05-19 per ADR-0010)
+
+> **⚠ SUPERSESSION NOTICE (2026-05-19):** After VPS inspection revealed (a) `srv1561293` already runs unrelated `niko-prod` Docker stack + system nginx on `:80`/`:443`, (b) 15 GB RAM ceiling + no swap is under Sentry self-hosted minimum, (c) user directive «не трогай существующий проект» — D-01..D-05 + D-30..D-31 are **SUPERSEDED by [`docs/DECISIONS/0010-sentry-saas-and-colocation.md`](../../../docs/DECISIONS/0010-sentry-saas-and-colocation.md)**.
+>
+> New decisions D-33..D-37 codified at the bottom of `<decisions>` block. Plans 05-01 / 05-02 / 05-07 are scrapped or rewritten; Plan 05-03 already shipped is unaffected (slog + PII + OTP fix preserved); Plans 05-04 / 05-05 / 05-06 receive surgical amendments only.
+>
+> SaaS path: sentry.io free tier; Loki + Grafana + Prom stay self-hosted on `srv1561293` (colocated with niko-prod), bound to `127.0.0.1`, exposed via Caddy on alt port `:8443` with self-signed TLS. Existing nginx untouched.
 
 ### Sentry deployment topology
 
-- **D-01 (LOCKED upstream by ROADMAP §Phase 5 + user redline):** **Sentry self-hosted on separate VPS** (NOT colocated с app). Isolation non-negotiable: app crash → still need crash reports; correlated failure mode (one VPS dies, both observability + production gone) unacceptable. Not relitigated.
-- **D-02:** **Sentry self-hosted edition:** `getsentry/self-hosted` repo (canonical). Pin к specific release tag (e.g., `25.x` LTS-line — researcher confirms latest stable as of 2026-05). Install via repo's `./install.sh --skip-user-prompt --no-report-self-hosted-issues`. Generates ~30-container docker-compose file at `sentry/docker-compose.yml`. Re-runs use plain `docker compose up -d` against generated file. **NOT** Sentry SaaS (user redline: self-hosted non-negotiable).
-- **D-03:** **Sentry VPS sizing:** **4 vCPU + 16 GB RAM + 80 GB SSD minimum** (Sentry's official recommendation для self-hosted — Kafka + ClickHouse + Postgres + Redis under one stack; OOM на <8 GB observed in docs). Same provider as prod VPS recommended (single-bill simplicity + same network latency profile если eventually peering); user picks alternative if preferred. Cost estimate ~€20/mo Hetzner CCX23 equivalent. Plan 05-01 Task 0 = user picks/spins VPS.
-- **D-04:** **DNS scheme:** `sentry.<sentry-vps-ip-with-dashes>.sslip.io` (e.g., `sentry.85-239-149-26.sslip.io` если sentry-vps gets that IP). sslip.io pattern reuses Phase 3 D-18 (works на любом VPS public IP, не provider-specific). Separate Caddy on sentry VPS handles its own ACME via Let's Encrypt (rate-limit-aware — sentry's compose includes nginx but we replace или sit Caddy в front per RUNBOOK; researcher verifies). **NOT** `sentry.148-253-214-156.sslip.io` (that subdomain points к app VPS — defeats isolation).
-- **D-05:** **No subdomain wildcard / staging domain yet.** Phase 5 ships single `sentry.<ip>.sslip.io` for prod. `staging-backend` project lives в same Sentry instance под separate project (DSN-discriminated). When real `<brand>.com` domain lands в v1.1, both Sentry + Grafana migrate behind `sentry.<brand>.com` + `grafana.<brand>.com`.
+- ~~**D-01:** Sentry self-hosted on separate VPS.~~ **SUPERSEDED** by D-33 (SaaS). Functional intent (operator-level isolation: crash reports survive when app VPS dies) preserved — sentry.io infrastructure is independent of both `82.25.71.215` AND `148.253.214.156`. See ADR-0010.
+- ~~**D-02:** `getsentry/self-hosted` 26.5.0 edition.~~ **SUPERSEDED** by D-33 — sentry.io SaaS. RESEARCH §1.1 version pin moot.
+- ~~**D-03:** 4 vCPU / 16 GB / 80 GB sentry VPS sizing.~~ **SUPERSEDED** by D-33 — no dedicated Sentry-VPS. (Note: Loki + Grafana + Prom resource ceiling captured in D-34's Risk R-02 register.)
+- ~~**D-04:** DNS `sentry.<sentry-vps-ip>.sslip.io` with own ACME cert.~~ **SUPERSEDED** by D-33 + D-35. Sentry events via SaaS-provided `https://o<org>.ingest.sentry.io/api/<id>/envelope/`. Grafana/Loki/Prom via `https://82.25.71.215:8443/...` (Caddy on alt port, self-signed).
+- ~~**D-05:** No subdomain wildcard / staging domain.~~ **MOOT** — sentry.io domain handles project routing (DSN-discriminated). v1.1 revisit when dedicated VPS / real domain available.
 
 ### Sentry projects + DSN management (OBS-02)
 
@@ -207,23 +213,16 @@
   - **No paging at night (00:00–07:00 MSK) для warnings** — only criticals page at any hour.
   - PagerDuty integration scaffolded as deferred (v1.1 if team grows).
 
-### Log aggregation — Loki on sentry VPS (not on prod VPS)
+### Log aggregation — Loki on `srv1561293` (AMENDED 2026-05-19 per ADR-0010)
 
-- **D-27:** **Loki on sentry VPS, promtail on prod VPS shipping container stdout** к `https://sentry.<sentry-ip>.sslip.io:3100/loki/api/v1/push`. Single-tenant Loki (auth disabled per existing `loki.yml`); UFW restricts source IP к prod VPS only (D-28). 30-day retention (configurable).
-- **D-28:** **Loki UFW allowlist** — sentry VPS UFW rule `allow 3100/tcp from <prod-vps-ip>/32`. No other source can push logs. Public access к Grafana (read-only viewer на logs) goes through Caddy reverse-proxy on `grafana.<sentry-ip>.sslip.io` с basic auth.
-- **D-29:** **Promtail on prod VPS:** new role `infra/ansible/roles/promtail-shipper/` — installs `promtail` binary, configures `promtail-config.yml` (scrapes Docker container stdout via `/var/lib/docker/containers/*/`), ships к Loki on sentry VPS. systemd unit (NOT containerized — keeps log ship-out independent of `sport-stack.service` health; если sport-stack crashes, promtail still ships its dying logs).
+- **D-27 (AMENDED):** **Loki on `srv1561293` (NOT a separate sentry VPS — colocated with niko-prod per D-34), Alloy on prod VPS shipping container stdout** к `https://82.25.71.215:8443/loki/api/v1/push` (Caddy `/loki/*` handler with `@allowed_loki { remote_ip 148.253.214.156/32 }` matcher per D-36, NOT direct :3100 per D-35 nginx-coexistence constraint). Single-tenant Loki (auth disabled per existing `loki.yml`); allowlist enforced at Caddy-level. **14-day retention** (reduced from original 30 days to mitigate Risk R-02 — colocated resource ceiling per ADR-0010).
+- **D-28 (AMENDED):** **Loki source-IP allowlist now Caddy-level (not UFW-level).** Caddy matcher `@allowed_loki { remote_ip 148.253.214.156/32 } not @allowed_loki respond 403` enforces the same invariant as the original UFW :3100 rule; net security posture identical. UFW on `srv1561293` exposes only `:22` + `:8443` publicly. Direct :3100 is bound `127.0.0.1` only — not reachable except via Caddy reverse-proxy.
+- **D-29 (AMENDED):** **Alloy on prod VPS (was Promtail per RESEARCH §1.6 substitution):** new role `infra/ansible/roles/alloy-shipper/` — installs Grafana Alloy v1.5.0, configures `alloy-config.alloy` (uses `discovery.docker` + `loki.source.docker` pair per RESEARCH §P21), ships к Loki via the Caddy-fronted URL above. systemd unit (NOT containerized — keeps log ship-out independent of `sport-stack.service` health). Alloy's TLS config uses `insecure_skip_verify = true` for v1.0 (self-signed Caddy cert per D-35); v1.1 either trusts the local CA or migrates to real TLS.
 
-### Sentry deploy seam (NEW role `sentry-prep`)
+### Sentry deploy seam — SUPERSEDED
 
-- **D-30:** **`infra/ansible/roles/sentry-prep/` structure:**
-  - `tasks/main.yml`:
-    1. git-clone `https://github.com/getsentry/self-hosted.git` к `/opt/sentry/` (pin `--branch <stable-tag>` per D-02)
-    2. Template `/opt/sentry/.env` from SOPS-decrypted `SENTRY_ADMIN_PASSWORD` (decrypt-via-`delegate_to: localhost` pattern per Phase 3 D-12)
-    3. First-run: `./install.sh --skip-user-prompt --no-report-self-hosted-issues` (idempotent — exits early if generated compose exists)
-    4. `docker compose -f /opt/sentry/docker-compose.yml up -d`
-    5. Create 4 projects via Sentry CLI: `sentry-cli projects create prod-backend / staging-backend / prod-mobile / staging-mobile` (or HTTP API equivalent)
-    6. Extract DSNs + populate placeholders in SOPS (USER ACTION: после first install, copy 4 DSNs from Sentry UI → `sops edit .secrets/{prod,staging}/sentry.yaml`)
-- **D-31:** **Sentry stack lifecycle separate from `sport-stack.service`.** New systemd unit `sentry-stack.service` on sentry VPS — `ExecStart=/usr/bin/docker compose -f /opt/sentry/docker-compose.yml up`. Mirrors Phase 3 D-04 pattern but bound к sentry VPS only. NEVER deployed к prod VPS (defeats isolation).
+- ~~**D-30:** `infra/ansible/roles/sentry-prep/` (Sentry self-hosted install via `install.sh`).~~ **SCRAPPED** by D-33 (SaaS — no Sentry stack to deploy locally). Plan 05-01 is renamed to `05-01-PLAN-SUPERSEDED.md`; Plan 05-02 rewritten as a USER-ACTION mini-plan: user creates sentry.io org + 4 projects (`prod-backend`, `staging-backend`, `prod-mobile`, `staging-mobile`) in the SaaS UI; pastes the 4 DSNs into `.secrets/{prod,staging}/sentry.yaml`; configures Sentry's native Telegram integration (replaces the custom Go alerter from original D-24/D-25).
+- ~~**D-31:** `sentry-stack.service` systemd unit.~~ **SCRAPPED** by D-33. New `observability-stack.service` (D-34) replaces it for the Loki+Grafana+Prom trio on `srv1561293`.
 
 ### Backend service integration (per-service main.go changes)
 
@@ -264,6 +263,33 @@
   http.ListenAndServe(":"+port, rootHandler)
   ```
   Centralizes 6 cross-cutting middlewares + 3 init calls. **Single source of truth** для all 8 services.
+
+### Topology amendment — Phase 5 v2 (added 2026-05-19 per ADR-0010)
+
+> Codifies the architectural reshape after `srv1561293` inspection. Replaces D-01..D-05 + D-30..D-31. See [`docs/DECISIONS/0010-sentry-saas-and-colocation.md`](../../../docs/DECISIONS/0010-sentry-saas-and-colocation.md) §Решение for the full rationale.
+
+- **D-33:** **Sentry → SaaS (sentry.io free tier, 5K events/mo).** Replaces D-01 + D-02. OBS-01 isolation intent preserved at operator level (sentry.io infrastructure independent of both `82.25.71.215` AND `148.253.214.156`). User creates org + 4 projects (`prod-backend`, `staging-backend`, `prod-mobile`, `staging-mobile`) in sentry.io UI; DSNs land in `.secrets/{prod,staging}/sentry.yaml` SOPS slot. OTLP endpoint becomes `https://o<org-slug>.ingest.sentry.io/api/<project-id>/envelope/` (DSN-derived via standard `url.Parse` per RESEARCH §1.3 — sentry-go SDK + OTel exporter handle this transparently). Sentry's native Telegram integration replaces the original D-24/D-25 custom Go alerter service. v1.1 revisit when event volume crosses 4K/mo OR dedicated VPS becomes available.
+
+- **D-34:** **Loki + Grafana + Prometheus co-located on `srv1561293` (with niko-prod).** Replaces D-30/D-31. Single docker-compose stack at `/opt/observability-stack/docker-compose.yml`, managed by new `observability-stack.service` systemd unit (sibling-of-pattern to Phase 3's `sport-stack.service`). All 3 containers bound to `127.0.0.1` only — never exposed directly to public. Docker networks namespaced `observability_*` to avoid collision with `niko-prod_*`. Loki retention dropped to 14 days (from original 30) to mitigate R-02 colocation memory pressure. Image pins: `grafana/loki:3.2.0`, `prom/prometheus:v2.55.0`, `grafana/grafana:11.3.0` (matches existing dev-profile `docker-compose.observability.yml`).
+
+- **D-35:** **Caddy on `srv1561293:8443` ONLY (self-signed TLS via Caddy `tls internal`).** Replaces D-04. Existing system nginx on `:80` + `:443` is NOT touched (user directive). Caddy binds `0.0.0.0:8443` and serves three reverse-proxy paths:
+  - `https://82.25.71.215:8443/grafana/` → `127.0.0.1:3000` (basicauth from SOPS `GRAFANA_ADMIN_PASSWORD_BCRYPT`)
+  - `https://82.25.71.215:8443/loki/api/v1/push` → `127.0.0.1:3100` (allowlist matcher per D-36)
+  - `https://82.25.71.215:8443/prometheus/` → `127.0.0.1:9090` (basicauth)
+  
+  Caddy installed via single binary in `/usr/local/bin/caddy` (not container — avoids Docker socket UID/GID hassle). Runs as systemd unit `observability-caddy.service`. Self-signed cert auto-generated by Caddy's local CA on first start.
+
+- **D-36:** **Caddy-level allowlist enforces source-IP restriction for `/loki/*` and `/prometheus/*`.** Replaces D-28's OS-level UFW :3100 rule. Caddyfile fragment:
+  ```caddy
+  @allowed_loki { remote_ip 148.253.214.156/32 }
+  handle_path /loki/* {
+      reverse_proxy 127.0.0.1:3100
+      not @allowed_loki respond 403
+  }
+  ```
+  Same net security as OS-level firewall (Caddy is the only listener on :8443; any push from non-allowed IP returns 403 before reaching Loki). UFW config on `srv1561293` opens only `:22` + `:8443` to `0.0.0.0/0`; `:8443` further restricted via `--source` to dev workstation IPs for the `/grafana/` and `/prometheus/` paths.
+
+- **D-37:** **v1.0 closed-beta accepts self-signed cert + browser warning on Grafana access.** Trust-the-cert procedure documented in `docs/RUNBOOKS/observability.md`. Alloy on prod VPS uses `tls_config { insecure_skip_verify = true }` initially (R-03 mitigation). v1.1 path: either dedicated VPS with Let's Encrypt OR pinned-cert-trust workflow for devs OR migration to real domain with public CA.
 
 </decisions>
 
