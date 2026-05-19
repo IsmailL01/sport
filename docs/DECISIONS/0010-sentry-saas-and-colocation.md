@@ -132,9 +132,41 @@ TLS is self-signed (Caddy's `tls internal` directive — auto-generates a cert o
 - Plan 05-03 (already shipped) is unaffected — slog handler / PII deny-list / OTP fix / CI grep all preserved.
 - Plans 05-04, 05-05, 05-06 require surgical edits only (OTLP endpoint URL changes; otherwise identical).
 
+## Amendment 2026-05-19 (PM) — Sentry SDK activation deferred to post-v1.0
+
+**Status change:** D-33 (Sentry → SaaS) is *infrastructure-deferred* for v1.0 deploy. The SDK code paths from Plans 05-05 + 05-06 (sentry-go + `@sentry/react-native` init, `captureException` calls, OTel span export to Sentry OTLP) remain in the codebase. They are **wired but dormant** — gated by empty `SENTRY_DSN_BACKEND` (Go) and empty `EXPO_PUBLIC_SENTRY_DSN` (mobile) env vars.
+
+**Activation path** (post-v1.0, no code redeploy required):
+
+1. Create sentry.io org + 4 projects (Plan 05-02 Task 1, deferred — playbook lives in `docs/RUNBOOKS/sentry-ops.md §1` shipped intact during v1.0)
+2. `sops edit .secrets/prod/sentry.yaml` — replace `SENTRY_DSN_BACKEND: ""` placeholder with the real DSN string from sentry.io UI
+3. Redeploy backend services (`make deploy` or equivalent) — `/run/sport.env` re-renders from SOPS, services restart and pick up the populated env var, sentry-go SDK initializes normally on next start
+4. (Mobile) Update EAS profile env, rebuild + ship the mobile app — Phase 17 territory
+
+**Why defer:** v1.0 deploy is unblocked from Sentry account ops. Reduces v1.0 cutover surface area (no sentry.io org provisioning, no DSN rotation playbook needed live, no Sentry-side Telegram integration wiring). Functional intent of OBS-01 ("crash reporting available") becomes "*reachable* once DSN populated" — a one-line SOPS edit away. R-06 (sentry.io T&C changes) becomes irrelevant for v1.0 — we don't depend on the service yet.
+
+**Idiomatic SDK behavior** (sentry-go + `@sentry/react-native` both): empty DSN string → `sentry.Init` returns without error, but events are silently dropped at capture time (see [Go DSN docs](https://docs.sentry.io/platforms/go/configuration/options/#dsn) + [React Native DSN docs](https://docs.sentry.io/platforms/react-native/configuration/options/#dsn)). Defense-in-depth: Plan 05-05 will add an explicit `if dsn == "" { ... return no-op shutdown }` guard at the top of `MustInitSentry` + `MustInitTracer` so the dormant state is observable (logs a `slog.Info "observability.sentry: disabled — empty DSN"` line on boot).
+
+**Risk register updates:**
+- R-01 (event quota) → not applicable while deferred
+- R-06 (T&C changes) → not applicable while deferred
+- **R-07 NEW** — deferral becomes permanent by neglect: the act of creating the sentry.io org never gets prioritized post-v1.0, and we ship to closed beta with no crash visibility. Mitigation: dated TODO in `.secrets/prod/sentry.yaml` next to the empty DSN placeholder + Phase 21 (Staging E2E) acceptance gate flags it.
+
+**Phase 5 acceptance reframe:**
+- ROADMAP §Phase 5 Criterion 1 (Sentry self-hosted on separate VPS with own ACME) was relaxed to "operator-level isolation via SaaS" in the original ADR-0010 §Решение/1; this amendment further relaxes it to "**SDK wired + DSN-activatable**". Phase 5 ships the substrate; activation is a Phase 21 / post-v1.0 follow-up.
+
+**Implementation footprint** (delta from ADR-0010 v1.0):
+
+- **Plan 05-02 v3:** Tasks 1 + 5 (sentry.io UI work) → DEFERRED; Tasks 2 + 3 + 4 + 6 still ship (Grafana/Telegram for the observability-stack — independent of Sentry). `.secrets/prod/sentry.yaml` keeps `SENTRY_DSN_BACKEND: ""` + `SENTRY_DSN_MOBILE: ""` placeholders with `# TODO: populate after sentry.io org created (ADR-0010 amendment)` comments.
+- **Plan 05-05:** explicit empty-DSN guard at top of `MustInitSentry` + `MustInitTracer`. Both log `slog.Info("observability.sentry: disabled — empty DSN", "next_step": "see ADR-0010 amendment 2026-05-19 PM")` line on boot. Tests extend to cover the no-op path explicitly.
+- **Plan 05-06 acceptance walkthrough:** drop "Sentry UI accessible" + "Sentry test Telegram alert" steps for v1.0. Grafana panels + 3 probes + Grafana-side Telegram alert (Plan 05-07 D-26 rules) remain. Acceptance step 8 swaps from "Sentry-side Telegram test" to "Grafana-side Telegram test via synthetic 5xx triggering D-26 `5xx_rate_over_5pct` rule".
+
+**No SDK code removal.** All `sentry.CaptureException`, `Sentry.captureException`, OTel SDK imports stay put. The deferral is a config gate, not a code gate.
+
 ## История пересмотров
 
 - **v1.0** (2026-05-19): Initial — accepting Sentry SaaS + colocation per user direction after VPS inspection revealed nginx-collision + resource ceiling.
+- **v1.1** (2026-05-19 PM): Amendment — Sentry SDK activation deferred to post-v1.0; code paths preserved as wired-and-dormant; activation = SOPS edit + redeploy. R-07 added to risk register.
 
 ---
 
