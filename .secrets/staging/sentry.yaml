@@ -1,0 +1,20 @@
+#ENC[AES256_GCM,data:r4LO/h3R2KB3T8igJwJgC06QusVhQ5eouwcigTXwzN2UgGvWUVI+Ijou+hnNhOrCfwQAFhfBoNTTKGKqpNph3Vtx5Mf4MP1FKSFMZQ5C,iv:cjAWSJ+qWFO8scwIh4/+vIelt3a1BtwxGlgrcGDjolM=,tag:BkCxJOO6HpMJOvb751TbBw==,type:comment]
+#ENC[AES256_GCM,data:FYi5T+D8Dj+wktFdRdEYLQb6cBUootPtmcrTv83CVr9Mh6u3DJPQvrEaUq04F1UOOXBbtqJdfdJBrrbow3QfBJg03C/BZSxdoWiUfozW,iv:vyMqg3OgAPVCYtY+Su+N3L+tbuHHrQKiZWyTaAXUoRE=,tag:VFJycTmMlgkq+TWRykC3lw==,type:comment]
+SENTRY_DSN_BACKEND_STAGING: ""
+#ENC[AES256_GCM,data:+1Qp7Si1fnXlVA3rL9WhJLMYhcB+ZfwUbzi+HxJ0JdVyWdDAXc46ye9up1dryQYGgnXg5mRdZ4RHuBNoHrkJSm5Pf5EKHbzhaZXdSMER,iv:INAM/+BdKJHMCoNnBUHn6TbB94rz22X3SRlfHuYNzLY=,tag:gwCbZJUOWhcAZoOu9Nka5g==,type:comment]
+SENTRY_DSN_MOBILE_STAGING: ""
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBtMUlJSlpaK2RkdlVRSGNm
+            NE8vRXhadk04cXhhQXRjbUpLK0JjeEEyRVE4CmMvR2xUR2VSa2tDd3VrK2NGcTBI
+            Y1BPeU9wSWZNOHNzYnpsa1Z3RHRaajAKLS0tIEZIQzZKQzZ5WHkyd2Vub2FmV0tm
+            YjREOUdWYS9qOWdYQXBDeWhDTGNsbGMKy4TZl2oz/AcpchuF/fEWs+QoUAs+Ggi6
+            N12YqJHMIt2nukT8I8oWnCT3hActaKmp3rlB5/tu5RsEtM7k6khGXA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my
+    lastmodified: "2026-05-19T16:43:29Z"
+    mac: ENC[AES256_GCM,data:ox9XNmY6fMNyCuFVE77bsDCbskH4HXeHRxvmZiPoAYJkLheeuMaak67Sy9NoVwipoMdPpI/HeLDQPRD3KSSAspMdxKHnLuCn+ywEZHhFsdFX4rxDPBRmoXfv4CbSMI+19yu5MyQWKeDsI0Nh+gmPfce3KTDTL5lbDD1JfWLLPTw=,iv:hMPlPY12Zc6aUni0Psdp6TUyWpipaJ2HcItNovQ2/0M=,tag:Q/qVgEA2m1IeFBam6nvqwA==,type:str]
+    unencrypted_suffix: _unencrypted
+    version: 3.13.0
