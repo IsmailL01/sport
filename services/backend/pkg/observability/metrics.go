@@ -9,13 +9,13 @@
 //   - Запрещённые метки: user_id, session_id, device_id, external_uuid,
 //     email, phone — НЕ должны появляться ни на одной метрике. Это
 //     enforced на трёх уровнях:
-//       1. На уровне registration time — этот файл не определяет ни одного
-//          *_user_id label key. См. TestHTTPRequestDuration_LabelKeys.
-//       2. На уровне runtime probe — scripts/cardinality_probe.py
-//          парсит /metrics output каждого сервиса и проверяет отсутствие
-//          forbidden labels + ≤1000 series/metric.
-//       3. На уровне CI — backend-ci.yml `cardinality-probe` job блокирует
-//          merge при появлении forbidden label в exposed metrics.
+//     1. На уровне registration time — этот файл не определяет ни одного
+//     *_user_id label key. См. TestHTTPRequestDuration_LabelKeys.
+//     2. На уровне runtime probe — scripts/cardinality_probe.py
+//     парсит /metrics output каждого сервиса и проверяет отсутствие
+//     forbidden labels + ≤1000 series/metric.
+//     3. На уровне CI — backend-ci.yml `cardinality-probe` job блокирует
+//     merge при появлении forbidden label в exposed metrics.
 //   - Bucketed labels (allowed): user_cohort (≤10), route (≤50/service),
 //     method (5 verbs), status (5 classes: 2xx/3xx/4xx/5xx/other), provider
 //     (≤10).
@@ -60,8 +60,9 @@ var HTTPRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 
 // HTTPRequestsTotal — счётчик HTTP-запросов с теми же labels что
 // HTTPRequestDuration. Error-rate derivable как:
-//   sum by (service) (rate(http_requests_total{status="5xx"}[5m]))
-//   / sum by (service) (rate(http_requests_total[5m]))
+//
+//	sum by (service) (rate(http_requests_total{status="5xx"}[5m]))
+//	/ sum by (service) (rate(http_requests_total[5m]))
 //
 // См. infra/observability-stack/grafana/provisioning/alerting/rules.yml
 // rule `5xx-rate-over-5pct`.

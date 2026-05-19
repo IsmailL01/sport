@@ -4,7 +4,9 @@
 package observability
 
 import (
+	"bufio"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -146,7 +148,6 @@ func TestPromhttpMiddleware_StatusClassification(t *testing.T) {
 	}
 
 	for i, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			// Unique service name per case — иначе counters суммируются и
 			// trivial "got 1" не различает classes.
@@ -217,7 +218,7 @@ func TestPromhttpMiddleware_RouteTemplateExtraction(t *testing.T) {
 // не за ServeMux), fallback collapses path до 1-2 segments.
 func TestPromhttpMiddleware_RouteTemplateFallback(t *testing.T) {
 	cases := []struct {
-		path     string
+		path      string
 		wantRoute string
 	}{
 		{"/", "/"},
@@ -229,7 +230,6 @@ func TestPromhttpMiddleware_RouteTemplateFallback(t *testing.T) {
 		{"/users/abc-uuid-456", "/users/abc-uuid-456"}, // 2 segments — наивный fallback
 	}
 	for i, tc := range cases {
-		tc := tc
 		t.Run(tc.path, func(t *testing.T) {
 			svc := "svc-fb-" + string(rune('a'+i))
 			h := PromhttpMiddleware(svc, stubNext(http.StatusOK, ""))
@@ -369,4 +369,66 @@ func TestExtractRouteTemplate_PatternNoMethod(t *testing.T) {
 	if got != "/foo/{bar}" {
 		t.Errorf("got %q, want %q", got, "/foo/{bar}")
 	}
+}
+
+// hijackableRecorder — minimal http.ResponseWriter+http.Hijacker для unit-теста.
+// httptest.ResponseRecorder НЕ implements Hijacker, поэтому реальный
+// realtime-gw scenario нужен этот stub.
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	hijackCalled bool
+}
+
+func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijackCalled = true
+	// Возвращаем nil-conn — handler-под-tests не делает реального IO.
+	return nil, nil, nil
+}
+
+// TestPromhttpMiddleware_HijackPassthrough — статус-обёртка должна passthrough
+// Hijack() к underlying ResponseWriter если он его реализует. Критично для
+// realtime-gw (coder/websocket делает hijack для перехвата TCP).  Без этого
+// passthrough WS upgrade ломается с "Hijacker not implemented".
+func TestPromhttpMiddleware_HijackPassthrough(t *testing.T) {
+	hijackHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatalf("middleware wrapper does NOT implement http.Hijacker — WS upgrade would fail")
+		}
+		_, _, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("Hijack() returned error: %v", err)
+		}
+	})
+
+	h := PromhttpMiddleware("svc-hijack", hijackHandler)
+
+	hr := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	h.ServeHTTP(hr, req)
+
+	if !hr.hijackCalled {
+		t.Errorf("underlying Hijack() never called — passthrough broken")
+	}
+}
+
+// TestPromhttpMiddleware_HijackUnsupported — если underlying ResponseWriter
+// НЕ implements Hijacker, статус-обёртка возвращает ошибку (не panics).
+// httptest.NewRecorder() удобный stub — он не Hijacker.
+func TestPromhttpMiddleware_HijackUnsupported(t *testing.T) {
+	hijackHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatalf("wrapper should always implement Hijacker (we return error inside Hijack())")
+		}
+		_, _, err := hj.Hijack()
+		if err == nil {
+			t.Errorf("expected error when underlying ResponseWriter doesn't support Hijacker; got nil")
+		}
+	})
+
+	h := PromhttpMiddleware("svc-no-hijack", hijackHandler)
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	rec := httptest.NewRecorder() // NOT a Hijacker
+	h.ServeHTTP(rec, req)
 }

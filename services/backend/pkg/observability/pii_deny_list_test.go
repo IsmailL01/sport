@@ -60,13 +60,13 @@ func TestIsDenied_CaseInsensitive(t *testing.T) {
 		{"DISPLAYNAME", true},
 		{"lat", true},
 		{"LAT", true},
-		{"email", false},        // email hashed, NOT denied
-		{"service", false},      // operational metadata — allowed
-		{"env", false},          // operational metadata — allowed
-		{"version", false},      // operational metadata — allowed
-		{"request_id", false},   // correlation — allowed
-		{"random_attr", false},  // not in deny-list
-		{"user_cohort", false},  // bucketed cohort — D-12 allowed
+		{"email", false},       // email hashed, NOT denied
+		{"service", false},     // operational metadata — allowed
+		{"env", false},         // operational metadata — allowed
+		{"version", false},     // operational metadata — allowed
+		{"request_id", false},  // correlation — allowed
+		{"random_attr", false}, // not in deny-list
+		{"user_cohort", false}, // bucketed cohort — D-12 allowed
 	}
 	for _, tc := range cases {
 		if got := IsDenied(tc.key); got != tc.want {
@@ -81,8 +81,8 @@ func TestHashEmail_DeterministicAnd8Hex(t *testing.T) {
 	}{
 		{"alice@example.com"},
 		{"bob@test.org"},
-		{""},          // edge: empty input still hashable
-		{"привет"},    // edge: non-ASCII UTF-8
+		{""},       // edge: empty input still hashable
+		{"привет"}, // edge: non-ASCII UTF-8
 	}
 	for _, tc := range cases {
 		got := HashEmail(tc.input)

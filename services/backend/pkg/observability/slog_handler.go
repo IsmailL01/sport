@@ -5,10 +5,10 @@
 // Конструкция (D-10):
 //   - NewSlogJSONHandler(Config) → *slog.Logger; wraps slog.NewJSONHandler.
 //   - Custom Handler intercepts each Attr через Handle:
-//       • Drop entire attr если IsDenied(key) — minimum-information principle.
-//       • Replace key with "email_hash" + value with HashEmail(value) если
-//         ShouldHash(key).
-//       • Иначе passthrough.
+//   - Drop entire attr если IsDenied(key) — minimum-information principle.
+//   - Replace key with "email_hash" + value with HashEmail(value) если
+//     ShouldHash(key).
+//   - Иначе passthrough.
 //   - Adds default attrs to каждой записи: service / env / version /
 //     request_id (последний из ctx — empty string если не set).
 //   - Per-request LogLevel override via context (D-11 + D-22 seam, used by
@@ -102,12 +102,12 @@ func ParseLevel(s string) slog.Level {
 }
 
 // piiScrubHandler — slog.Handler middleware that:
-//   1. Adds default attrs (service / env / version / request_id) на каждую запись.
-//   2. Walks record.Attrs() и:
-//        • drops Attr если IsDenied(key);
-//        • replaces key+value с "email_hash"+HashEmail(value) если ShouldHash(key);
-//        • иначе passthrough.
-//   3. Respects per-context LogLevel override via WithLogLevel/LogLevelFromContext.
+//  1. Adds default attrs (service / env / version / request_id) на каждую запись.
+//  2. Walks record.Attrs() и:
+//     • drops Attr если IsDenied(key);
+//     • replaces key+value с "email_hash"+HashEmail(value) если ShouldHash(key);
+//     • иначе passthrough.
+//  3. Respects per-context LogLevel override via WithLogLevel/LogLevelFromContext.
 type piiScrubHandler struct {
 	inner slog.Handler
 	cfg   Config

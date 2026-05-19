@@ -21,13 +21,16 @@
 // Если бы мы записывали `route=r.URL.Path` — каждый уникальный URL стал бы
 // отдельной series. Для /me/<uuid>/profile это означало бы одну series на
 // user — Cardinality explosion. Защита:
-//   1. Если mux экспонирует pattern через r.Pattern (Go 1.22+ http.ServeMux),
-//      используем его (e.g., "GET /users/{id}" → "/users/{id}").
-//   2. Иначе fallback: collapse path до первого segment, e.g., /api/v1/runs/
-//      <uuid>/laps → "/api/v1/runs" (bounded — ≤50 unique values).
+//  1. Если mux экспонирует pattern через r.Pattern (Go 1.22+ http.ServeMux),
+//     используем его (e.g., "GET /users/{id}" → "/users/{id}").
+//  2. Иначе fallback: collapse path до первого segment, e.g., /api/v1/runs/
+//     <uuid>/laps → "/api/v1/runs" (bounded — ≤50 unique values).
 package observability
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -108,6 +111,32 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	return s.ResponseWriter.Write(b)
 }
 
+// Hijack — passthrough к underlying ResponseWriter если он реализует
+// http.Hijacker. Критично для WebSocket-сервисов (realtime-gw): библиотека
+// coder/websocket вызывает Hijack() для перехвата сырого TCP-соединения после
+// upgrade. Без этой обёртки PromhttpMiddleware ломала бы WS upgrade с ошибкой
+// "http.Hijacker not implemented".
+//
+// После hijack соединение принадлежит handler'у; мы перестаём писать в status.
+// Метрика всё ещё запишется: status уже = 101 (Switching Protocols) если
+// WriteHeader был вызван, либо останется 200 (default) — в обоих случаях это
+// валидный исход для WS upgrade.
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := s.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("observability.statusRecorder: underlying ResponseWriter does not implement http.Hijacker")
+	}
+	return h.Hijack()
+}
+
+// Flush — passthrough к http.Flusher если underlying ResponseWriter поддерживает.
+// Нужно для SSE / streaming JSON / long-poll handlers.
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // classifyStatus reduces HTTP status code to ≤5 bucketed classes per D-18
 // cardinality budget.
 //
@@ -132,16 +161,16 @@ func classifyStatus(code int) string {
 }
 
 // extractRouteTemplate возвращает шаблон роута для request:
-//   1. Если r.Pattern set (Go 1.22+ http.ServeMux заполняет это поле после
-//      route matching), используем его — это registered pattern, e.g.,
-//      "GET /users/{id}".  Удаляем method-prefix чтобы остался чистый path.
-//   2. Если r.Pattern пустой (request не прошёл через ServeMux или это
-//      доhomemade router), fallback к bounded path — берём первые 2 segments
-//      (например, /api/v1/users/123 → /api/v1).
-//   3. Edge cases:
-//      - r.URL.Path == "" → "/"
-//      - root "/" → "/"
-//      - /metrics, /healthz — passthrough (short paths).
+//  1. Если r.Pattern set (Go 1.22+ http.ServeMux заполняет это поле после
+//     route matching), используем его — это registered pattern, e.g.,
+//     "GET /users/{id}".  Удаляем method-prefix чтобы остался чистый path.
+//  2. Если r.Pattern пустой (request не прошёл через ServeMux или это
+//     доhomemade router), fallback к bounded path — берём первые 2 segments
+//     (например, /api/v1/users/123 → /api/v1).
+//  3. Edge cases:
+//     - r.URL.Path == "" → "/"
+//     - root "/" → "/"
+//     - /metrics, /healthz — passthrough (short paths).
 //
 // Гарантия: возвращаемое значение всегда bounded — ≤50 unique values per
 // service (проверяется scripts/cardinality_probe.py).

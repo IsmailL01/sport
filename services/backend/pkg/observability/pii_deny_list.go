@@ -32,7 +32,7 @@ import (
 //   - GPS:           lat, lon, latitude, longitude, coords, gps, location
 //   - DM content:    dm_content, message_body, body, content
 //   - Secrets:       mapbox_token, strava_token, jwt, access_token,
-//                    refresh_token, password
+//     refresh_token, password
 var PIIDenyList = map[string]struct{}{
 	// OTP — D-12 + D-13
 	"code":     {},
