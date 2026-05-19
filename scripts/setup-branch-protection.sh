@@ -24,7 +24,7 @@ command -v gh >/dev/null 2>&1 || { echo "gh CLI not installed. brew install gh";
 command -v jq >/dev/null 2>&1 || { echo "jq not installed. brew install jq"; exit 1; }
 
 echo "==> Applying branch protection to ${REPO}:${BRANCH}"
-echo "==> 9 required status checks (8 from Plan 04-02 + pii-audit from Plan 05-03)"
+echo "==> 10 required status checks (8 from Plan 04-02 + pii-audit from Plan 05-03 + cardinality-probe from Plan 05-04)"
 
 gh api -X PUT "repos/${REPO}/branches/${BRANCH}/protection" \
   -H "Accept: application/vnd.github+json" \
@@ -41,7 +41,8 @@ gh api -X PUT "repos/${REPO}/branches/${BRANCH}/protection" \
       "Secrets (gitleaks + trufflehog — PR diff)",
       "Docker build (no push, verify)",
       "Guard (no :latest)",
-      "PII Audit (slog grep)"
+      "PII Audit (slog grep)",
+      "Cardinality Probe (Prom labels)"
     ]
   },
   "enforce_admins": false,

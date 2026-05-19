@@ -1,28 +1,66 @@
+# Phase 5 / OBS-05 / D-19 — dev-default Prometheus scrape config.
+#
+# Dev path: docker-compose.observability.yml поднимает prom container на
+# host.docker.internal:9090; этот файл монтируется как /etc/prometheus/
+# prometheus.yml внутри контейнера; scrape targets указывают на 8 backend
+# services via host.docker.internal:<port> (Mac/Linux Docker Desktop).
+#
+# Prod path: prometheus.yml.j2 (Jinja2 шаблон) рендерится Ansible role
+# (Plan 05-06) под `services_ports` map + `prod_vps_ip` из group_vars/
+# sentry.yml. Тот же файл используется на sentry VPS Grafana side.
+#
+# Cardinality budget (D-18) обеспечивается:
+#   1. На уровне registration time — pkg/observability/metrics.go не
+#      определяет forbidden labels (user_id, session_id, ...).
+#   2. На уровне runtime — scripts/cardinality_probe.py проверяет
+#      /metrics output каждого сервиса.
+#   3. На уровне CI — backend-ci.yml `cardinality-probe` job блокирует
+#      merge при появлении forbidden label.
+#
+# Services + ports — single source of truth (см. также docker-compose.prod.yml):
+#   identity        8081
+#   activity-sync   8082
+#   messaging       8083  (был 8083 per messaging/cmd/server)
+#   social-graph    8084
+#   feed            8085  (per feed/cmd/server: FEED_HTTP_ADDR default :8085)
+#   media           8086  (per media/cmd/server: MEDIA_HTTP_ADDR default :8086)
+#   notifications   8087
+#   realtime-gw     8090  (был :8090 per realtime-gw/cmd/server)
+#
+# NOTE: gateway = Caddy reverse-proxy (services/backend/gateway/Caddyfile),
+# не Go-сервис. Caddy admin API на 2019 экспонирует свою метрику, но это
+# вне scope Plan 05-04; Plan 05-06 (Ansible) добавит Caddy scrape если
+# нужно.
+
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  external_labels:
+    env: 'dev'
 
 scrape_configs:
-  - job_name: identity
-    static_configs:
-      - targets: ["host.docker.internal:8081"]
-        labels:
-          service: identity
+  - job_name: 'sport-backend'
     metrics_path: /metrics
-    # /metrics endpoint в самих сервисах добавится в P3-B-01 через
-    # prometheus client_golang. Сейчас prometheus просто будет ругаться
-    # на 404 — это ОК для skeleton.
+    static_configs:
+      - targets:
+          - 'host.docker.internal:8081'   # identity
+          - 'host.docker.internal:8082'   # activity-sync
+          - 'host.docker.internal:8083'   # messaging
+          - 'host.docker.internal:8084'   # social-graph
+          - 'host.docker.internal:8085'   # feed
+          - 'host.docker.internal:8086'   # media
+          - 'host.docker.internal:8087'   # notifications
+          - 'host.docker.internal:8090'   # realtime-gw
+        labels:
+          env: 'dev'
 
-  - job_name: activity-sync
-    static_configs:
-      - targets: ["host.docker.internal:8082"]
-        labels:
-          service: activity-sync
-    metrics_path: /metrics
-
-  - job_name: gateway
-    static_configs:
-      - targets: ["host.docker.internal:8080"]
-        labels:
-          service: gateway
-    metrics_path: /metrics
+  # Per-service jobs дают возможность override scrape_interval per service
+  # если кто-то слишком cardinality-heavy в будущем. Сейчас дублируют
+  # sport-backend job — оставлены закомментированными, чтобы не двоить
+  # метрики (Prometheus dedup'ит по labels, но видимость двойная).
+  #
+  # - job_name: 'identity'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:8081']
+  #       labels: {service: 'identity'}
+  #   metrics_path: /metrics
