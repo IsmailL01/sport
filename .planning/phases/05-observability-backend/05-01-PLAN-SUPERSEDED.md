@@ -1,7 +1,10 @@
 ---
 phase: 05-observability-backend
 plan: 01
-type: execute
+type: SUPERSEDED
+status: scrapped
+superseded_by: docs/DECISIONS/0010-sentry-saas-and-colocation.md
+superseded_at: 2026-05-19
 wave: 1
 depends_on: []
 files_modified:
