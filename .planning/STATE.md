@@ -1,28 +1,24 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: ClosedBeta
+milestone_name: Closed Beta
 status: executing
 stopped_at: |
-  Phase 6 CONTEXT gathered 2026-05-20 (autonomous mode per memory
-  feedback_autonomous_discuss_mode — 22 decisions D-01..D-22 resolved from
-  prior-phase patterns + closed-beta lean scope per ADR-0011). Commit:
-  39273e2. SOPS layout = single `.secrets/prod/mobile-signing.yaml` (base64
-  inside YAML); keystore = solo-workstation one-shot, RSA 4096, 100y; 2
-  VeraCrypt USB backups co-locating age key + signing bundle; Apple Dev
-  Individual ($99/yr); self-managed iOS creds (not EAS Cloud-managed) per
-  Phase 4 "no vendor lock-in" pattern; ASC API key role = App Manager. Plan
-  06-01 → 06-02 strict serial (shared SOPS file). Phase 6 also unblocks
-  deferred Phase 2 Mapbox `pk.` Bundle ID + SHA-256 restriction (D-19).
-  Next: /gsd-plan-phase 6 (with --research-phase if Apple Dev portal flow
-  needs investigation, otherwise straight to plan).
-last_updated: "2026-05-20T22:30:00.000Z"
+  Phase 6 execution started 2026-05-20. Wave 1 = Plan 06-01 (Android keystore
+  + SOPS write + SHA-256 evidence + docs/SECRETS.md recovery section +
+  encrypted-DMG creation) dispatched. Plan 06-01 is autonomous=false; Tasks
+  0-5 run autonomously, Task 6 = USER ACTION (place 2× USB backups at 2
+  physical locations + attest readback), Task 7 = closeout.
+  Wave 2 = Plan 06-02 (iOS Apple Dev — 2-7 week pause at Task 0 USER ACTION
+  for enrollment per RESEARCH §1 SLA degradation).
+  Plans + research + check passed PASS-WITH-NITS 2026-05-20 (commit 6d95819).
+last_updated: "2026-05-20T23:00:00.000Z"
 progress:
   total_phases: 9
   completed_phases: 5
-  total_plans: 23
+  total_plans: 25
   completed_plans: 23
-  percent: 56
+  percent: 52
 ---
 
 # Project State
@@ -34,18 +30,18 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 **Milestone:** v1.0 Closed Beta — IN PROGRESS, **REDEFINED 2026-05-20** per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) (was 21-phase enterprise-hardening, retired). Closed beta = solo dev shipping to 5-10 friend testers via TestFlight + self-hosted Android channel. Target close: tag `v1.0.0-beta.1` published + 72h watchlist clean (no P0). No formal soak gate.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** Phase 6 — Release signing (next, ready to plan)
+**Current focus:** Phase 6 — release-signing
 
 **Brownfield note:** Codebase remains on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors + Phases 1-5 of v1.0 hardening on top). Old planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`. 21-phase scope archive at `.planning/phases/_archive/superseded-21-phase-v1.0/`.
 
 ## Current Position
 
-Phase: **05 CLOSED 2026-05-20** — all 6 plans shipped (Task 6 acceptance walkthrough deferred to Phase 9 per ADR-0011)
-Plan: 6 of 6 ✓
+Phase: 6 (release-signing) — EXECUTING
+Plan: 1 of 2
 Last completed: **Plan 05-06** — DebugSessionMiddleware + Alloy alloy-shipper role + pii_live_probe.py + ADR-0009 + observability RUNBOOK (5 commits ce6cf01..eb28259, 2026-05-20). Task 6 walkthrough conditionally deferred — re-trigger if Phase 9 watchlist exercises the observability stack and finds Alloy not shipping logs. Prior: Plan 05-05 — OTel OTLP/HTTP + sentry-go SDK + D-38 dormant guard.
 
 **Next phase (open):** Phase 6 — Release signing. `shared` workstream. CONTEXT.md gathered (22 D-NN decisions). Ready for planning via `/gsd-plan-phase 6`.
-Status: Phase 6 ready to plan (CONTEXT captured)
+Status: Executing Phase 6
 
 Progress: [▓▓▓▓▓░░░░░] ~56% of new closed-beta scope (5 of 9 phases done, 23 of ~26 estimated plans complete)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation now folded into Phase 7 STAB-01 (Pixel + iPhone 1h pocket-walk smoke).
