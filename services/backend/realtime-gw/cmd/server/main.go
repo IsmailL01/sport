@@ -72,6 +72,29 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Phase 5 / Plan 05-05 / D-32 / D-38 — Sentry SDK + OTel TracerProvider.
+	// Empty SENTRY_DSN_BACKEND → no-op closures (ADR-0010 amendment 2026-05-19 PM).
+	// WS specifics: SentryRecoveryMiddleware + OtelHTTPMiddleware oба
+	// проксируют Hijacker/Flusher (out-of-the-box upstream behavior + наш
+	// headerWroteRecorder wrapper); WS upgrade работает через всю chain.
+	sentryShutdown := observability.MustInitSentry(observability.SentryConfig{
+		DSN:         os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:         envOr("ENV", "prod"),
+		Release:     envOr("BUILD_VERSION", "dev"),
+		ServiceName: serviceName,
+		SampleRate:  1.0,
+	})
+	defer sentryShutdown()
+
+	tracerShutdown := observability.MustInitTracer(ctx, observability.TracerConfig{
+		ServiceName:  serviceName,
+		OtlpEndpoint: os.Getenv("SENTRY_OTLP_ENDPOINT"),
+		SentryDSN:    os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:          envOr("ENV", "prod"),
+		Release:      envOr("BUILD_VERSION", "dev"),
+	})
+	defer tracerShutdown()
+
 	nc, err := nats.Connect(natsURL,
 		nats.Name("realtime-gw"),
 		nats.MaxReconnects(-1),
@@ -138,7 +161,13 @@ func run() error {
 	mux.Handle("/", handler.Routes())
 
 	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
-	rootHandler := observability.PromhttpMiddleware(serviceName, versionedMux)
+	// Phase 5 / Plan 05-05 / D-32 — Promhttp(outer) → SentryRecovery → OtelHTTP →
+	// clientversion → mux. Все middleware'ы поддерживают Hijacker passthrough
+	// для WS upgrade (см. SentryRecoveryMiddleware doc-comment + statusRecorder
+	// в promhttp_middleware.go).
+	rootHandler := observability.PromhttpMiddleware(serviceName,
+		observability.SentryRecoveryMiddleware(
+			observability.OtelHTTPMiddleware(serviceName, versionedMux)))
 
 	srv := &http.Server{
 		Addr:              addr,

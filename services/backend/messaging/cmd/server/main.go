@@ -73,6 +73,26 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Phase 5 / Plan 05-05 / D-32 / D-38 — Sentry SDK + OTel TracerProvider.
+	// Empty SENTRY_DSN_BACKEND → no-op closures (ADR-0010 amendment 2026-05-19 PM).
+	sentryShutdown := observability.MustInitSentry(observability.SentryConfig{
+		DSN:         os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:         envOr("ENV", "prod"),
+		Release:     envOr("BUILD_VERSION", "dev"),
+		ServiceName: serviceName,
+		SampleRate:  1.0,
+	})
+	defer sentryShutdown()
+
+	tracerShutdown := observability.MustInitTracer(ctx, observability.TracerConfig{
+		ServiceName:  serviceName,
+		OtlpEndpoint: os.Getenv("SENTRY_OTLP_ENDPOINT"),
+		SentryDSN:    os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:          envOr("ENV", "prod"),
+		Release:      envOr("BUILD_VERSION", "dev"),
+	})
+	defer tracerShutdown()
+
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		return fmt.Errorf("connect db: %w", err)
@@ -138,7 +158,11 @@ func run() error {
 	mux.Handle("/", h.Routes())
 
 	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
-	rootHandler := observability.PromhttpMiddleware(serviceName, versionedMux)
+	// Phase 5 / Plan 05-05 / D-32 — Promhttp(outer) → SentryRecovery → OtelHTTP →
+	// clientversion → mux.
+	rootHandler := observability.PromhttpMiddleware(serviceName,
+		observability.SentryRecoveryMiddleware(
+			observability.OtelHTTPMiddleware(serviceName, versionedMux)))
 
 	srv := &http.Server{
 		Addr:              addr,

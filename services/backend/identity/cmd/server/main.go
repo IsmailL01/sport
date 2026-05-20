@@ -97,6 +97,28 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Phase 5 / Plan 05-05 / D-32 / D-38 — Sentry SDK + OTel TracerProvider.
+	// Empty SENTRY_DSN_BACKEND → both Must*Init log INFO "disabled — empty
+	// DSN" + return no-op closure (ADR-0010 amendment 2026-05-19 PM —
+	// Sentry SaaS activation deferred to post-v1.0).
+	sentryShutdown := observability.MustInitSentry(observability.SentryConfig{
+		DSN:         os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:         envOr("ENV", "prod"),
+		Release:     envOr("BUILD_VERSION", "dev"),
+		ServiceName: serviceName,
+		SampleRate:  1.0,
+	})
+	defer sentryShutdown()
+
+	tracerShutdown := observability.MustInitTracer(ctx, observability.TracerConfig{
+		ServiceName:  serviceName,
+		OtlpEndpoint: os.Getenv("SENTRY_OTLP_ENDPOINT"),
+		SentryDSN:    os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:          envOr("ENV", "prod"),
+		Release:      envOr("BUILD_VERSION", "dev"),
+	})
+	defer tracerShutdown()
+
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		return fmt.Errorf("connect db: %w", err)
@@ -141,7 +163,14 @@ func run() error {
 	mux.Handle("/", h.Routes())
 
 	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
-	rootHandler := observability.PromhttpMiddleware(serviceName, versionedMux)
+	// Phase 5 / Plan 05-05 / D-32 — middleware chain (outermost first):
+	//   Promhttp → SentryRecovery → OtelHTTP → clientversion → mux
+	// Promhttp остаётся outermost (Plan 05-04) — измеряет wall-clock включая
+	// OTel/Sentry overhead. SentryRecovery → OtelHTTP → clientversion → routes
+	// идут внутрь. Plan 05-06 добавит DebugSession outermost-most.
+	rootHandler := observability.PromhttpMiddleware(serviceName,
+		observability.SentryRecoveryMiddleware(
+			observability.OtelHTTPMiddleware(serviceName, versionedMux)))
 
 	srv := &http.Server{
 		Addr:              addr,
