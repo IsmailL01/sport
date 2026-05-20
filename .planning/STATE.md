@@ -1,24 +1,43 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: Closed Beta
-status: executing
+milestone_name: AndroidClosedBeta
+status: paused
 stopped_at: |
-  Phase 6 execution started 2026-05-20. Wave 1 = Plan 06-01 (Android keystore
-  + SOPS write + SHA-256 evidence + docs/SECRETS.md recovery section +
-  encrypted-DMG creation) dispatched. Plan 06-01 is autonomous=false; Tasks
-  0-5 run autonomously, Task 6 = USER ACTION (place 2× USB backups at 2
-  physical locations + attest readback), Task 7 = closeout.
-  Wave 2 = Plan 06-02 (iOS Apple Dev — 2-7 week pause at Task 0 USER ACTION
-  for enrollment per RESEARCH §1 SLA degradation).
-  Plans + research + check passed PASS-WITH-NITS 2026-05-20 (commit 6d95819).
-last_updated: "2026-05-20T23:00:00.000Z"
+  Phase 6 PAUSED pre-execution 2026-05-20 PM. Scope re-cut twice in one day
+  before any Plan 06-01 tasks ran:
+  (1) ADR-0011 Amendment 2026-05-20 PM (lean key custody): Plan 06-01 Tasks 5+6
+      rewritten — was bank-grade 2× encrypted-DMG USB sticks at ≥5 km separation
+      + laminated cards + 1Password sealed DMG passphrase + 7-step placement
+      attestation; now single cloud backup (iCloud Drive default) + single
+      printed RECOVERY-CARD.md at home + cross-device sync verification + 3-line
+      attestation. Bank-grade ceremony deferred to PROD-LAUNCH-PREP in v1.0.1
+      backlog (gated on beta passing >50 users).
+  (2) ADR-0011 Amendment 3 2026-05-20 PM (Android-first launch): iOS sub-plans
+      (06-02 Apple Dev / 07-02 EAS iOS / 08-02 TestFlight / iOS portions of
+      STAB-01 + LAUNCH-02) DEFERRED to post-Android-beta milestone. Apple
+      Developer Program enrollment NOT started (was the 2-7 week external SLA
+      bottleneck). Plan + research + context artifacts for 06-02 stay on disk
+      unchanged — reactivation = un-flag in ROADMAP + REQUIREMENTS only.
+  Active scope for v1.0 = Android-only:
+    Phase 6 → Plan 06-01 only (Android keystore + cloud backup)
+    Phase 7 → Plan 07-01 + Android-only 07-03 (BUILD-01 + STAB-01 Android)
+    Phase 8 → Plan 08-01 only (Caddy manifest + signed-URL APKs)
+    Phase 9 → 09-01 + 09-02 Android-only (LAUNCH-01..02 Android)
+  Re-expansion: iOS arm activates when Android beta stabilizes (≥3 consecutive
+  weeks with no P0 reports) OR explicit user decision.
+  Ready to resume: `/gsd-execute-phase 6` (will run Plan 06-01 alone; Plan 06-02
+  flagged deferred in ROADMAP, executor will skip it).
+last_updated: "2026-05-20T23:30:00.000Z"
 progress:
   total_phases: 9
   completed_phases: 5
-  total_plans: 25
+  total_plans: 24
   completed_plans: 23
-  percent: 52
+  percent: 54
+  active_phase: 6
+  active_plans_in_phase: 1
+  deferred_plans_in_phase: 1
 ---
 
 # Project State
@@ -28,22 +47,22 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-05-15 — milestone v1.0 redefined)
 See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress)
 
-**Milestone:** v1.0 Closed Beta — IN PROGRESS, **REDEFINED 2026-05-20** per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) (was 21-phase enterprise-hardening, retired). Closed beta = solo dev shipping to 5-10 friend testers via TestFlight + self-hosted Android channel. Target close: tag `v1.0.0-beta.1` published + 72h watchlist clean (no P0). No formal soak gate.
+**Milestone:** v1.0 Android Closed Beta — IN PROGRESS, **REDEFINED 2026-05-20** per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) (was 21-phase enterprise-hardening, retired), **AMENDED 2026-05-20 PM** per [ADR-0011 Amendment 3](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md#amendment-3-2026-05-20-pm--android-first-launch-ios-deferred) to Android-first launch (iOS deferred to post-Android-beta milestone). Closed beta = solo dev shipping to 5-10 Android friend testers via self-hosted Caddy manifest. Target close: tag `v1.0.0-beta.1` published + 72h watchlist clean (no P0). No formal soak gate.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** Phase 6 — release-signing
+**Current focus:** Phase 6 — release-signing (Android only per ADR-0011 Amendment 3; Plan 06-01 active, Plan 06-02 deferred)
 
 **Brownfield note:** Codebase remains on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors + Phases 1-5 of v1.0 hardening on top). Old planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`. 21-phase scope archive at `.planning/phases/_archive/superseded-21-phase-v1.0/`.
 
 ## Current Position
 
-Phase: 6 (release-signing) — EXECUTING
-Plan: 1 of 2
+Phase: 6 (release-signing) — PAUSED pre-execution; scope amended twice 2026-05-20 PM
+Plan: Plan 06-01 active (Android keystore + cloud backup + RECOVERY-CARD); Plan 06-02 DEFERRED per ADR-0011 Amendment 3
 Last completed: **Plan 05-06** — DebugSessionMiddleware + Alloy alloy-shipper role + pii_live_probe.py + ADR-0009 + observability RUNBOOK (5 commits ce6cf01..eb28259, 2026-05-20). Task 6 walkthrough conditionally deferred — re-trigger if Phase 9 watchlist exercises the observability stack and finds Alloy not shipping logs. Prior: Plan 05-05 — OTel OTLP/HTTP + sentry-go SDK + D-38 dormant guard.
 
-**Next phase (open):** Phase 6 — Release signing. `shared` workstream. CONTEXT.md gathered (22 D-NN decisions). Ready for planning via `/gsd-plan-phase 6`.
-Status: Executing Phase 6
+**Next phase (open):** Phase 6 — Release signing (Android only). `shared` workstream. CONTEXT.md gathered (22 D-NN decisions, amended 2026-05-20 PM for lean key custody + Android-first). PLAN files exist (`06-01-PLAN.md` Tasks 5+6 rewritten for cloud backup; `06-02-PLAN.md` stays on disk but deferred per ADR-0011 Amendment 3). Ready for `/gsd-execute-phase 6` (executor runs Plan 06-01 alone; Plan 06-02 deferred-flag in ROADMAP causes executor to skip).
+Status: Paused — ready to resume
 
-Progress: [▓▓▓▓▓░░░░░] ~56% of new closed-beta scope (5 of 9 phases done, 23 of ~26 estimated plans complete)
+Progress: [▓▓▓▓▓░░░░░] ~54% of v1.0 Android-only scope (5 of 9 phases done, 23 of 24 active plans complete; 1 iOS plan deferred per Amendment 3)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation now folded into Phase 7 STAB-01 (Pixel + iPhone 1h pocket-walk smoke).
 
 ## Performance Metrics

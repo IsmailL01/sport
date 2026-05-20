@@ -2,17 +2,19 @@
 
 ## What This Is
 
-Мобильная экосистема для **полупрофессиональных бегунов** (iOS + Android): точный GPS-трекинг с игровой механикой «захвата территории», структурированные тренировки, интеграции с часами/HealthKit/HealthConnect/Strava, социальный слой (чаты/лента/истории/модерация) и серверный backend на Go. **Команда: 1 разработчик (solo dev, был 2 — см. ADR-0011).** Целевой пользователь — атлет, который сравнивает свои данные с Garmin и ждёт точности Strava + аналитики TrainingPeaks. **Первый релиз: closed beta для 5-10 друзей (TestFlight + self-hosted Android channel), не публичный launch.**
+Мобильная экосистема для **полупрофессиональных бегунов** (Android для v1.0 closed beta; iOS отложен до post-Android-beta milestone per [ADR-0011 Amendment 3](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md)): точный GPS-трекинг с игровой механикой «захвата территории», структурированные тренировки, интеграции с часами/HealthConnect/Strava, социальный слой (чаты/лента/истории/модерация) и серверный backend на Go. **Команда: 1 разработчик (solo dev, был 2 — см. ADR-0011).** Целевой пользователь — атлет, который сравнивает свои данные с Garmin и ждёт точности Strava + аналитики TrainingPeaks. **Первый релиз: Android closed beta для 5-10 друзей через self-hosted Caddy manifest, не публичный launch. iOS arm возвращается, когда Android beta стабилизируется ИЛИ по explicit user decision (см. ADR-0011 Amendment 3 re-expansion triggers).**
 
 ## Core Value
 
 **Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю.** Если всё остальное падает, это должно работать офлайн, точно, и без сбоев фоновой записи на 30-минутной пробежке.
 
-## Current Milestone: v1.0 Closed Beta
+## Current Milestone: v1.0 Android Closed Beta
 
-**Redefined:** 2026-05-20 per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) — scope cut from "21-phase enterprise-hardening" to "**closed-beta release in 4 lean phases**" on top of what already shipped. Solo dev (was 2). Target audience: 5-10 friend testers, not public launch. The earlier 21-phase scope was right-sized for a funded team, not a solo dev; archive at `.planning/phases/_archive/superseded-21-phase-v1.0/`.
+**Redefined:** 2026-05-20 per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) — scope cut from "21-phase enterprise-hardening" to "**closed-beta release in 4 lean phases**" on top of what already shipped. Solo dev (was 2). Target audience: 5-10 friend testers, not public launch.
 
-**Goal:** Take Running Ecosystem from "Phase 5 code-complete on `feat/cursona-redesign`, prod backend deployed on single VPS at `148-253-214-156.sslip.io`" → "**signed iOS + Android release builds in the hands of 5-10 friends, with 72h watchlist via Loki**." Ship-when-stable, no formal soak gate.
+**Amended:** 2026-05-20 PM per [ADR-0011 Amendment 3](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md#amendment-3-2026-05-20-pm--android-first-launch-ios-deferred) — **Android-first launch.** iOS sub-plans (06-02 / 07-02 / 08-02 / iOS portions of STAB-01 + LAUNCH-02) deferred to post-Android-beta milestone. Apple Developer enrollment 2-7 week external SLA was the critical-path blocker; Android side has zero external dependencies. Plan + research artifacts stay on disk; reactivation = un-flag in ROADMAP + REQUIREMENTS.
+
+**Goal:** Take Running Ecosystem from "Phase 5 code-complete on `feat/cursona-redesign`, prod backend deployed on single VPS at `148-253-214-156.sslip.io`" → "**signed Android release build in the hands of 5-10 friends, with 72h watchlist via Loki**." Ship-when-stable, no formal soak gate. iOS arm follows in a later milestone.
 
 **Structure:** **4 remaining phases on top of Phases 1-5 already done.** Strict order: 6 → 7 → 8 → 9.
 
@@ -23,10 +25,10 @@
 | [x] **3** Infrastructure as code (single-VPS Ansible) | backend | INFRA-01/03/05/07 — DONE 2026-05-17 |
 | [x] **4** CI/CD pipeline | backend | CICD-01..06 — DONE 2026-05-18 (cosign/SLSA best-effort per ADR-0011) |
 | [x] **5** Observability backend | backend | OBS-01/03..07 — DONE 2026-05-20 (Sentry SaaS dormant per D-38; mobile OBS-08 UX dropped per ADR-0011) |
-| [ ] **6** Release signing | shared | SIGN-01..02 — Android keystore + iOS Apple Dev certs |
-| [ ] **7** Release builds + mobile stability | mobile-shared | BUILD-01..02 + STAB-01 — EAS production profiles + foreground service + iOS SLC; MIUI + One UI only, rest = monitor in beta |
-| [ ] **8** Closed-beta distribution | shared | DIST-01..02 — Android signed-JSON manifest + iOS TestFlight |
-| [ ] **9** Closed-beta launch | shared | LAUNCH-01..02 — smoke test on 2 devices → invite 5-10 testers → 72h watchlist via `scripts/debug-tail.sh` |
+| [ ] **6** Release signing | shared | SIGN-01 — Android keystore + cloud backup + RECOVERY-CARD. _SIGN-02 (iOS) DEFERRED per ADR-0011 Amendment 3._ |
+| [ ] **7** Release builds + mobile stability | mobile-shared | BUILD-01 + STAB-01 (Android) — EAS Android production + foreground service + MIUI + One UI mitigations. _BUILD-02 + iOS SLC portion DEFERRED per ADR-0011 Amendment 3._ |
+| [ ] **8** Closed-beta distribution | shared | DIST-01 — Android signed-JSON manifest via Caddy. _DIST-02 (iOS TestFlight) DEFERRED per ADR-0011 Amendment 3._ |
+| [ ] **9** Closed-beta launch | shared | LAUNCH-01..02 (Android-only) — Android smoke test + invite 5-10 Android testers + 72h watchlist via `scripts/debug-tail.sh`. _iOS tester arm DEFERRED per ADR-0011 Amendment 3._ |
 
 **Dropped from v1.0 per ADR-0011** (preserved as audit trail in REQUIREMENTS.md §Dropped per ADR-0011 + ROADMAP.md "Archived Phases"):
 - Edge protection + rate-limiting (EDGE-*) — `/auth/*` rate-limit gap moved to v1.0.1 backlog
@@ -48,8 +50,8 @@
 - No telemetry event that could correlate a runner to a location they ran; default to NOT sending
 - Release APK/IPA reproducibility = best-effort, not gated (per ADR-0011)
 
-**Milestone open date:** 2026-05-14 (formalized 2026-05-15 as 21-phase scope; redefined 2026-05-20 to closed-beta lean per ADR-0011)
-**Milestone target close:** Tag `v1.0.0-beta.1` published to 5-10 closed-beta testers; 72h watchlist clean (no P0). No formal soak gate.
+**Milestone open date:** 2026-05-14 (formalized 2026-05-15 as 21-phase scope; redefined 2026-05-20 to closed-beta lean per ADR-0011; further amended 2026-05-20 PM to Android-first per ADR-0011 Amendment 3)
+**Milestone target close:** Tag `v1.0.0-beta.1` published to 5-10 Android closed-beta testers; 72h watchlist clean (no P0). No formal soak gate. iOS arm reactivates in a later milestone per ADR-0011 Amendment 3 re-expansion triggers.
 **Tracked in:** [.planning/MILESTONES.md](.planning/MILESTONES.md) (v1.0 IN-PROGRESS)
 
 ## Requirements

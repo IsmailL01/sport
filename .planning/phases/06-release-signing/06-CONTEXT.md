@@ -186,5 +186,24 @@ Generate, encrypt, and back up the **two most-critical secrets** in the project 
 
 ---
 
+## Post-CONTEXT amendment 2026-05-20 PM — Lean key custody
+
+Per ADR-0011 §"Amendment 2026-05-20 PM — Lean key custody", the following CONTEXT decisions are **partially superseded** for v1.0 closed-beta scope:
+
+- **D-07 (2 VeraCrypt USB sticks, ≥5 km separation, laminated paper RECOVERY-CARDs):** SUPERSEDED. Replaced with: **1 cloud backup** of the SOPS-encrypted `mobile-signing.yaml` + age key file to user-chosen cloud (iCloud Drive / Google Drive / Dropbox). Plus **1 printed RECOVERY-CARD.md** kept with personal documents at home (no lamination). Age key passphrase recovery path is the existing Phase 2 D-04 1Password sealed entry (no new 1Password entry needed for DMG passphrase since DMG is removed).
+
+- **D-15 (4 recovery scenarios):** Scenario (a) "USB restore" SOFTENED to "cloud download + age key from 1Password" — same 4-scenario structure, just one wording update. Scenarios (b)/(c)/(d) unchanged.
+
+- **D-08 (passwords stored alongside encrypted DMG):** Not applicable — no DMG container layer. Keystore + key passwords stay in SOPS YAML fields as before. Age key passphrase stays in 1Password per Phase 2 D-04.
+
+**Why amended:** D-07 inherited a bank-grade rigor pattern from Phase 2 D-04, which itself was designed for the 21-phase scope. Re-evaluated under the closed-beta lens (5-10 friend testers; keystore loss = re-release inconvenience, not catastrophe; SOPS+age = the encryption envelope, NOT the storage medium), the 2-USB ceremony is over-engineered. See ADR-0011 §"Amendment 2026-05-20 PM" for the full reasoning + comparison table.
+
+**Promotion path:** `PROD-LAUNCH-PREP` in `.planning/ROADMAP.md §v1.0.1 Backlog` — re-apply bank-grade procedure when beta passes 50 users. No re-keying needed.
+
+**Files affected:** `06-01-PLAN.md` Tasks 5+6 rewritten; `06-VALIDATION.md` per-task map for Tasks 5-6 updated; this CONTEXT amendment block.
+
+---
+
 *Phase: 6-release-signing*
 *Context gathered: 2026-05-20 (autonomous mode — 22 decisions resolved from prior-phase patterns + closed-beta lean scope per ADR-0011)*
+*Amended: 2026-05-20 PM — D-07/D-08/D-15(a) partially superseded by ADR-0011 lean key custody amendment*

@@ -4,11 +4,11 @@
 **Milestone redefined:** 2026-05-20 per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) (was 21-phase enterprise-hardening scope from 2026-05-15)
 **Core Value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
 
-**Scope note:** This document tracks REQ-IDs across **Phases 1-9 of the closed-beta scope**. Phases 1-5 already shipped (REL/SEC/INFRA/CICD/OBS). Phases 6-9 (SIGN/BUILD/STAB/DIST/LAUNCH) remain. Many REQ-IDs from the retired 21-phase scope are **flagged "dropped per ADR-0011"** below — preserved for audit trail, not active scope.
+**Scope note:** This document tracks REQ-IDs across **Phases 1-9 of the closed-beta scope**. Phases 1-5 already shipped (REL/SEC/INFRA/CICD/OBS). Phases 6-9 (SIGN/BUILD/STAB/DIST/LAUNCH) remain. Many REQ-IDs from the retired 21-phase scope are **flagged "dropped per ADR-0011"** below — preserved for audit trail, not active scope. Additional flag: **iOS REQ-IDs flagged "deferred per ADR-0011 Amendment 3 (Android-first)"** — iOS work moves to a post-Android-beta milestone.
 
 ## v1.0 Requirements
 
-Total: **96 REQ-IDs originally enumerated; ~64 IDs across the dropped phases are now flagged "dropped per ADR-0011"**. Active scope per current ROADMAP.md: REL-01..05 + SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 + OBS-01/03..07 (OBS-02/08 dropped or amended) + SIGN-01..02 + BUILD-01..02 + STAB-01 + DIST-01..02 + LAUNCH-01..02.
+Total: **96 REQ-IDs originally enumerated; ~64 IDs across the dropped phases are now flagged "dropped per ADR-0011"; additional iOS sub-set (SIGN-02 + BUILD-02 + DIST-02 + iOS portions of STAB-01/LAUNCH-02) flagged "deferred per ADR-0011 Amendment 3 (Android-first launch)"**. Active scope for v1.0 Android closed beta: REL-01..05 + SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 + OBS-01/03..07 (OBS-02/08 dropped or amended) + SIGN-01 + BUILD-01 + STAB-01 (Android-only) + DIST-01 + LAUNCH-01..02 (Android-only).
 
 ### Phase 1 — Release Contract & Version Baseline (REL)
 
@@ -69,23 +69,23 @@ Total: **96 REQ-IDs originally enumerated; ~64 IDs across the dropped phases are
 ### Phase 6 — Release Signing (SIGN)
 
 - [ ] **SIGN-01**: Android release keystore — generated offline (single workstation, deleted from disk after encryption); encrypted to `.secrets/android-release.keystore.sops`; **2 offline physical backups in separate physical locations**; recovery playbook in `docs/SECRETS.md` §"Android Keystore Loss"
-- [ ] **SIGN-02**: iOS Apple Developer Program enrolled; distribution certificate (private key in SOPS); distribution provisioning profile for app bundle ID; ASC API key (P8 file) in SOPS for unattended TestFlight uploads; EAS-managed-credentials vs fastlane-Match decision in `docs/SECRETS.md` §"iOS signing"
+- [ ] ~~**SIGN-02**~~ **DEFERRED per ADR-0011 Amendment 3 (Android-first launch).** Was: iOS Apple Developer Program enrolled; distribution certificate (private key in SOPS); distribution provisioning profile for app bundle ID; ASC API key (P8 file) in SOPS for unattended TestFlight uploads; EAS-managed-credentials vs fastlane-Match decision in `docs/SECRETS.md` §"iOS signing". Re-trigger: Android beta stabilizes OR explicit user decision to start iOS. Plan `06-02-PLAN.md` stays on disk; reactivated by un-flagging this entry.
 
 ### Phase 7 — Release Builds + Mobile Stability (BUILD + STAB)
 
 - [ ] **BUILD-01**: EAS `production` profile (Android) — points at production backend; R8 + ProGuard verified (no strip Mapbox JNI / MMKV / react-native-health JNI / Hermes / expo-task-manager); `arm64-v8a` only (drop `armeabi-v7a` per ADR-0011)
-- [ ] **BUILD-02**: EAS `production` profile (iOS) — Hermes enabled, bitcode disabled, staging↔prod flavor switching, iOS 16+ baseline
-- [ ] **STAB-01**: Background reliability — Android foreground service notification visible; iOS SLC fallback works on app foregrounding; MIUI + One UI mitigations only (in-app auto-start dialog + battery-saver-kill recovery via `recoverLast`); 4-vendor matrix from old Phase 16 deferred — monitor remaining vendors during beta. 1-hour pocket-walk session on Pixel + iPhone records ≥95% of expected GPS points.
+- [ ] ~~**BUILD-02**~~ **DEFERRED per ADR-0011 Amendment 3 (Android-first launch).** Was: EAS `production` profile (iOS) — Hermes enabled, bitcode disabled, staging↔prod flavor switching, iOS 16+ baseline. Re-trigger: same as SIGN-02 above.
+- [ ] **STAB-01** (Android-only per ADR-0011 Amendment 3): Background reliability — Android foreground service notification visible; MIUI + One UI mitigations only (in-app auto-start dialog + battery-saver-kill recovery via `recoverLast`); 4-vendor matrix from old Phase 16 deferred — monitor remaining vendors during beta. 1-hour pocket-walk session on Pixel records ≥95% of expected GPS points. _iOS SLC portion DEFERRED per ADR-0011 Amendment 3._
 
 ### Phase 8 — Closed-Beta Distribution (DIST)
 
 - [ ] **DIST-01**: Android self-hosted update channel — Caddy serves `/android/manifest.json` (Ed25519-signed) with latest version + APK signed-URL + min-supported-version + force-update flag; APKs on Hetzner Storage Box behind 24h signed URLs (regenerated per request); in-app check-on-launch + Settings "Check for updates" both verify signature; force-update path blocks app usage when `min-supported > installed`
-- [ ] **DIST-02**: iOS TestFlight pipeline — `.github/workflows/ios-release.yml` triggers on `v1.0-*` tags; auto-bumps CFBundleVersion; uploads to internal TestFlight group via ASC API; closed-beta testers seeded by Apple ID
+- [ ] ~~**DIST-02**~~ **DEFERRED per ADR-0011 Amendment 3 (Android-first launch).** Was: iOS TestFlight pipeline — `.github/workflows/ios-release.yml` triggers on `v1.0-*` tags; auto-bumps CFBundleVersion; uploads to internal TestFlight group via ASC API; closed-beta testers seeded by Apple ID. Re-trigger: same as SIGN-02 above.
 
 ### Phase 9 — Closed-Beta Launch (LAUNCH)
 
 - [ ] **LAUNCH-01**: Solo-dev smoke — tag `v1.0.0-beta.1` → CI publishes Android APK to Caddy manifest + iOS build to TestFlight internal group; install on own Android + own/friend iPhone; complete 1 full GPS-track session per platform; no crashes; no data loss
-- [ ] **LAUNCH-02**: Closed-beta watchlist — invite 5-10 testers (TestFlight + Android manifest URL); 72h triage via `scripts/debug-tail.sh <user-id>` (Loki on `srv1561293`); feedback intake decided in plan (GitHub Issues template OR Telegram channel); P0 surfaces → hotfix → re-tag → re-distribute; ship-when-stable (no formal soak gate)
+- [ ] **LAUNCH-02** (Android-only per ADR-0011 Amendment 3): Closed-beta watchlist — invite 5-10 Android testers (Caddy manifest URL); 72h triage via `scripts/debug-tail.sh <user-id>` (Loki on `srv1561293`); feedback intake decided in plan (GitHub Issues template OR Telegram channel); P0 surfaces → hotfix → re-tag → re-distribute; ship-when-stable (no formal soak gate). _iOS TestFlight tester arm DEFERRED per ADR-0011 Amendment 3._
 
 ---
 
@@ -246,9 +246,9 @@ Per user redline: "Old REQ-IDs (except HEALTH-04) move to v1.1+ in REQUIREMENTS.
 | CICD-01..06 | Phase 4: CI/CD | **Complete** 2026-05-18 (Plans 04-01..06). Cosign/SLSA kept wired, best-effort per ADR-0011. |
 | OBS-01/03..07 | Phase 5: Observability backend | **Complete** 2026-05-20 (Plans 05-02..07). OBS-02 deferred per ADR-0010; OBS-08 mobile UX dropped per ADR-0011 (backend seam shipped; env-allowlist refactor lazy). |
 | SIGN-01..02 | Phase 6: Release signing | Pending |
-| BUILD-01..02 + STAB-01 | Phase 7: Release builds + mobile stability | Pending |
-| DIST-01..02 | Phase 8: Closed-beta distribution | Pending |
-| LAUNCH-01..02 | Phase 9: Closed-beta launch | Pending |
+| BUILD-01 + STAB-01 (Android-only) | Phase 7: Release builds + mobile stability | Pending. _BUILD-02 + iOS portion of STAB-01 DEFERRED per ADR-0011 Amendment 3._ |
+| DIST-01 | Phase 8: Closed-beta distribution | Pending. _DIST-02 DEFERRED per ADR-0011 Amendment 3._ |
+| LAUNCH-01..02 (Android-only) | Phase 9: Closed-beta launch | Pending. _iOS tester arm of LAUNCH-02 DEFERRED per ADR-0011 Amendment 3._ |
 
 **Dropped per ADR-0011 (preserved above for audit trail):** EDGE-01..05, DB-01..08, LOAD-01..06, AND-SIGN-01..05, IOS-SIGN-01..05, AND-BUILD-01..06, IOS-BUILD-01..05, HEALTH-04, MAPBOX11-01..05, AND-NATIVE-01..05, IOS-NATIVE-01..03, BG-01..08, CRASH-01..06, AND-DIST-01..06, IOS-DIST-01..04, DEVICES-01..08, E2E-01..07.
 

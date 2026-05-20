@@ -5,6 +5,9 @@
 **Decider:** Solo dev (Ismail)
 **Supersedes scope of:** ROADMAP.md (was 21-phase v1.0 hardening, 2026-05-15..2026-05-20)
 **Related:** ADR-0010 (Sentry SaaS + colocation, with PM amendment D-38 deferring Sentry activation)
+**Amendments:**
+- 2026-05-20 PM — Lean key custody principle (Phase 6 Plan 06-01 Tasks 5-6 rewrite; see §"Amendment 2026-05-20 PM — Lean key custody" below)
+- 2026-05-20 PM (later) — Android-first launch (iOS sub-plans deferred from v1.0; see §"Amendment 3 2026-05-20 PM — Android-first launch" below)
 
 ## Context
 
@@ -119,3 +122,104 @@ Revisit `.planning/phases/_archive/superseded-21-phase-v1.0/` if any of:
 - Update `.planning/STATE.md`: Phase 5 done, Phase 6 next
 
 **Not touched:** existing Phase 1-4 commits, `backend-cd.yml` cosign step, rollback Makefile, SOPS secrets, Ansible playbooks. Those ship as-is.
+
+---
+
+## Amendment 2026-05-20 PM — Lean key custody (Phase 6 Plan 06-01 Tasks 5-6 rewrite)
+
+**Trigger:** Plan 06-01 as written specified bank-grade Android keystore custody — 2 encrypted-DMG USB sticks at ≥5 km separation + laminated paper recovery cards + 1Password sealed passphrase + 7-step USB placement attestation. The same over-engineering pattern that motivated the original 21-phase retirement, applied recursively to a single plan.
+
+**New principle (governs Phase 6 onwards):**
+
+> **Key custody procedures (Phase 6+) follow the same lean principle as the rest of the closed-beta scope — bank-grade only after public-launch threshold. For 5-10 friend testers, keystore loss is "re-release under new package + ask 10 people to reinstall" inconvenience, not catastrophe. Engineer recovery to that blast radius, not to a hypothetical scale event.**
+
+**Concrete scope cut for Plan 06-01 Tasks 5-6 (was 2 USBs at ≥5 km, now ONE cloud backup):**
+
+| Was (bank-grade) | Now (lean) |
+|---|---|
+| 2 encrypted-DMG USB sticks (USB-A home + USB-B ≥5 km offsite) | 1 cloud backup of the SOPS-encrypted `mobile-signing.yaml` + age key (iCloud Drive / Google Drive / Dropbox — user picks) |
+| Each USB also encrypted at filesystem layer (AES-256 DMG) on top of SOPS encryption (defense-in-depth) | SOPS + age encryption is the encryption layer — cloud provider only sees ciphertext; no additional DMG wrapper |
+| 1Password sealed entry holds DMG passphrase | 1Password sealed entry already holds the age key passphrase (Phase 2 D-04) — no new entry needed; one cross-reference note added |
+| Laminated paper RECOVERY-CARDs on each USB ($5-10 each at FedEx) | Single printed `RECOVERY-CARD.md` kept with personal documents at home — no lamination |
+| 7-step USB placement attestation in 06-01-SUMMARY | 3-line attestation: cloud provider name + cross-device sync verified + RECOVERY-CARD.md printed |
+
+**Why this is acceptable:**
+
+1. **Real blast radius is bounded.** Closed beta = 5-10 friends installed the app. Keystore loss = release a new build under `com.runningecosystem.mobile2` + DM the testers "please reinstall, here's the new link." Annoying, ~30 min of work, not "the app is dead."
+2. **SOPS + age encryption is the security envelope, NOT the storage medium.** Cloud providers see SOPS ciphertext — even with full account compromise, attacker has encrypted YAML + needs the age key. Age key lives in `~/.config/sops/age/keys.txt` on the dev workstation, NOT in the cloud backup (only the keystore + provisioning bundle).
+3. **Wait — that means we need the age key separately backed up.** Phase 2 D-04 already specified "age private key in 1Password sealed entry per dev." So the age key already has a recovery path: 1Password. The cloud backup of `mobile-signing.yaml` is encrypted by THAT age key. Recovery = 1Password → age key → cloud → SOPS decrypt. Two-factor, but no USBs.
+4. **Geographic redundancy delivered by the cloud provider.** Apple/Google/Dropbox all replicate to ≥2 data centers. The user gets ≥5 km separation for free.
+5. **The "2 USBs at ≥5 km" requirement was inherited from Phase 2 D-04 which itself was inherited from a "Phase 9 Android keystore strategy" that was designed for the 21-phase scope.** Re-evaluated under the closed-beta lens, it doesn't pass.
+
+**v1.0.1 backlog entry:** `PROD-LAUNCH-PREP` (Bank-grade key custody — 2 USBs at ≥5 km + lamination + 1Password DMG entry; gated on beta passing >50 users — same trigger as ADR-0011 re-expansion §1). Tracked in ROADMAP.md `v1.0.1 Backlog`.
+
+**Files affected by this amendment:**
+
+- `.planning/phases/06-release-signing/06-CONTEXT.md` — D-07 + D-15 partially superseded (new "Post-CONTEXT amendments" section added)
+- `.planning/phases/06-release-signing/06-01-PLAN.md` — Tasks 5 + 6 rewritten; `must_haves` adjusted; `files_modified` updated
+- `.planning/phases/06-release-signing/06-VALIDATION.md` — per-task verification map for Tasks 5-6 updated to match new acceptance gates
+- `.planning/ROADMAP.md` — new `PROD-LAUNCH-PREP` row in v1.0.1 backlog
+- `.planning/STATE.md` — `stopped_at` updated to reflect scope-cut amendment
+
+**Files NOT touched by this amendment:** keystore generation procedure (RAM disk / PKCS12 / RSA 4096 / 100-year validity) stays as-is. SOPS slot structure stays as-is. SHA-256 fingerprint capture for D-19 Mapbox restriction stays as-is. `docs/SECRETS.md` recovery section stays — but its scenario (a) "USB restore" wording softens to "cloud download + age key from 1Password" (a one-line copy-edit).
+
+**Re-expansion trigger for THIS amendment:** Beta passes 50 users → revisit `PROD-LAUNCH-PREP` from v1.0.1 backlog, apply the bank-grade procedure THEN. The current `mobile-signing.yaml` can be re-backed-up to 2 USBs at that point without re-generating any keys (same SOPS file, just additional copies).
+
+---
+
+## Amendment 3 2026-05-20 PM — Android-first launch (iOS deferred)
+
+**Trigger:** Plan 06-02 (iOS Apple Developer enrollment) sits on a 2-7+ week external SLA per RESEARCH §1 (2026 degraded enrollment review time). Plans 07-02 (EAS iOS production) + 07-03 iOS-SLC portion + 08-02 (TestFlight) + 09-02 iOS testers all depend on Apple credentials. The dependency chain means iOS work blocks the whole launch on an external review queue the dev has no way to accelerate.
+
+Android side has zero external blockers: Plan 06-01 generates the keystore locally, Plan 07-01 builds via EAS Android, Plan 08-01 ships via Caddy + Storage Box self-hosted manifest, Plan 09 invites Android testers. Whole Android critical path is ~3-5 weeks of solo dev work, no external review wait.
+
+**Decision:** Ship Android-only for the first closed-beta wave. iOS deferred until Android beta stabilizes OR explicit user decision to start iOS work.
+
+**Concrete sub-plan deferrals (artifacts STAY on disk; scope flags in ROADMAP + REQUIREMENTS only):**
+
+| Sub-plan | Was | Now |
+|---|---|---|
+| `06-02-PLAN.md` (iOS Apple Dev enrollment + cert + provisioning + ASC API key) | Wave 2 of Phase 6, autonomous=false, `expected_pause_max: "7 weeks"` | DEFERRED. Plan file stays on disk unchanged. ROADMAP + REQUIREMENTS flag `SIGN-02` as deferred. Phase 6 closes on Plan 06-01 completion only. |
+| `07-02-PLAN.md` (EAS iOS production profile + Hermes + bitcode off + staging↔prod + iOS 16+) | Wave 1 of Phase 7 | DEFERRED. ROADMAP + REQUIREMENTS flag `BUILD-02` as deferred. Phase 7 closes on Plan 07-01 + 07-03-Android-portion only. |
+| `07-03-PLAN.md` iOS SLC portion | Mixed into 07-03 alongside Android foreground service | iOS SLC portion DROPPED from v1.0. STAB-01 rewritten Android-only (foreground service notification, MIUI + One UI mitigations, 1h pocket-walk on Pixel only). 07-03 stays single-plan but Android-scoped. |
+| `08-02-PLAN.md` (iOS TestFlight CI workflow + auto-bump + internal group seed) | Wave 1 of Phase 8 | DEFERRED. ROADMAP + REQUIREMENTS flag `DIST-02` as deferred. Phase 8 closes on Plan 08-01 only. |
+| Phase 9 tester mix | "5-10 friends across Android + iOS via TestFlight + Caddy manifest" | "5-10 Android friends via Caddy manifest URL." LAUNCH-02 rewritten Android-only. |
+
+**Re-expansion trigger for THIS amendment:**
+
+Revisit deferred iOS sub-plans when **either** condition fires:
+
+1. **Android beta stabilizes.** "Stable" is TBD by user-report signal — concretely: ≥3 consecutive weeks of closed-beta usage with no P0 reports from any tester; or user explicitly decides "Android side is in good enough shape, time to start iOS." No formal NFR gate.
+2. **Explicit user decision to start iOS work.** E.g., a tester asks for iOS specifically OR user wants to test iOS personally OR business case shifts.
+
+When re-triggered:
+- Move `06-02-PLAN.md`, `07-02-PLAN.md`, `08-02-PLAN.md` back from "deferred" to "active" in ROADMAP + REQUIREMENTS.
+- Restore iOS SLC portion to STAB-01 OR create a new STAB-02 for iOS-only stability. STAB-01 stays Android-only; iOS gets its own ID.
+- Restore iOS testers to LAUNCH-02 OR create LAUNCH-03 for iOS-specific watchlist.
+- Start Apple Developer Program enrollment on the day of re-trigger (the 2-7 week clock starts then).
+
+**What this amendment does NOT change:**
+
+- Phase count stays at 9 (1-5 done + 6-9 active). Just narrows scope within phases 6-9.
+- `.secrets/prod/mobile-signing.yaml` SOPS slot structure stays the same — the YAML schema reserves an `ios:` block that stays empty for now, populated when iOS work activates. No re-keying.
+- ADR-0011 Amendment 2026-05-20 PM (lean key custody) still applies — when iOS work activates, iOS cert + .p12 + provisioning + ASC API key add to the same cloud backup, same RECOVERY-CARD.md.
+- Phase 1-5 work (API contract, secrets, infra, CI/CD, observability) ships as-is — none of it was iOS-specific anyway.
+- `apps/mobile-rn/app.json` keeps the `ios:` block (bundle ID, NSLocationWhenInUseUsageDescription, etc.) — Expo RN supports building one or both platforms from the same config. Removing iOS config now would be churn.
+
+**Updated milestone description:**
+
+`PROJECT.md` milestone changes from "Closed-beta release in 4 lean phases" to **"Android closed-beta release in 4 lean phases (iOS deferred to post-Android-beta milestone — see ADR-0011 Amendment 3)"**.
+
+**Files affected by Amendment 3:**
+
+- `.planning/ROADMAP.md` — Phase 6/7/8/9 sub-plan flags; STAB-01 + LAUNCH-02 wording
+- `.planning/REQUIREMENTS.md` — SIGN-02 / BUILD-02 / DIST-02 flagged deferred; STAB-01 + LAUNCH-02 rewritten Android-only
+- `.planning/PROJECT.md` — milestone description updated
+- `.planning/STATE.md` — `stopped_at` reflects scope adjustment
+- `.planning/phases/06-release-signing/06-VALIDATION.md` — 06-02-* rows marked deferred (already covered by Amendment 2 PM work as well)
+
+**Files NOT touched by Amendment 3:**
+
+- `06-02-PLAN.md`, `06-CONTEXT.md`, `06-RESEARCH.md`, `06-PATTERNS.md`, `06-PLAN-CHECK.md` — stay as-written; reactivation = un-flag in ROADMAP/REQUIREMENTS, no plan content edits.
+- Phase 7/8/9 plan files do not exist yet (only ROADMAP entries) — when those phases plan, the planner reads the deferred flags from ROADMAP/REQUIREMENTS and skips iOS scope.
+

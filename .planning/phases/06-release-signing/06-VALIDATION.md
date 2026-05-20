@@ -43,12 +43,9 @@ created: 2026-05-20
 | 06-01-01 | 01 | 1 | SIGN-01 | `keytool -list -keystore /tmp/<keystore>.jks` returns 1 alias `runningecosystem-release` with RSA 4096 + validity ≥ 2125 | smoke | `bash evidence/smoke-keystore-generated.sh` | ❌ W0 | ⬜ pending |
 | 06-01-02 | 01 | 1 | SIGN-01 | `sops -d .secrets/prod/mobile-signing.yaml \| yq -r .android.keystore_base64 \| base64 -d \| keytool -list -keystore /dev/stdin` round-trips clean | smoke | `bash evidence/smoke-sops-roundtrip.sh` | ❌ W0 | ⬜ pending |
 | 06-01-03 | 01 | 1 | SIGN-01 | `keytool -list -v -keystore <recovered>.jks \| grep SHA256:` produces colon-separated 32-byte fingerprint + a copy in `evidence/keystore-sha256.txt` for downstream Mapbox/Phase 8 consumption | smoke | `bash evidence/smoke-sha256-captured.sh` | ❌ W0 | ⬜ pending |
-| 06-01-N | 01 | 1 | SIGN-01 | USER ACTION — 2× USB backups placed at 2 separate physical locations, both VeraCrypt/encrypted-DMG volumes mounted successfully + reads back keystore field byte-for-byte identical to committed SOPS form | manual | (USER ATTESTATION recorded in 06-01-SUMMARY) | ❌ W0 | ⬜ pending |
-| 06-02-00 | 02 | 2 | SIGN-02 | USER ACTION — Apple Developer Program enrollment complete (Individual, $99/yr); Apple Team ID captured (10-char alphanumeric) | manual | (USER ATTESTATION) | ❌ W0 | ⬜ pending |
-| 06-02-01 | 02 | 2 | SIGN-02 | App ID registered at developer.apple.com for `com.runningecosystem.mobile`; distribution cert generated; `.p12` exported with explicit password; round-trips via `openssl pkcs12 -in <recovered>.p12 -info -password pass:<env>` | smoke | `bash evidence/smoke-ios-cert-roundtrip.sh` | ❌ W0 | ⬜ pending |
-| 06-02-02 | 02 | 2 | SIGN-02 | App Store provisioning profile generated for bundle ID; `.mobileprovision` UUID matches the field captured in SOPS slot | smoke | `bash evidence/smoke-ios-provprofile.sh` | ❌ W0 | ⬜ pending |
-| 06-02-03 | 02 | 2 | SIGN-02 | ASC API key created with **App Manager** role; `AuthKey_XXXXX.p8` + Key ID + Issuer ID captured in SOPS; round-trip extracts to valid `.p8` via base64 -d + `openssl ec -in <recovered>.p8 -text -noout` parses successfully | smoke | `bash evidence/smoke-asc-api-key.sh` | ❌ W0 | ⬜ pending |
-| 06-02-04 | 02 | 2 | SIGN-02 | `docs/SECRETS.md §"Mobile signing — recovery"` section exists + covers 4 scenarios from CONTEXT D-15 (USB restore, catastrophic loss, corruption, iOS cert expiry) | smoke | `grep -c "Scenario" docs/SECRETS.md` ≥ 4 in the new section | ❌ W0 | ⬜ pending |
+| 06-01-05 | 01 | 1 | SIGN-01 | Task 5 — `evidence/RECOVERY-CARD.md` + `evidence/cloud-backup-log.txt` written; cloud folder + sha256 fields populated; NO secrets in log; SOPS bundle + age key copied to `$CLOUD_DIR` | smoke | inline `<verify><automated>` block in Plan 06-01 Task 5 | ❌ W0 | ⬜ pending |
+| 06-01-06 | 01 | 1 | SIGN-01 | Task 6 USER ACTION — cross-device sync verified on second device (both files visible + SOPS YAML previews as ciphertext); RECOVERY-CARD.md printed + placed at home with personal documents; 5-line attestation block in resume-signal | manual | (USER ATTESTATION appended to `evidence/cloud-backup-log.txt` + `06-01-SUMMARY.md §"Backup placement attestation"`) | ❌ W0 | ⬜ pending |
+| 06-02-* | 02 | 2 | SIGN-02 | **DEFERRED per ADR-0011 Amendment 3 (Android-first launch).** All Plan 06-02 tasks (Apple Dev enrollment + App ID + cert + provisioning profile + ASC API key) remain on disk but not executed in this milestone. Re-trigger: Android beta stabilizes OR explicit user decision to start iOS. | manual | (no execution this milestone) | n/a | 🛑 deferred |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -75,10 +72,10 @@ Wave 0 = environment prerequisites before Plan 06-01 / 06-02 tasks can execute. 
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| 2× USB physical backups placed in 2 separate physical locations | SIGN-01 | Cannot be automated — agent cannot drive to your parents' house | User confirms each location in 06-01-SUMMARY §"Backup placement attestation"; agent does NOT proceed to Wave 2 until both attestations recorded |
-| Apple Developer Program enrollment complete | SIGN-02 | Apple verification can take 2-7+ weeks per RESEARCH §1 (degraded SLA 2026); requires Apple ID + government ID + 2FA + Apple Developer app on physical iPhone for biometric attestation | User updates STATE.md `stopped_at` with enrollment completion date + Team ID; Plan 06-02 Tasks 1-4 are blocked until then |
-| ASC API key creation (the `.p8` download is one-time-only — Apple never re-shows it) | SIGN-02 | Manual download from `appstoreconnect.apple.com/access/api`; missed download = create new key + redo SOPS write | User confirms `AuthKey_<keyid>.p8` downloaded + base64-encoded into SOPS before closing the ASC tab |
-| iOS distribution cert .p12 export from Keychain Access | SIGN-02 | macOS Keychain doesn't accept `--password` CLI flag for export; export password is set via UI dialog | User runs Keychain Access → Distribution cert right-click → Export → set explicit password (NOT default) → save .p12; capture password into SOPS field `ios.distribution_cert_password` |
+| Cloud-sync second-device verification + RECOVERY-CARD.md printed + placed at home | SIGN-01 | Cannot be automated — agent cannot open phone, print paper, or place documents | User confirms via 5-line attestation block in resume-signal at Plan 06-01 Task 6; agent records into `evidence/cloud-backup-log.txt` + `06-01-SUMMARY.md`. Phase 6 closes on Plan 06-01 only (Plan 06-02 deferred per ADR-0011 Amendment 3). |
+| ~~Apple Developer Program enrollment~~ | ~~SIGN-02~~ | **DEFERRED per ADR-0011 Amendment 3 (Android-first launch).** Re-trigger: Android beta stabilizes OR explicit user decision. | n/a (deferred) |
+| ~~ASC API key creation~~ | ~~SIGN-02~~ | **DEFERRED per ADR-0011 Amendment 3.** | n/a (deferred) |
+| ~~iOS distribution cert .p12 export from Keychain Access~~ | ~~SIGN-02~~ | **DEFERRED per ADR-0011 Amendment 3.** | n/a (deferred) |
 
 ---
 

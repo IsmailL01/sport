@@ -17,10 +17,10 @@ This roadmap takes Running Ecosystem from "Phase 5 code-complete on `feat/curson
 - [x] **Phase 3: Infrastructure as code** — `backend` — Ansible-only deploy on single prod VPS, sport-stack systemd umbrella + containerized Caddy + UFW; provider-agnostic RUNBOOK — **DONE 2026-05-17** (INFRA-01/03/05/07; -02/-04 deferred v1.1; -06 moved to Phase 5)
 - [x] **Phase 4: CI/CD pipeline** — `backend` — GitHub Actions 8-service matrix + 5 scanners + Trivy + cosign keyless + SLSA L2 + rollback drill PASS on prod + branch protection with 8 required checks — **DONE 2026-05-18** (CICD-01..06). Cosign/SLSA kept wired as **best-effort, not gated** per ADR-0011.
 - [x] **Phase 5: Observability backend** — `backend` — slog JSON + PII deny-list scrub (OBS-04 OTP fix) + Prom `/metrics` + 3 Grafana dashboards + cardinality CI gate + OTel OTLP/HTTP + sentry-go SDK (dormant per D-38) + observability-stack on `srv1561293` (Loki+Grafana+Prom) + DebugSessionMiddleware backend seam + Alloy log-shipper + `pii_live_probe.py` + ADR-0009 + observability RUNBOOK — **DONE 2026-05-20** (OBS-01/03/04/05/06/07 complete; OBS-02 deferred per ADR-0010; OBS-08 mobile Settings UX dropped per ADR-0011, replaced with `DEBUG_SESSIONS_FOR_USER` env-allowlist seam + `scripts/debug-tail.sh` Loki wrapper; Task 6 acceptance walkthrough deferred to Phase 9 smoke test)
-- [ ] **Phase 6: Release signing** — `shared` — Android keystore + 2 offline physical backups + iOS Apple Developer certs + distribution provisioning + ASC API key in SOPS (SIGN-01..02)
-- [ ] **Phase 7: Release builds + mobile stability** — `mobile-shared` — EAS production profiles (Android + iOS) + R8/ProGuard rules for Mapbox/MMKV/health JNI/Hermes/expo-task-manager + foreground service + iOS SLC (BUILD-01..02 + STAB-01)
-- [ ] **Phase 8: Closed-beta distribution** — `shared` — Android signed-JSON manifest served via Caddy + APKs on Hetzner Storage Box behind signed URLs + iOS TestFlight internal group with automated upload on tag (DIST-01..02)
-- [ ] **Phase 9: Closed-beta launch** — `shared` — smoke test on own + 1 friend's device (1 full GPS session per platform) + invite 5-10 testers + 72h watchlist via `scripts/debug-tail.sh` (LAUNCH-01..02)
+- [ ] **Phase 6: Release signing** — `shared` — Android keystore + cloud backup + RECOVERY-CARD (SIGN-01). _iOS Apple Developer certs (SIGN-02) DEFERRED per ADR-0011 Amendment 3 (Android-first launch); artifact `06-02-PLAN.md` stays on disk._
+- [ ] **Phase 7: Release builds + mobile stability** — `mobile-shared` — EAS Android production profile + R8/ProGuard rules + Android foreground service + MIUI/One UI mitigations (BUILD-01 + STAB-01 Android). _BUILD-02 (EAS iOS) + iOS SLC portion of STAB-01 DEFERRED per ADR-0011 Amendment 3._
+- [ ] **Phase 8: Closed-beta distribution** — `shared` — Android signed-JSON manifest served via Caddy + APKs on Hetzner Storage Box behind signed URLs (DIST-01). _DIST-02 (iOS TestFlight) DEFERRED per ADR-0011 Amendment 3._
+- [ ] **Phase 9: Closed-beta launch** — `shared` — Android-only smoke test on own + 1 friend's device + invite 5-10 Android testers + 72h watchlist via `scripts/debug-tail.sh` (LAUNCH-01..02 Android-only). _iOS testers DEFERRED per ADR-0011 Amendment 3._
 
 ## Phase Details
 
@@ -47,60 +47,60 @@ This roadmap takes Running Ecosystem from "Phase 5 code-complete on `feat/curson
 
 ### Phase 7: Release builds + mobile stability
 
-**Workstream:** `mobile-shared`
-**Goal:** Production builds on both platforms that survive a 1-hour GPS-track session without OS killing the recorder.
-**Depends on:** Phase 6
-**Requirements:** BUILD-01..02 + STAB-01
+**Workstream:** `mobile-shared` (Android-only for v1.0 per ADR-0011 Amendment 3)
+**Goal:** Production Android build that survives a 1-hour GPS-track session without OS killing the recorder.
+**Depends on:** Phase 6 (Plan 06-01 only — 06-02 deferred)
+**Requirements:** BUILD-01 + STAB-01 (Android). _BUILD-02 (EAS iOS) DEFERRED per ADR-0011 Amendment 3._
 **Success Criteria:**
-1. `apps/mobile-rn/eas.json` has `production` profile (Android + iOS) pointing at production backend
+1. `apps/mobile-rn/eas.json` has `production` profile (Android) pointing at production backend
 2. R8 + ProGuard rules verified — do NOT strip Mapbox JNI, MMKV native, react-native-health JNI, expo-task-manager background classes, Hermes runtime
 3. Android: `arm64-v8a` only (drop `armeabi-v7a` per ADR-0011 lean scope; closed-beta testers are flagship-only)
-4. iOS: Hermes enabled, bitcode disabled, staging↔prod flavor switching works, iOS 16+ baseline
-5. Background reliability: foreground service notification visible on Android; iOS SLC (Significant Location Change) fallback works on app foregrounding
+4. ~~iOS: Hermes enabled, bitcode disabled, staging↔prod flavor switching, iOS 16+ baseline~~ — **DEFERRED per ADR-0011 Amendment 3**
+5. Background reliability: foreground service notification visible on Android. ~~iOS SLC fallback~~ — **DEFERRED per ADR-0011 Amendment 3**
 6. Vendor-killer mitigations: MIUI + One UI handled (in-app auto-start permission dialog; battery-saver kill recovered via `recoverLast`); 4-vendor matrix from old Phase 16 deferred — monitor remaining vendors during beta
-7. 1-hour pocket-walk session on Pixel + iPhone records ≥95% of expected GPS points
+7. 1-hour pocket-walk session on Pixel records ≥95% of expected GPS points (~~+ iPhone~~ — iPhone arm DEFERRED per ADR-0011 Amendment 3)
 
 **Plans:**
 - [ ] `07-01-PLAN.md` — EAS Android production profile + R8/ProGuard verification + arm64-v8a only — Wave 1, autonomous=true
-- [ ] `07-02-PLAN.md` — EAS iOS production profile + Hermes + bitcode off + staging↔prod switching + iOS 16+ baseline — Wave 1, autonomous=true (parallel with 07-01)
-- [ ] `07-03-PLAN.md` — Background reliability — foreground service + iOS SLC + MIUI + One UI mitigations + 1h pocket-session validation — Wave 2 (depends on 07-01 + 07-02), autonomous=false (Task N = pocket-walk on real device, USER ACTION)
+- [ ] ~~`07-02-PLAN.md`~~ — **DEFERRED per ADR-0011 Amendment 3 (Android-first).** EAS iOS production profile not planned in v1.0. Plan file does not exist yet; will be created when iOS work re-triggers.
+- [ ] `07-03-PLAN.md` — Background reliability Android — foreground service + MIUI + One UI mitigations + 1h Pixel pocket-session validation — Wave 2 (depends on 07-01), autonomous=false (Task N = pocket-walk on real Pixel device, USER ACTION). _iOS SLC portion DEFERRED per ADR-0011 Amendment 3._
 
 ### Phase 8: Closed-beta distribution
 
-**Workstream:** `shared`
-**Goal:** One command tags a release → testers receive the new build.
+**Workstream:** `shared` (Android-only for v1.0 per ADR-0011 Amendment 3)
+**Goal:** One command tags a release → Android testers receive the new APK.
 **Depends on:** Phase 7
-**Requirements:** DIST-01..02
+**Requirements:** DIST-01 (Android). _DIST-02 (iOS TestFlight) DEFERRED per ADR-0011 Amendment 3._
 **Success Criteria:**
 1. Android: Caddy serves `/android/manifest.json` (Ed25519-signed) with latest version + APK signed-URL + min-supported-version
 2. APKs uploaded to Hetzner Storage Box; served via 24h signed URLs (regenerated per request)
 3. In-app check-on-launch + Settings "Check for updates" — both verify manifest signature before showing update UI
 4. Force-update path — `min-supported-version > installed` blocks app usage until update
-5. iOS: `.github/workflows/ios-release.yml` triggers on `v1.0-*` tags; uploads to TestFlight via ASC API
-6. Build number auto-bumps on each CI run (CFBundleVersion += 1)
-7. Internal TestFlight group seeded with closed-beta testers' Apple IDs
+5. ~~iOS: `.github/workflows/ios-release.yml` triggers on `v1.0-*` tags; uploads to TestFlight via ASC API~~ — **DEFERRED per ADR-0011 Amendment 3**
+6. ~~Build number auto-bumps on each CI run (CFBundleVersion += 1)~~ — **DEFERRED per ADR-0011 Amendment 3**
+7. ~~Internal TestFlight group seeded with closed-beta testers' Apple IDs~~ — **DEFERRED per ADR-0011 Amendment 3**
 
 **Plans:**
 - [ ] `08-01-PLAN.md` — Android self-hosted manifest + Caddy serving + Hetzner Storage Box signed URLs + in-app update UX — Wave 1, autonomous=false (Task N = signed-URL secret rotation USER ACTION)
-- [ ] `08-02-PLAN.md` — iOS TestFlight CI workflow + auto-bump build number + internal group seed — Wave 1 (parallel with 08-01), autonomous=false (Task N = TestFlight tester invite USER ACTION)
+- [ ] ~~`08-02-PLAN.md`~~ — **DEFERRED per ADR-0011 Amendment 3 (Android-first).** iOS TestFlight CI workflow not planned in v1.0. Plan file does not exist yet; will be created when iOS work re-triggers.
 
 ### Phase 9: Closed-beta launch
 
-**Workstream:** `shared`
-**Goal:** First real runners on the app. Treat their feedback as the actual acceptance gate — no 48h soak rigor, just "ship, watch, iterate".
+**Workstream:** `shared` (Android-only for v1.0 per ADR-0011 Amendment 3)
+**Goal:** First real Android runners on the app. Treat their feedback as the actual acceptance gate — no 48h soak rigor, just "ship, watch, iterate".
 **Depends on:** Phase 8
-**Requirements:** LAUNCH-01..02
+**Requirements:** LAUNCH-01..02 (Android-only — iOS testers deferred per ADR-0011 Amendment 3)
 **Success Criteria:**
-1. Tag `v1.0.0-beta.1` → CI publishes Android APK to Caddy manifest + iOS build to TestFlight internal group
-2. Solo-dev smoke test: install release build on own device + 1 friend's device (one Android, one iOS); complete 1 full GPS-track session per platform; no crashes; no data loss
-3. **If smoke test passes:** invite 5-10 closed-beta testers via TestFlight + manifest URL
+1. Tag `v1.0.0-beta.1` → CI publishes Android APK to Caddy manifest. _(iOS TestFlight upload DEFERRED per ADR-0011 Amendment 3.)_
+2. Solo-dev smoke test: install release build on own Android device + 1 friend's Android device; complete 1 full GPS-track session per device; no crashes; no data loss. _(iOS smoke arm DEFERRED.)_
+3. **If smoke test passes:** invite 5-10 Android closed-beta testers via manifest URL
 4. **72-hour watchlist:** `scripts/debug-tail.sh <user-id>` queries Loki on `srv1561293` for any tester reporting an issue; triage daily
 5. Tester feedback intake: GitHub Issues template OR Telegram channel (decide in plan)
 6. If a P0 surfaces (crash on launch, GPS pipeline broken, can't save session): hotfix → re-tag → re-distribute. No formal soak gate; ship when stable.
 
 **Plans:**
-- [ ] `09-01-PLAN.md` — Solo-dev smoke test (own + 1 friend, 1 full GPS session per platform) + tag `v1.0.0-beta.1` — Wave 1, autonomous=false (Task 1 = solo smoke USER ACTION)
-- [ ] `09-02-PLAN.md` — Invite 5-10 testers + 72h watchlist via debug-tail.sh + feedback intake — Wave 2 (depends on 09-01 PASS), autonomous=false (Task 1 = send invites USER ACTION; Task 2 = 72h triage)
+- [ ] `09-01-PLAN.md` — Solo-dev Android smoke test (own + 1 friend, 1 full GPS session per device) + tag `v1.0.0-beta.1` — Wave 1, autonomous=false (Task 1 = solo smoke USER ACTION)
+- [ ] `09-02-PLAN.md` — Invite 5-10 Android testers + 72h watchlist via debug-tail.sh + feedback intake — Wave 2 (depends on 09-01 PASS), autonomous=false (Task 1 = send invites USER ACTION; Task 2 = 72h triage)
 
 ## Acceptance Gate for v1.0 Closed Beta
 
@@ -164,6 +164,7 @@ Tracked for first post-v1.0 maintenance milestone. Inherited from the 21-phase s
 | SECRETS-ROTATE | Rotate POSTGRES_PASSWORD, JWT_SECRET, MINIO creds | Phase 3 chat-leak 2026-05-17 | Pasted in chat during Phase 3 SOPS-fill |
 | AUTH-RATELIMIT | Add `/auth/*` rate-limit (was Phase 6 EDGE-01) | CONCERNS.md P0 | Closed-beta mitigates blast radius; revisit before public |
 | DEBUG-MIDDLEWARE-ENV | Refactor DebugSessionMiddleware to read `DEBUG_SESSIONS_FOR_USER` env-allowlist (currently 3-gate via featureflag — featureflag has no admin UI for solo dev) | ADR-0011 OBS-08 | Small refactor; do when first debug-on-demand is needed in beta |
+| PROD-LAUNCH-PREP | Bank-grade key custody — re-backup `.secrets/prod/mobile-signing.yaml` to 2 encrypted-DMG USB sticks at ≥5 km separation + laminated paper RECOVERY-CARDs + 1Password sealed DMG passphrase entry | ADR-0011 Amendment 2026-05-20 PM | Closed-beta uses single cloud backup; promote to bank-grade when beta passes 50 users (same trigger as ADR-0011 re-expansion §1). No re-keying needed — just additional copies of the existing SOPS file. |
 
 ---
 
