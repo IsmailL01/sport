@@ -4,8 +4,11 @@ milestone: v1.0
 milestone_name: AndroidClosedBeta
 status: paused
 stopped_at: |
-  Phase 6 PAUSED pre-execution 2026-05-20 PM. Scope re-cut twice in one day
-  before any Plan 06-01 tasks ran:
+  Phase 6 PAUSED mid-execution 2026-05-20 PM after Plan 06-01 Tasks 0-4 shipped
+  in a prior session (commits 7f43069 Wave 0 → 9aa5cab SOPS skeleton → 0824c9b
+  keystore + SHA-256 → 8201aa2 SOPS write + round-trip → 27d4954 docs/SECRETS.md
+  recovery section). Two scope amendments to ADR-0011 then landed (commit
+  fbde5b1) before Tasks 5+6+7 could run:
   (1) ADR-0011 Amendment 2026-05-20 PM (lean key custody): Plan 06-01 Tasks 5+6
       rewritten — was bank-grade 2× encrypted-DMG USB sticks at ≥5 km separation
       + laminated cards + 1Password sealed DMG passphrase + 7-step placement
@@ -20,15 +23,18 @@ stopped_at: |
       bottleneck). Plan + research + context artifacts for 06-02 stay on disk
       unchanged — reactivation = un-flag in ROADMAP + REQUIREMENTS only.
   Active scope for v1.0 = Android-only:
-    Phase 6 → Plan 06-01 only (Android keystore + cloud backup)
+    Phase 6 → Plan 06-01 only (Android keystore + cloud backup) — Tasks 0-4 done
     Phase 7 → Plan 07-01 + Android-only 07-03 (BUILD-01 + STAB-01 Android)
     Phase 8 → Plan 08-01 only (Caddy manifest + signed-URL APKs)
     Phase 9 → 09-01 + 09-02 Android-only (LAUNCH-01..02 Android)
   Re-expansion: iOS arm activates when Android beta stabilizes (≥3 consecutive
   weeks with no P0 reports) OR explicit user decision.
-  Ready to resume: `/gsd-execute-phase 6` (will run Plan 06-01 alone; Plan 06-02
-  flagged deferred in ROADMAP, executor will skip it).
-last_updated: "2026-05-20T23:30:00.000Z"
+  Plan 06-01 remaining: Tasks 5+6+7. Task 5 (autonomous) = cloud-sync SOPS +
+  age key + write RECOVERY-CARD.md. Task 6 (USER ACTION) = cross-device sync
+  verify on phone + print + place RECOVERY-CARD.md at home. Task 7 = SUMMARY +
+  closeout. Resume via `/gsd-execute-phase 6` (executor picks up at Task 5;
+  Plan 06-02 flagged deferred in ROADMAP, executor will skip it).
+last_updated: "2026-05-20T23:45:00.000Z"
 progress:
   total_phases: 9
   completed_phases: 5
@@ -37,6 +43,7 @@ progress:
   percent: 54
   active_phase: 6
   active_plans_in_phase: 1
+  active_plan_progress: "5/8 tasks (06-01 Tasks 0-4 done; 5+6+7 remaining)"
   deferred_plans_in_phase: 1
 ---
 
@@ -55,8 +62,8 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 ## Current Position
 
-Phase: 6 (release-signing) — PAUSED pre-execution; scope amended twice 2026-05-20 PM
-Plan: Plan 06-01 active (Android keystore + cloud backup + RECOVERY-CARD); Plan 06-02 DEFERRED per ADR-0011 Amendment 3
+Phase: 6 (release-signing) — PAUSED mid-execution; Plan 06-01 Tasks 0-4 done in prior session, scope amended twice 2026-05-20 PM before Tasks 5+6+7
+Plan: Plan 06-01 active at 5/8 tasks (Tasks 0-4 done — commits 7f43069..27d4954); Plan 06-02 DEFERRED per ADR-0011 Amendment 3
 Last completed: **Plan 05-06** — DebugSessionMiddleware + Alloy alloy-shipper role + pii_live_probe.py + ADR-0009 + observability RUNBOOK (5 commits ce6cf01..eb28259, 2026-05-20). Task 6 walkthrough conditionally deferred — re-trigger if Phase 9 watchlist exercises the observability stack and finds Alloy not shipping logs. Prior: Plan 05-05 — OTel OTLP/HTTP + sentry-go SDK + D-38 dormant guard.
 
 **Next phase (open):** Phase 6 — Release signing (Android only). `shared` workstream. CONTEXT.md gathered (22 D-NN decisions, amended 2026-05-20 PM for lean key custody + Android-first). PLAN files exist (`06-01-PLAN.md` Tasks 5+6 rewritten for cloud backup; `06-02-PLAN.md` stays on disk but deferred per ADR-0011 Amendment 3). Ready for `/gsd-execute-phase 6` (executor runs Plan 06-01 alone; Plan 06-02 deferred-flag in ROADMAP causes executor to skip).
