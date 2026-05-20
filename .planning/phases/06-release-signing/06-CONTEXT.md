@@ -204,6 +204,23 @@ Per ADR-0011 §"Amendment 2026-05-20 PM — Lean key custody", the following CON
 
 ---
 
+## Post-CONTEXT amendment 4 2026-05-20 PM — Keystore backup deferred entirely
+
+Per ADR-0011 §"Amendment 4 2026-05-20 PM — Keystore backup deferred (single SOPS copy on dev workstation = sufficient)", the following CONTEXT decisions are **further superseded** for v1.0 closed-beta scope (extends Amendment 2 PM):
+
+- **D-07 (was bank-grade 2 USBs → Amendment 2 PM softened to 1 cloud backup):** NOW FULLY SUPERSEDED. Backup deferred entirely; single SOPS-encrypted copy on dev workstation = sufficient. Promotion to cloud backup tracked as v1.0.1 `KEYSTORE-CLOUD-BACKUP` (triggers: Play Store / >50 users / explicit production-asset decision).
+- **D-15(a) (was USB restore → Amendment 2 PM softened to cloud download):** NOW SUPERSEDED. Scenario (a) becomes "regenerate keystore + re-release under new package name + DM 5-10 testers to reinstall" (~30 min). Scenarios (b)/(c)/(d) unchanged.
+- **D-08 (encrypted-DMG passphrase):** Was Already not applicable per Amendment 2 PM. Stays not applicable.
+
+**Why amended again:** Plan 06-01 Task 5 dispatch found that no cloud-sync provider was actively configured on this workstation (iCloud not set up; OneDrive daemon dormant; Dropbox stale >1 year). Setting up a cloud sync app + signing in + installing the phone app = real architectural decision rather than a one-line cp. Re-evaluating against the closed-beta blast radius (5-10 testers, DM-everyone-reinstall = ~30 min recovery), the cloud-backup work is still over-engineered for this risk level. The keystore is REGENERABLE; only the age key + SOPS envelope are load-bearing, and those already have Phase 2 D-04 1Password sealed backup.
+
+**Promotion path:** `KEYSTORE-CLOUD-BACKUP` in `.planning/ROADMAP.md §v1.0.1 Backlog` — execute Plan 06-01 Tasks 5+6 (cloud-backup variant, body preserved in plan file) when any of the 3 triggers fires.
+
+**Files affected by Amendment 4:** Plan 06-01 (Tasks 5+6 marked deferred inline; must_haves trimmed); 06-VALIDATION.md (5/6 rows deferred); 06-01-SUMMARY.md (new, Tasks 0-4 closeout); ROADMAP.md (Phase 6 → [x] DONE + KEYSTORE-CLOUD-BACKUP backlog row); REQUIREMENTS.md (SIGN-01 rewording + trace = Complete); PROJECT.md (Phase 6 → [x]); STATE.md (Phase 6 closed, Phase 7 next).
+
+---
+
 *Phase: 6-release-signing*
 *Context gathered: 2026-05-20 (autonomous mode — 22 decisions resolved from prior-phase patterns + closed-beta lean scope per ADR-0011)*
 *Amended: 2026-05-20 PM — D-07/D-08/D-15(a) partially superseded by ADR-0011 lean key custody amendment*
+*Amended: 2026-05-20 PM (latest) — D-07 + D-15(a) FULLY superseded by ADR-0011 Amendment 4 (keystore backup deferred entirely to v1.0.1 KEYSTORE-CLOUD-BACKUP backlog)*

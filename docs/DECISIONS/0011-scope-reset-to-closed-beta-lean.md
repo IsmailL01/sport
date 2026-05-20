@@ -8,6 +8,7 @@
 **Amendments:**
 - 2026-05-20 PM — Lean key custody principle (Phase 6 Plan 06-01 Tasks 5-6 rewrite; see §"Amendment 2026-05-20 PM — Lean key custody" below)
 - 2026-05-20 PM (later) — Android-first launch (iOS sub-plans deferred from v1.0; see §"Amendment 3 2026-05-20 PM — Android-first launch" below)
+- 2026-05-20 PM (latest) — Keystore backup deferred entirely (Plan 06-01 Tasks 5-6 → v1.0.1 backlog; see §"Amendment 4 2026-05-20 PM — Keystore backup deferred" below)
 
 ## Context
 
@@ -222,4 +223,58 @@ When re-triggered:
 
 - `06-02-PLAN.md`, `06-CONTEXT.md`, `06-RESEARCH.md`, `06-PATTERNS.md`, `06-PLAN-CHECK.md` — stay as-written; reactivation = un-flag in ROADMAP/REQUIREMENTS, no plan content edits.
 - Phase 7/8/9 plan files do not exist yet (only ROADMAP entries) — when those phases plan, the planner reads the deferred flags from ROADMAP/REQUIREMENTS and skips iOS scope.
+
+---
+
+## Amendment 4 2026-05-20 PM — Keystore backup deferred (single SOPS copy on dev workstation = sufficient)
+
+**Trigger:** Plan 06-01 Task 5 dispatch (resume after Tasks 0-4 already shipped) reached a workstation-state checkpoint: iCloud Drive not configured, OneDrive daemon dormant, Dropbox stale >1 year. Picking a cloud provider became a real architectural decision rather than a one-line `cp` operation. Re-evaluating against the closed-beta blast radius the same way Amendment 2 did:
+
+> **Keystore loss for closed beta = re-release under new package name + DM the 5-10 testers to reinstall. ~30 minutes of recovery work. The keystore is NOT a load-bearing production asset for a 5-10-tester closed beta — it's load-bearing only when (a) shipping to Google Play Store, OR (b) the tester base outgrows DM-everyone, OR (c) reputation/trust depends on continuity of installs.**
+
+**New principle (governs Phase 6 onwards; extends Amendment 2 PM):**
+
+> **Keystore custody for closed beta = SINGLE SOPS-encrypted copy on the dev workstation is sufficient. No cloud backup, no USB ceremony, no off-site replica.** The SOPS+age envelope on disk (`~/.config/sops/age/keys.txt` for the age private key + `.secrets/prod/mobile-signing.yaml` for the keystore bytes) is the only copy until one of the re-expansion triggers below fires.
+
+**Concrete scope cut for Plan 06-01 (was Tasks 0-7, now Tasks 0-4 only):**
+
+| Was (Amendment 2 PM — cloud backup) | Now (Amendment 4 PM — no backup) |
+|---|---|
+| Task 5: cloud-sync SOPS bundle + age key to user-chosen cloud (iCloud/Drive/Dropbox) + write `RECOVERY-CARD.md` heredoc + `cloud-backup-log.txt` heredoc | **DEFERRED to v1.0.1 backlog (`KEYSTORE-CLOUD-BACKUP`).** Task 5 not executed in v1.0. |
+| Task 6 (USER ACTION): cross-device sync verification on phone + print + place `RECOVERY-CARD.md` at home | **DEFERRED to v1.0.1 backlog.** Task 6 not executed in v1.0. |
+| Task 7: write 06-01-SUMMARY + closeout commit (closes Plan 06-01 + Phase 6) | **PROMOTED to immediate closeout.** Write 06-01-SUMMARY now reflecting Tasks 0-4 done + 5-6 deferred. |
+| `SIGN-01` clause "2 offline physical backups in separate physical locations" | REWRITTEN to "single SOPS-encrypted copy on dev workstation; backup deferred to `KEYSTORE-CLOUD-BACKUP` v1.0.1 backlog." |
+
+**Why this is acceptable (extending Amendment 2 PM reasoning):**
+
+1. **Real blast radius is bounded.** 5-10 testers + DM-everyone-on-Telegram reinstall workflow = 30-minute recovery from keystore loss. Compare to: ~10 minutes of cloud-provider setup + ongoing sync-app maintenance × every phase that touches mobile-signing.yaml.
+2. **SOPS+age envelope on disk is itself secure.** Workstation backup (Time Machine / dev workstation rebuild) covers the disk-loss scenario incidentally — Time Machine is encrypted at rest, age key + SOPS-encrypted YAML both restore.
+3. **The cloud-backup proposal was a "what if dev workstation dies" hedge.** Probability of dev workstation total loss before closed-beta wraps in ~3-5 weeks is low. If it happens: regenerate keystore (15 min) + re-release under new package name + DM testers (~30 min). Total: ~45 min vs cloud setup tax of ~30 min upfront + ongoing.
+4. **Promotion triggers exist.** If the project crosses any of the 3 thresholds below, the cloud backup work moves from "deferred" to "do now" via v1.0.1 `KEYSTORE-CLOUD-BACKUP`. Until then, single SOPS copy on workstation is correct.
+5. **The keystore is regenerable, not unique.** This is materially different from, e.g., the SOPS age key (which IS load-bearing and IS backed up to 1Password sealed entry per Phase 2 D-04). Losing the keystore = re-release. Losing the age key = lose access to ALL `.secrets/**/*.yaml` files across the project. The age key keeps its Phase 2 D-04 backup; the keystore doesn't need its own.
+
+**v1.0.1 backlog entry:** `KEYSTORE-CLOUD-BACKUP` — promote keystore backup (was Plan 06-01 Tasks 5+6) when ANY of:
+1. **Google Play Store submission begins.** Play Store enforces signed-by-same-key for all updates forever; recovery from keystore loss = re-publish as a NEW app (loses ratings, install base, listing history). At Play Store scale, keystore loss IS catastrophic, justifying the backup ceremony.
+2. **Tester base passes 50 users.** DM-everyone-reinstall doesn't scale; needs a recovery path that doesn't depend on manually coordinating with each tester.
+3. **Explicit decision to start treating the keystore as a production asset.** E.g., business case shifts, project incorporates, third-party (investor / partner) needs continuity assurance.
+
+Promotion path: re-run the lean cloud-backup variant of Tasks 5+6 (preserved in `06-01-PLAN.md` body) OR if Play Store submission triggered it, escalate to the original bank-grade 2-USB variant (preserved in git history at commit 406cf3a) per `PROD-LAUNCH-PREP` v1.0.1 backlog entry.
+
+**Files affected by Amendment 4:**
+
+- `.planning/phases/06-release-signing/06-CONTEXT.md` — D-07 (was already partially superseded by Amendment 2 PM) + D-15(a) (was already softened) now **fully superseded**. Post-CONTEXT amendment block extended.
+- `.planning/phases/06-release-signing/06-01-PLAN.md` — Tasks 5 + 6 marked DEFERRED inline (frontmatter + task-level notices). `must_haves.truths` trimmed to remove backup clauses. Plan content not deleted (preserves audit + makes promotion trivial).
+- `.planning/phases/06-release-signing/06-VALIDATION.md` — 06-01-05 + 06-01-06 rows marked deferred (matches the 06-02-* pattern from Amendment 3).
+- `.planning/phases/06-release-signing/06-01-SUMMARY.md` — NEW. Closeout SUMMARY for Plan 06-01: Tasks 0-4 done, Tasks 5-6 deferred.
+- `.planning/ROADMAP.md` — Phase 6 row `[ ]` → `[x]` with deferral note. v1.0.1 backlog gains `KEYSTORE-CLOUD-BACKUP` row.
+- `.planning/REQUIREMENTS.md` — SIGN-01 clause "2 offline physical backups" rewritten to "single SOPS copy on dev workstation; backup deferred". Trace table SIGN-01 = Complete.
+- `.planning/PROJECT.md` — Phase 6 row `[x]` DONE.
+- `.planning/STATE.md` — Phase 6 CLOSED; Phase 7 = next.
+
+**Files NOT touched by Amendment 4:**
+
+- `06-02-PLAN.md`, `06-CONTEXT.md` body (only amendment block appended), `06-RESEARCH.md`, `06-PATTERNS.md`, `06-PLAN-CHECK.md` — stay as-written.
+- The cloud-backup variant of Tasks 5+6 in `06-01-PLAN.md` body — stays in the file as preserved-but-deferred content. Promotion = un-flag the deferral notices, no rewrite needed.
+
+**Re-expansion trigger for THIS amendment:** any of the 3 `KEYSTORE-CLOUD-BACKUP` v1.0.1 backlog triggers (Play Store submission / >50 users / explicit production-asset decision). At that point, re-execute Plan 06-01 Tasks 5+6 (their bodies are preserved in `06-01-PLAN.md` from Amendment 2 PM).
 

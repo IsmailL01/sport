@@ -68,7 +68,7 @@ Total: **96 REQ-IDs originally enumerated; ~64 IDs across the dropped phases are
 
 ### Phase 6 — Release Signing (SIGN)
 
-- [ ] **SIGN-01**: Android release keystore — generated offline (single workstation, deleted from disk after encryption); encrypted to `.secrets/android-release.keystore.sops`; **2 offline physical backups in separate physical locations**; recovery playbook in `docs/SECRETS.md` §"Android Keystore Loss"
+- [x] **SIGN-01**: Android release keystore — generated offline (single workstation, deleted from disk after encryption); encrypted to `.secrets/prod/mobile-signing.yaml` (SOPS+age, base64-in-YAML); SHA-256 fingerprint captured to `evidence/keystore-sha256.txt` (D-19 Mapbox restriction unblock); recovery playbook in `docs/SECRETS.md` §"Mobile signing — recovery" (4 scenarios per D-15). **DONE 2026-05-20** (Plan 06-01 Tasks 0-4, commits 7f43069..27d4954). _Backup ceremony deferred — single SOPS-encrypted copy on dev workstation is sufficient for closed beta per ADR-0011 Amendment 4 PM. Promotion to bank-grade backup tracked as v1.0.1 `KEYSTORE-CLOUD-BACKUP` (triggers: Play Store submission / >50 users / explicit production-asset decision)._
 - [ ] ~~**SIGN-02**~~ **DEFERRED per ADR-0011 Amendment 3 (Android-first launch).** Was: iOS Apple Developer Program enrolled; distribution certificate (private key in SOPS); distribution provisioning profile for app bundle ID; ASC API key (P8 file) in SOPS for unattended TestFlight uploads; EAS-managed-credentials vs fastlane-Match decision in `docs/SECRETS.md` §"iOS signing". Re-trigger: Android beta stabilizes OR explicit user decision to start iOS. Plan `06-02-PLAN.md` stays on disk; reactivated by un-flagging this entry.
 
 ### Phase 7 — Release Builds + Mobile Stability (BUILD + STAB)
@@ -245,7 +245,7 @@ Per user redline: "Old REQ-IDs (except HEALTH-04) move to v1.1+ in REQUIREMENTS.
 | INFRA-01/03/05/07 | Phase 3: IaC | **Complete** 2026-05-17 (Plans 03-01..03; -02/-04 deferred v1.1, -06 moved Phase 5) |
 | CICD-01..06 | Phase 4: CI/CD | **Complete** 2026-05-18 (Plans 04-01..06). Cosign/SLSA kept wired, best-effort per ADR-0011. |
 | OBS-01/03..07 | Phase 5: Observability backend | **Complete** 2026-05-20 (Plans 05-02..07). OBS-02 deferred per ADR-0010; OBS-08 mobile UX dropped per ADR-0011 (backend seam shipped; env-allowlist refactor lazy). |
-| SIGN-01..02 | Phase 6: Release signing | Pending |
+| SIGN-01 | Phase 6: Release signing | **Complete** 2026-05-20 (Plan 06-01 Tasks 0-4 shipped, commits 7f43069..27d4954). Tasks 5-6 (cloud backup) DEFERRED per ADR-0011 Amendment 4 to v1.0.1 `KEYSTORE-CLOUD-BACKUP`. SIGN-02 (iOS) DEFERRED per Amendment 3. |
 | BUILD-01 + STAB-01 (Android-only) | Phase 7: Release builds + mobile stability | Pending. _BUILD-02 + iOS portion of STAB-01 DEFERRED per ADR-0011 Amendment 3._ |
 | DIST-01 | Phase 8: Closed-beta distribution | Pending. _DIST-02 DEFERRED per ADR-0011 Amendment 3._ |
 | LAUNCH-01..02 (Android-only) | Phase 9: Closed-beta launch | Pending. _iOS tester arm of LAUNCH-02 DEFERRED per ADR-0011 Amendment 3._ |
