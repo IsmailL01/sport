@@ -4,21 +4,25 @@ milestone: v1.0
 milestone_name: Closure
 status: executing
 stopped_at: |
-  Phase 5 Wave 3 — Plan 05-04 (Prom /metrics + middleware + 3 dashboards + cardinality CI gate)
-  shipped over 2 socket-dropped executor runs; orchestrator closed inline with SUMMARY +
-  ROADMAP update. 4 commits: 975a048 (pkg/observability metrics+middleware) → 0d9c823
-  (realtime-gw Hijacker/Flusher passthrough hotfix) → 381f003 (8-service wire) → 515ca90
-  (3 Grafana dashboards + cardinality_probe.py + smoke_metrics.py + CI gate +
-  branch-protection update from 9→10 required checks). go build + go vet + observability
-  tests all green. Next: dispatch Plan 05-05 (OTel OTLP + sentry-go SDK across 9 services,
-  layers inserted BETWEEN PromhttpMiddleware and clientversion.Middleware).
-last_updated: "2026-05-20T00:30:00.000Z"
+  Phase 5 Wave 3 closed — Plan 05-05 (OTel OTLP/HTTP + sentry-go SDK + D-38 dormant
+  guard across 8 services) complete. 3 commits: a7831c3 (otel_init.go + 6 tests),
+  4bbb3d5 (sentry_init.go + 5 tests + headerWroteRecorder Hijacker passthrough),
+  5f1e276 (8-service main.go chain wire — Promhttp→SentryRecovery→OtelHTTP→
+  clientversion→mux per D-32). Pinned RESEARCH §4 deps: sentry-go v0.46.2,
+  otel v1.32.0, otel/sdk v1.32.0, otlptracehttp v1.32.0, otelhttp v0.57.0.
+  D-38 contract: empty SENTRY_DSN_BACKEND → both MustInit* log INFO "disabled —
+  empty DSN" + return no-op; dormant-by-design path для v1.0 per ADR-0010
+  amendment 2026-05-19 PM. go build/vet/test all green. pkg/observability now
+  44 passing test functions/sub-tests across 6 test files.
+  Wave 4 remains: Plan 05-06 (DebugSessionMiddleware + Alloy log shipping +
+  final OBS-06 runtime probe + phase closure).
+last_updated: "2026-05-20T18:00:00.000Z"
 progress:
   total_phases: 21
   completed_phases: 3
   total_plans: 19
-  completed_plans: 21
-  percent: 14
+  completed_plans: 22
+  percent: 15
 ---
 
 # Project State
@@ -36,9 +40,9 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 ## Current Position
 
-Phase: 05 (observability-backend) — EXECUTING (Wave 3 of 4 in progress)
-Plan: 4 of 6 complete (05-02, 05-03, 05-04, 05-07 ✓; 05-05 + 05-06 pending)
-Last completed: Plan 05-04 — Prom /metrics + middleware + 3 dashboards + cardinality CI gate, 2026-05-20 (4 commits 975a048..515ca90). Prior: Phase 4 (CI/CD pipeline) — 7 plans across 4 waves, 2026-05-18. All 6 acceptance IDs delivered (CICD-01..06). Live rollback drill PASS on prod. Branch protection on main с 8 required checks. Strategy pivot mid-Wave-4: GHCR-pull-on-prod → save/scp/load via controller (eliminates prod-side GHCR auth). v1.0.1 backlog populated с 6 debt items.
+Phase: 05 (observability-backend) — EXECUTING (Wave 3 CLOSED; Wave 4 remaining = Plan 05-06)
+Plan: 5 of 6 complete (05-02, 05-03, 05-04, 05-05, 05-07 ✓; 05-06 pending)
+Last completed: Plan 05-05 — OTel OTLP/HTTP + sentry-go SDK + D-38 dormant guard across 8 services, 2026-05-20 (3 commits a7831c3..5f1e276). Pinned RESEARCH §4 deps; D-38 empty-DSN guard in both MustInitSentry + MustInitTracer with slog buffer test assertion (dormant-by-design for v1.0 per ADR-0010 amendment); Promhttp→SentryRecovery→OtelHTTP→clientversion→mux chain in all 8 Go services; pkg/observability 44 tests GREEN. Prior: Plan 05-04 — Prom /metrics + middleware + 3 dashboards + cardinality CI gate.
 Status: Executing Phase 05
 
 Progress: [▓▓▓░░░░░░░] ~22% of new v1.0 scope (REL-01..05 + SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 — 22-of-96 REQ-IDs complete)
@@ -68,7 +72,8 @@ Plan 02-04 actual: ~95 min spread across 2 sessions (Task 2 docs ~25 min prior s
 
 **Recent Trend:**
 
-- Last activity: 2026-05-18 — **Phase 4 closed**. Plans 04-04 (drill PASS + save/scp/load pivot, commit `fb3bfe4`) + 04-05 (branch protection, commit `d972bcc`) + 04-06 (deploy.md §11, pending commit). v1.0.1 backlog populated в ROADMAP с 6 debt items. Branch `main` locked с 8 required checks.
+- Last activity: 2026-05-20 — **Phase 5 Wave 3 closed**. Plan 05-05 shipped (3 commits a7831c3..5f1e276 — otel_init.go + sentry_init.go + 8-service main.go chain wire). pkg/observability now 44 passing tests across 6 files. D-38 empty-DSN dormant guard means services boot cleanly without Sentry DSN (Sentry SaaS activation deferred to post-v1.0 per ADR-0010 amendment). Next: Plan 05-06 (Wave 4 final — DebugSessionMiddleware + Alloy log shipping + OBS-06 runtime probe + phase closure).
+- 2026-05-18 — **Phase 4 closed**. Plans 04-04 (drill PASS + save/scp/load pivot, commit `fb3bfe4`) + 04-05 (branch protection, commit `d972bcc`) + 04-06 (deploy.md §11, pending commit). v1.0.1 backlog populated в ROADMAP с 6 debt items. Branch `main` locked с 8 required checks.
 - 2026-05-18 — Codebase map refreshed after phases 2-4 closeout (`c8eb755`).
 - 2026-05-17 — **Phase 3 closed**. 3 plans across 3 waves; pivoted mid-execution Hetzner Cloud → provider-agnostic VPS (5→3 plans). INFRA-07 baseline 66.5s on 148.253.214.156.
 - 2026-05-16 — **Phase 2 closed**. Plan 02-04 Mapbox token rotation: ADR-0006 verdict A (commit `58b15eb`), SOPS-write + smoke HTTP 200 (commit `881f912`), Incident Log complete + SUMMARY (commit `d6fe1f3`). Old tokens revoked at dashboard by user.
@@ -129,7 +134,7 @@ Recent / load-bearing decisions affecting current work:
 
 - ☑ `IDENTITY_DEV_MODE=true` default → **CLOSED** in Phase 2 SEC-05 (Plan 02-02, commit `27ad27f`)
 - ☐ Missing `/auth/*` rate-limit → **Phase 6 EDGE-01** (edge protection)
-- ☐ OTP unconditional log → **Phase 5 OBS-04** (observability — no PII in logs)
+- ☑ OTP unconditional log → **CLOSED** in Phase 5 OBS-04 (Plan 05-03, commit `320975c`). OBS-06 span-attribute scrub also closed via Plan 05-05 piiScrubProcessor (D-21 reuse — same PIIDenyList drives slog handler + OTel span scrub). Runtime probe `pii_live_probe.py` deferred to Plan 05-06.
 - ☐ R18 missing `user_id` on `personal_records`/`sessions` → **Phase 7 DB-03** (zero-downtime migration; backfill strategy LOUDLY DEFERRED to `/gsd-discuss-phase 7` for agent DB inspection)
 
 **Active branch:** `feat/cursona-redesign` IS the v1.0 line. Merge to `main` no longer a separate phase — handled in Phase 21 E2E acceptance when `v1.0-rc.1` is tagged.

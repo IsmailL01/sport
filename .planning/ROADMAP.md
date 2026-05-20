@@ -140,19 +140,26 @@ This roadmap defines **21 phases** to take the Running Ecosystem from "Phase 8 /
 
 ### Phase 5: Observability (backend)
 **Workstream:** `backend`
-**Goal:** Backend services produce structured JSON logs, Prometheus metrics, and OTLP traces — observable enough to diagnose production incidents, restricted enough that GPS coordinates, phone numbers, DMs, and other PII never appear. Sentry self-hosted on a separate Hetzner VPS with separate DNS (`sentry.<domain>`) and separate TLS cert — isolation is non-negotiable per user redline (losing both app and crash reports during an incident is unacceptable).
+**Goal:** Backend services produce structured JSON logs, Prometheus metrics, and OTLP traces — observable enough to diagnose production incidents, restricted enough that GPS coordinates, phone numbers, DMs, and other PII never appear. **AMENDED 2026-05-19 per ADR-0010:** Sentry SaaS (was self-hosted on separate VPS, scrapped); Loki+Grafana+Prom colocated on `srv1561293`. **AMENDED 2026-05-19 PM per ADR-0010 amendment:** Sentry SaaS *activation* deferred to post-v1.0; SDK code paths ship wired-and-dormant via D-38 empty-DSN guard.
 **Depends on:** Phase 3
 **Requirements:** OBS-01..08
 **Success Criteria:**
-1. Sentry self-hosted instance running on separate Hetzner VPS at `sentry.<domain>` with separate ACME cert (NOT behind same Caddy as app)
-2. 4 Sentry projects scoped: `staging-mobile`, `prod-mobile`, `staging-backend`, `prod-backend` (mobile projects consumed by Phase 17)
-3. Structured JSON logs (Zap or slog) on all Go services with level tags; **OTP codes never logged** (CONCERNS.md P0 — closes the unconditional-OTP-log finding under the "no PII in logs" rule)
-4. Prom metrics exposed at `/metrics` on each service; Grafana dashboards for P99 latency, error rate, queue depth, JWT-validation failures
-5. **No GPS coordinates ever in logs.** No phone numbers. No `displayName`. No DM content. No `external_uuid` from third-party imports. Verified via grep audit + runtime sample inspection.
-6. Cardinality budget: no per-`user_id` labels on metrics (use bucketed cohorts). Verified via Prom label-cardinality probe.
-7. Tester-mode debug logging opt-in per session via Settings toggle with explicit RU consent banner
-8. Alert rules with on-call thresholds wired to PagerDuty (or simple SMS escalation for the 2-dev team)
-**Plans**: TBD
+1. Sentry self-hosted instance running on separate Hetzner VPS at `sentry.<domain>` with separate ACME cert (NOT behind same Caddy as app) — **SUPERSEDED by D-33 (SaaS) and D-38 (activation deferred post-v1.0)**
+2. 4 Sentry projects scoped: `staging-mobile`, `prod-mobile`, `staging-backend`, `prod-backend` (mobile projects consumed by Phase 17) — **DEFERRED post-v1.0** per ADR-0010 amendment
+3. Structured JSON logs (Zap or slog) on all Go services with level tags; **OTP codes never logged** (CONCERNS.md P0 — closes the unconditional-OTP-log finding under the "no PII in logs" rule) — **DONE Plan 05-03**
+4. Prom metrics exposed at `/metrics` on each service; Grafana dashboards for P99 latency, error rate, queue depth, JWT-validation failures — **DONE Plan 05-04**
+5. **No GPS coordinates ever in logs.** No phone numbers. No `displayName`. No DM content. No `external_uuid` from third-party imports. Verified via grep audit + runtime sample inspection. — **PII-deny-list + slog scrub DONE Plan 05-03; OTel span scrub DONE Plan 05-05; runtime probe pending Plan 05-06**
+6. Cardinality budget: no per-`user_id` labels on metrics (use bucketed cohorts). Verified via Prom label-cardinality probe. — **DONE Plan 05-04 (`scripts/cardinality_probe.py` + CI gate)**
+7. Tester-mode debug logging opt-in per session via Settings toggle with explicit RU consent banner — **PENDING Plan 05-06 (DebugSessionMiddleware seam ready in slog_handler.go)**
+8. Alert rules with on-call thresholds wired to PagerDuty (or simple SMS escalation for the 2-dev team) — **DEFERRED to Sentry SaaS activation post-v1.0** (Telegram native integration per D-33)
+
+**Plans progress:** 5 of 6 complete.
+- [x] `05-02` — sentry.io org bootstrap RUNBOOK + SOPS DSN slots (USER ACTION + docs) — **DONE 2026-05-19** (commit b0e65d1)
+- [x] `05-03` — slog JSON handler + PII deny-list + OBS-04 OTP fix + CI gate — **DONE 2026-05-19** (commits 6dfcef3..ea1e65d)
+- [x] `05-04` — Prom /metrics + middleware + 3 dashboards + cardinality CI gate — **DONE 2026-05-20** (commits 975a048..515ca90)
+- [x] `05-05` — OTel OTLP/HTTP + sentry-go SDK + D-38 dormant guard across 8 services — **DONE 2026-05-20** (commits a7831c3..5f1e276)
+- [x] `05-07` — observability-stack (Loki+Grafana+Prom on srv1561293) — **DONE 2026-05-19** (commits ec57ac6..6296af6)
+- [ ] `05-06` — DebugSessionMiddleware + Alloy log shipping + OBS-06 runtime probe + phase closure — Wave 4
 
 ### Phase 6: Edge protection & rate-limiting
 **Workstream:** `backend`

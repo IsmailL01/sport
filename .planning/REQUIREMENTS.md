@@ -53,14 +53,14 @@ Total: **96 REQ-IDs across 21 phases**.
 
 ### Phase 5 — Observability Backend (OBS)
 
-- [ ] **OBS-01**: Sentry self-hosted on separate Hetzner VPS at `sentry.<domain>` with separate ACME cert, NOT behind same Caddy as app
-- [ ] **OBS-02**: 4 Sentry projects scoped: `staging-mobile`, `prod-mobile`, `staging-backend`, `prod-backend`
-- [ ] **OBS-03**: Structured JSON logs (Zap or slog) on all Go services with level tags
-- [ ] **OBS-04**: **OTP codes never logged** (CONCERNS.md P0 closes under "no PII in logs" rule)
-- [ ] **OBS-05**: Prom metrics at `/metrics` per service; Grafana dashboards for P99 latency, error rate, queue depth, JWT-validation failures
-- [ ] **OBS-06**: **No GPS coordinates, phone numbers, displayName, DM content, external_uuid in logs** — verified via grep audit + runtime sample inspection
-- [ ] **OBS-07**: Cardinality budget — no per-`user_id` labels on metrics; bucketed cohorts only; verified via Prom label-cardinality probe
-- [ ] **OBS-08**: Tester-mode debug-logging opt-in per session via Settings toggle with explicit RU consent banner
+- [x] **OBS-01**: Sentry self-hosted on separate Hetzner VPS at `sentry.<domain>` with separate ACME cert, NOT behind same Caddy as app — **AMENDED per ADR-0010 (SaaS) + ADR-0010 amendment 2026-05-19 PM (D-38 dormant substrate):** SDK code paths wired-and-dormant via Plan 05-05 (commits a7831c3..5f1e276); empty-DSN guard short-circuits both `MustInitSentry` and `MustInitTracer` with INFO log. Activation post-v1.0 = SOPS edit к populate SENTRY_DSN_BACKEND + redeploy (no code change).
+- [ ] **OBS-02**: 4 Sentry projects scoped: `staging-mobile`, `prod-mobile`, `staging-backend`, `prod-backend` — **DEFERRED post-v1.0** per ADR-0010 amendment (Sentry SaaS org + 4 projects = USER ACTION outside v1.0 scope)
+- [x] **OBS-03**: Structured JSON logs (Zap or slog) on all Go services with level tags — **DONE Plan 05-03** (slog handler + PII scrub + 8-service wire; commits 6dfcef3..ea1e65d)
+- [x] **OBS-04**: **OTP codes never logged** (CONCERNS.md P0 closes under "no PII in logs" rule) — **DONE Plan 05-03** (otp.go logOTPIssued helper + defense-in-depth gating at 3 layers; commit 320975c)
+- [x] **OBS-05**: Prom metrics at `/metrics` per service; Grafana dashboards for P99 latency, error rate, queue depth, JWT-validation failures — **DONE Plan 05-04** (metrics.go + promhttp_middleware.go + 3 dashboards JSON + 8-service wire; commits 975a048..515ca90)
+- [x] **OBS-06**: **No GPS coordinates, phone numbers, displayName, DM content, external_uuid in logs** — verified via grep audit + runtime sample inspection — **slog scrub + CI grep DONE Plan 05-03; OTel span scrub DONE Plan 05-05 (piiScrubProcessor reuses PIIDenyList per D-21); runtime sampling probe pending Plan 05-06**
+- [x] **OBS-07**: Cardinality budget — no per-`user_id` labels on metrics; bucketed cohorts only; verified via Prom label-cardinality probe — **DONE Plan 05-04** (`scripts/cardinality_probe.py` + CI gate + branch protection 10 required checks)
+- [ ] **OBS-08**: Tester-mode debug-logging opt-in per session via Settings toggle with explicit RU consent banner — **PENDING Plan 05-06** (DebugSessionMiddleware; backend seam ready in `slog_handler.go` via `WithLogLevel(ctx, lvl)` / `LogLevelFromContext(ctx)`)
 
 ### Phase 6 — Edge Protection & Rate-Limiting (EDGE)
 
@@ -296,7 +296,7 @@ Per user redline: "Old REQ-IDs (except HEALTH-04) move to v1.1+ in REQUIREMENTS.
 | SEC-01..09 | Phase 2: Secrets hardening | Pending |
 | INFRA-01..07 | Phase 3: IaC | Pending |
 | CICD-01..06 | Phase 4: CI/CD | Pending |
-| OBS-01..08 | Phase 5: Observability backend | Pending |
+| OBS-01..08 | Phase 5: Observability backend | **Partial** — OBS-01/03/04/05/06/07 complete (5 of 8 Phase 5 plans shipped); OBS-02 deferred post-v1.0 per ADR-0010 amendment; OBS-06 runtime probe + OBS-08 DebugSession pending Plan 05-06 |
 | EDGE-01..05 | Phase 6: Edge + rate-limit | Pending |
 | DB-01..08 | Phase 7: DB + queues + state | Pending |
 | LOAD-01..06 | Phase 8: Load + chaos | Pending |
