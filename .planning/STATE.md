@@ -3,13 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Closure
 status: executing
-stopped_at: Wave 1 Plan 03-01 — sshd wedge HALT on prod VPS, awaiting out-of-band console recovery by user.
-last_updated: "2026-05-19T19:25:25.523Z"
+stopped_at: |
+  Phase 5 Wave 3 — Plan 05-04 (Prom /metrics + middleware + 3 dashboards + cardinality CI gate)
+  shipped over 2 socket-dropped executor runs; orchestrator closed inline with SUMMARY +
+  ROADMAP update. 4 commits: 975a048 (pkg/observability metrics+middleware) → 0d9c823
+  (realtime-gw Hijacker/Flusher passthrough hotfix) → 381f003 (8-service wire) → 515ca90
+  (3 Grafana dashboards + cardinality_probe.py + smoke_metrics.py + CI gate +
+  branch-protection update from 9→10 required checks). go build + go vet + observability
+  tests all green. Next: dispatch Plan 05-05 (OTel OTLP + sentry-go SDK across 9 services,
+  layers inserted BETWEEN PromhttpMiddleware and clientversion.Middleware).
+last_updated: "2026-05-20T00:30:00.000Z"
 progress:
   total_phases: 21
   completed_phases: 3
   total_plans: 19
-  completed_plans: 20
+  completed_plans: 21
   percent: 14
 ---
 
@@ -28,9 +36,9 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 ## Current Position
 
-Phase: 05 (observability-backend) — EXECUTING
-Plan: 1 of 6
-Last completed: Phase 4 (CI/CD pipeline) — 7 plans across 4 waves, 2026-05-18. All 6 acceptance IDs delivered (CICD-01..06). Live rollback drill PASS on prod. Branch protection on main с 8 required checks. Strategy pivot mid-Wave-4: GHCR-pull-on-prod → save/scp/load via controller (eliminates prod-side GHCR auth). v1.0.1 backlog populated с 6 debt items.
+Phase: 05 (observability-backend) — EXECUTING (Wave 3 of 4 in progress)
+Plan: 4 of 6 complete (05-02, 05-03, 05-04, 05-07 ✓; 05-05 + 05-06 pending)
+Last completed: Plan 05-04 — Prom /metrics + middleware + 3 dashboards + cardinality CI gate, 2026-05-20 (4 commits 975a048..515ca90). Prior: Phase 4 (CI/CD pipeline) — 7 plans across 4 waves, 2026-05-18. All 6 acceptance IDs delivered (CICD-01..06). Live rollback drill PASS on prod. Branch protection on main с 8 required checks. Strategy pivot mid-Wave-4: GHCR-pull-on-prod → save/scp/load via controller (eliminates prod-side GHCR auth). v1.0.1 backlog populated с 6 debt items.
 Status: Executing Phase 05
 
 Progress: [▓▓▓░░░░░░░] ~22% of new v1.0 scope (REL-01..05 + SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 — 22-of-96 REQ-IDs complete)
