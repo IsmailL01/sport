@@ -14,3 +14,13 @@
   roles:
     - sport-stack   # STUB в этом плане; Plan 03-02 Wave 2 полностью overwrites
   tags: [deploy]
+
+- name: Deploy Grafana Alloy log shipper to prod VPS (Phase 5 / Plan 05-06 / OBS-06)
+  # Per D-27 / D-29: alloy installed via apt + systemd (NOT containerized),
+  # ships container stdout from prod VPS to Loki on observability VPS
+  # (srv1561293) via Caddy-fronted endpoint per D-36 / ADR-0010 amendment.
+  hosts: app_servers
+  become: true
+  roles:
+    - alloy-shipper
+  tags: [alloy]

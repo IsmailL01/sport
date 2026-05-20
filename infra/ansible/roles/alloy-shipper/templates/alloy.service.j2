@@ -1,0 +1,19 @@
+# /etc/systemd/system/alloy.service.d/override.conf — Phase 5 / Plan 05-06 / OBS-06.
+# Managed by Ansible (roles/alloy-shipper/templates/alloy.service.j2).
+#
+# Minimal override on top of apt-installed alloy.service. We adopt the
+# upstream unit's ExecStart + User + Group (per D-29 — systemd, not container;
+# don't reinvent service-unit boilerplate) and only ADD restart hardening
+# below.
+
+[Service]
+# Restart-always: alloy crashes (OOM, panic, config reload race) should self-
+# heal within seconds without operator intervention.
+Restart=always
+RestartSec=10
+
+# StartLimitInterval/Burst tuning — allow alloy 5 restarts in 60s window
+# before systemd backs off. Keeps Phase 5 acceptance walkthrough resilient
+# against transient docker socket flakes during deploy.
+StartLimitInterval=60
+StartLimitBurst=5
