@@ -8,7 +8,10 @@
 #   1 — at least one sub-smoke failed (red)
 #   2 — at least one sub-smoke still in stub state (pending)
 set -uo pipefail
-cd "$(dirname "$0")"
+# Locate sibling smokes by absolute path; do NOT change cwd — sub-smokes use
+# repo-root-relative paths (e.g. `.planning/phases/.../evidence/keystore-sha256.txt`
+# + `.secrets/prod/mobile-signing.yaml`), so the umbrella must inherit repo-root cwd.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SMOKES=(
   smoke-keystore-generated.sh
   smoke-sops-roundtrip.sh
@@ -20,7 +23,7 @@ SMOKES=(
 PASS=0; FAIL=0; PENDING=0
 for s in "${SMOKES[@]}"; do
   echo "--- $s ---"
-  bash "$s"; rc=$?
+  bash "$SCRIPT_DIR/$s"; rc=$?
   case "$rc" in
     0) PASS=$((PASS+1));;
     2) PENDING=$((PENDING+1)); echo "(pending — sub-smoke not yet implemented)";;
