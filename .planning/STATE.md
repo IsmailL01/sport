@@ -52,18 +52,18 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 **Milestone:** v1.0 Android Closed Beta — IN PROGRESS, **REDEFINED 2026-05-20** per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) (was 21-phase enterprise-hardening, retired), **AMENDED 2026-05-20 PM** per [ADR-0011 Amendment 3](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md#amendment-3-2026-05-20-pm--android-first-launch-ios-deferred) to Android-first launch (iOS deferred to post-Android-beta milestone). Closed beta = solo dev shipping to 5-10 Android friend testers via self-hosted Caddy manifest. Target close: tag `v1.0.0-beta.1` published + 72h watchlist clean (no P0). No formal soak gate.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** Phase 7 — Release builds + mobile stability (Android-only per ADR-0011 Amendment 3; Phase 6 closed 2026-05-20 with Plan 06-01 Tasks 0-4 shipped + Tasks 5-6 deferred per Amendment 4)
+**Current focus:** Phase 7 — Release builds + mobile stability (Android-only per ADR-0011 Amendment 3; CONTEXT gathered 2026-05-21; ready for `/gsd-plan-phase 7`)
 
 **Brownfield note:** Codebase remains on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors + Phases 1-5 of v1.0 hardening on top). Old planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`. 21-phase scope archive at `.planning/phases/_archive/superseded-21-phase-v1.0/`.
 
 ## Current Position
 
-Phase: 7 (release-builds-and-mobile-stability) — READY TO PLAN; Phase 6 closed 2026-05-20 PM
-Plan: n/a (Phase 7 plans not created yet); next = `/gsd-discuss-phase 7`
-Last completed: **Plan 06-01** — Android release keystore + SOPS-encrypted at `.secrets/prod/mobile-signing.yaml` + SHA-256 evidence + `docs/SECRETS.md §Mobile signing — recovery` (Tasks 0-4 = commits 7f43069..27d4954, 2026-05-20). Tasks 5-6 (cloud backup + RECOVERY-CARD) DEFERRED per ADR-0011 Amendment 4 to v1.0.1 `KEYSTORE-CLOUD-BACKUP` backlog. Prior: Plan 05-06 — DebugSessionMiddleware + Alloy alloy-shipper role + ADR-0009 + observability RUNBOOK.
+Phase: 7 (release-builds-mobile-stability) — CONTEXT gathered; ready to plan
+Plan: n/a (Phase 7 plans not created yet); next = `/gsd-plan-phase 7`
+Last completed: **07-CONTEXT.md** captured autonomously 2026-05-21 — 28 decisions D-01..D-28 covering EAS Cloud build pipeline, SOPS-via-CI credential injection (lifts Phase 6 D-14-CI-AGE-KEY deferral), arm64-v8a only, R8 + ProGuard keeps for Mapbox/MMKV/expo-task-manager/Hermes, foreground service notification (RU dynamic), MIUI + One UI auto-start dialog, 1h Pixel pocket-walk acceptance (≥95% expected GPS points). Prior: Plan 06-01 closeout + Phase 6 closed 2026-05-20.
 
-**Next phase (open):** Phase 7 — Release builds + mobile stability (Android only per ADR-0011 Amendment 3). `mobile-shared` workstream. CONTEXT not gathered yet. Plans 07-01 (EAS Android prod profile + R8/ProGuard + arm64-v8a) + 07-03 (foreground service + MIUI + One UI mitigations + 1h Pixel pocket-walk) active; 07-02 (EAS iOS) deferred. Next: `/gsd-discuss-phase 7`.
-Status: Phase 6 done — ready for Phase 7 planning
+**Next phase (open):** Phase 7 — Release builds + mobile stability (Android only per ADR-0011 Amendment 3). `mobile-shared` workstream. CONTEXT.md gathered (commit 7731fab). Plans 07-01 (EAS Android prod profile + R8/ProGuard + CI workflow) + 07-03 (foreground service + MIUI/One UI mitigations + 1h Pixel pocket-walk) to be planned via `/gsd-plan-phase 7`; 07-02 (EAS iOS) deferred per Amendment 3.
+Status: Phase 7 CONTEXT captured — ready for planning
 
 Progress: [▓▓▓▓▓▓░░░░] ~67% of v1.0 Android-only scope (6 of 9 phases done, 24 of 24 active plans complete in shipped phases; remaining 3 phases not planned yet)
 **Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation now folded into Phase 7 STAB-01 (Pixel + iPhone 1h pocket-walk smoke).
