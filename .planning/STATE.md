@@ -4,29 +4,19 @@ milestone: v1.0
 milestone_name: ClosedBeta
 status: executing
 stopped_at: |
-  Phase 5 CLOSED 2026-05-20 — Plan 05-06 Tasks 1-5 shipped (DebugSessionMiddleware
-  + Alloy alloy-shipper role + pii_live_probe.py + ADR-0009 + observability
-  RUNBOOK; 5 commits ce6cf01..eb28259). Task 6 acceptance walkthrough DEFERRED
-  to Phase 9 smoke test per ADR-0011 (scope reset to closed-beta lean — 21-phase
-  enterprise-hardening was overkill for solo dev shipping to 5-10 friend testers).
-
-  Milestone REDEFINED 2026-05-20 per ADR-0011: 21 phases → 4 phases on top of
-  what shipped (Phases 1-5). New scope:
-  - Phase 6: Release signing (Android keystore + iOS Apple Dev certs)
-  - Phase 7: Release builds + mobile stability (EAS + foreground service + iOS SLC)
-  - Phase 8: Closed-beta distribution (Android signed-JSON + iOS TestFlight)
-  - Phase 9: Closed-beta launch (smoke + 5-10 testers + 72h watchlist)
-
-  Dropped (audit trail in REQUIREMENTS.md + ROADMAP.md "Archived Phases"):
-  EDGE-* DB-* LOAD-* CRASH-* MAPBOX11-* AND-NATIVE-* IOS-NATIVE-* BG-*
-  DEVICES-* E2E-* HEALTH-04. Re-expansion triggers documented in ADR-0011
-  (beta passes >50 users / P0 incident / team grows beyond 1 dev).
-
-  Cosign/SLSA in backend-cd.yml stays wired = best-effort, NOT gated. Rollback
-  Makefile + 9990/9991 drill migrations kept. Sentry SaaS stays dormant per D-38.
-
-  Next: Phase 6 ready to plan via `/gsd-discuss-phase 6`.
-last_updated: "2026-05-20T22:00:00.000Z"
+  Phase 6 CONTEXT gathered 2026-05-20 (autonomous mode per memory
+  feedback_autonomous_discuss_mode — 22 decisions D-01..D-22 resolved from
+  prior-phase patterns + closed-beta lean scope per ADR-0011). Commit:
+  39273e2. SOPS layout = single `.secrets/prod/mobile-signing.yaml` (base64
+  inside YAML); keystore = solo-workstation one-shot, RSA 4096, 100y; 2
+  VeraCrypt USB backups co-locating age key + signing bundle; Apple Dev
+  Individual ($99/yr); self-managed iOS creds (not EAS Cloud-managed) per
+  Phase 4 "no vendor lock-in" pattern; ASC API key role = App Manager. Plan
+  06-01 → 06-02 strict serial (shared SOPS file). Phase 6 also unblocks
+  deferred Phase 2 Mapbox `pk.` Bundle ID + SHA-256 restriction (D-19).
+  Next: /gsd-plan-phase 6 (with --research-phase if Apple Dev portal flow
+  needs investigation, otherwise straight to plan).
+last_updated: "2026-05-20T22:30:00.000Z"
 progress:
   total_phases: 9
   completed_phases: 5
@@ -54,13 +44,11 @@ Phase: **05 CLOSED 2026-05-20** — all 6 plans shipped (Task 6 acceptance walkt
 Plan: 6 of 6 ✓
 Last completed: **Plan 05-06** — DebugSessionMiddleware + Alloy alloy-shipper role + pii_live_probe.py + ADR-0009 + observability RUNBOOK (5 commits ce6cf01..eb28259, 2026-05-20). Task 6 walkthrough conditionally deferred — re-trigger if Phase 9 watchlist exercises the observability stack and finds Alloy not shipping logs. Prior: Plan 05-05 — OTel OTLP/HTTP + sentry-go SDK + D-38 dormant guard.
 
-**Next phase (open):** Phase 6 — Release signing. `shared` workstream. Android keystore + 2 offline backups + recovery RUNBOOK; iOS Apple Dev certs + distribution provisioning + ASC API key in SOPS. Ready to plan via `/gsd-discuss-phase 6`.
-Status: Executing Phase 05
+**Next phase (open):** Phase 6 — Release signing. `shared` workstream. CONTEXT.md gathered (22 D-NN decisions). Ready for planning via `/gsd-plan-phase 6`.
+Status: Phase 6 ready to plan (CONTEXT captured)
 
-Progress: [▓▓▓░░░░░░░] ~22% of new v1.0 scope (REL-01..05 + SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 — 22-of-96 REQ-IDs complete)
-**Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation moves to Phase 16.
-
-**Next phase (open):** Phase 3 (Infrastructure as Code) — `backend` workstream. Phase 2 → Phase 3 strict no-parallelization gate is **NOW LIFTED**. Ansible playbooks + Terraform-for-cloud-resources for dev/staging/prod environments; consumes SOPS-decrypted env files from Phase 2.
+Progress: [▓▓▓▓▓░░░░░] ~56% of new closed-beta scope (5 of 9 phases done, 23 of ~26 estimated plans complete)
+**Pre-v1.0 baseline:** 35 commits of territory-core refactors already on `feat/cursona-redesign` from the superseded scope (SessionManager, tracker hooks, closure feedback, offline region picker bounds fix, adaptive sampling + SLC, ESLint v9 + token-secret guard). These kept as-is; field-test validation now folded into Phase 7 STAB-01 (Pixel + iPhone 1h pocket-walk smoke).
 
 ## Performance Metrics
 
@@ -176,7 +164,7 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-17 — Phase 3 Wave 1 (Plan 03-01) executor ran Ansible against `root@148.253.214.156`; playbook reported `ok=24 changed=5 failed=0` over 50s — but post-restart **sshd wedged** on the VPS. TCP/22 accepts connections but no SSH banner; Caddy on 443 unaffected (VPS itself alive). Cause: drop-in `infra/ansible/roles/common/files/sshd_config_overrides` re-declared `Subsystem sftp` which Ubuntu 24.04's main config already declares — OpenSSH refuses duplicate Subsystem entries → service fails to restart. Source fixed in commit `2605c3a` (line removed + inline incident comment for future maintainers). User must recover SSH via out-of-band console (provider-side VNC/KVM-over-web) before any further Ansible runs can land.
+Last session: 2026-05-20T15:47:28.801Z
 
 Earlier in same session: Phase 3 PIVOTED per user input "у меня не Hetzner а обычный vps сервер". 21 D-XX decisions classified SUPERSEDED/KEPT; new D-22..D-26 added. Pre-pivot 5-plan scaffold reverted to 3-plan post-pivot set (Ansible-only, prod-only). Plan-checker iteration 2 PASSED.
 
@@ -195,8 +183,8 @@ Earlier in same session: Phase 3 PIVOTED per user input "у меня не Hetzne
 - Decisions: 16 in-scope D-XX cited (D-03/04/12/13/14/15/16/17/19/20/21 KEPT; D-22/23/24/25/26 NEW). SUPERSEDED D-01/02/05/06/09/10/11/etc. excluded by design.
 - All 5 prior plan-checker fixes preserved across pivot: B3 (programmatic `awk '/^real/'` verdict from `/usr/bin/time -p`), B4 (explicit `docker compose down --remove-orphans` step 3.5 before Ansible UP), W3 (HOME-explicit SOPS env construct, no `expanduser`), W4 (negative-grep ROADMAP for stale Object Storage wording), W5 (sed-fill + `! grep -q '<fill'` for deploy.md §9 placeholders).
 
-Stopped at: Wave 1 Plan 03-01 — sshd wedge HALT on prod VPS, awaiting out-of-band console recovery by user.
-Resume file: `.planning/phases/03-infrastructure-as-code/03-01-SUMMARY.md` (full HALT recovery procedure in §Carry-forward items + §Deviations).
+Stopped at: Phase 6 context gathered (autonomous mode — 22 decisions D-01..D-22 captured; ready to plan)
+Resume file: .planning/phases/06-release-signing/06-CONTEXT.md
 
 **User-action checkpoint (Wave 1 sshd recovery) — required to unblock further Ansible runs:**
 
