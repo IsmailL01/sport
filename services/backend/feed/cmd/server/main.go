@@ -133,10 +133,9 @@ func run() error {
 
 	go cleanup.Run(ctx, svc, logger)
 
-	// Phase 1 / REL-03: feature flag store (Plan 03).  Reserved-for-future —
-	// feed пока не имеет flag-driven branching.
+	// Phase 1 / REL-03 + Phase 5 / Plan 05-06 / D-22 — feature flag store
+	// consumed by DebugSessionMiddleware (tester_debug_logging gate).
 	flagStore := featureflags.NewPostgresStore(pool, 30*time.Second)
-	_ = flagStore
 
 	h := handler.New(svc, signer, limiter, logger)
 
@@ -159,11 +158,14 @@ func run() error {
 	mux.Handle("/", h.Routes())
 
 	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
-	// Phase 5 / Plan 05-05 / D-32 — Promhttp(outer) → SentryRecovery → OtelHTTP →
-	// clientversion → mux.
-	rootHandler := observability.PromhttpMiddleware(serviceName,
-		observability.SentryRecoveryMiddleware(
-			observability.OtelHTTPMiddleware(serviceName, versionedMux)))
+	// Phase 5 / Plan 05-06 / D-22 / D-32 — DebugSession (outermost) → Promhttp →
+	// SentryRecovery → OtelHTTP → clientversion → mux. См. RESEARCH §1.8 three-
+	// gate model для DebugSessionMiddleware.
+	ffAdapter := observability.NewFeatureflagAdapter(flagStore)
+	rootHandler := observability.DebugSessionMiddleware(signer, ffAdapter)(
+		observability.PromhttpMiddleware(serviceName,
+			observability.SentryRecoveryMiddleware(
+				observability.OtelHTTPMiddleware(serviceName, versionedMux))))
 
 	srv := &http.Server{
 		Addr:              addr,

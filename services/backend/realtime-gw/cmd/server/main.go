@@ -132,7 +132,7 @@ func run() error {
 			}
 		}
 	}
-	_ = flagStore
+	// flagStore теперь consumed by DebugSessionMiddleware ниже (Plan 05-06).
 
 	registry := gw.NewRegistry()
 	handler := gw.NewHandler(ctx, signer, nc, registry, logger)
@@ -161,13 +161,16 @@ func run() error {
 	mux.Handle("/", handler.Routes())
 
 	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
-	// Phase 5 / Plan 05-05 / D-32 — Promhttp(outer) → SentryRecovery → OtelHTTP →
-	// clientversion → mux. Все middleware'ы поддерживают Hijacker passthrough
-	// для WS upgrade (см. SentryRecoveryMiddleware doc-comment + statusRecorder
-	// в promhttp_middleware.go).
-	rootHandler := observability.PromhttpMiddleware(serviceName,
-		observability.SentryRecoveryMiddleware(
-			observability.OtelHTTPMiddleware(serviceName, versionedMux)))
+	// Phase 5 / Plan 05-06 / D-22 / D-32 — DebugSession (outermost) → Promhttp →
+	// SentryRecovery → OtelHTTP → clientversion → mux. Все middleware'ы (включая
+	// DebugSession) поддерживают Hijacker passthrough для WS upgrade.
+	// DebugSession не задевает ResponseWriter; sees Bearer header в HTTP-фазе WS-
+	// handshake до Upgrade, gate выполняется один раз. См. RESEARCH §1.8.
+	ffAdapter := observability.NewFeatureflagAdapter(flagStore)
+	rootHandler := observability.DebugSessionMiddleware(signer, ffAdapter)(
+		observability.PromhttpMiddleware(serviceName,
+			observability.SentryRecoveryMiddleware(
+				observability.OtelHTTPMiddleware(serviceName, versionedMux))))
 
 	srv := &http.Server{
 		Addr:              addr,

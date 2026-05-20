@@ -123,12 +123,11 @@ func run() error {
 		}
 	}
 
-	// Phase 1 / REL-03: feature flag store (Plan 03).  Construct между pool и
-	// handler чтобы будущие плановые задачи могли передать flagStore в handler
-	// constructor без re-wiring.  В activity-sync пока нет flag-driven
-	// branching — _ = flagStore маркер reserved-for-future.
+	// Phase 1 / REL-03 + Phase 5 / Plan 05-06 / D-22: feature flag store.
+	// Используется ниже как featureflag substrate для DebugSessionMiddleware
+	// (tester_debug_logging gate). Если будущие плановые задачи добавят
+	// flag-driven branching в handler — pass flagStore в constructor.
 	flagStore := featureflags.NewPostgresStore(pool, 30*time.Second)
-	_ = flagStore
 
 	opts := []service.Option{service.WithXP(xpRepo)}
 	if nc != nil {
@@ -156,11 +155,16 @@ func run() error {
 	mux.Handle("/", h.Routes())
 
 	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
-	// Phase 5 / Plan 05-05 / D-32 — Promhttp(outer) → SentryRecovery → OtelHTTP →
-	// clientversion → mux.
-	rootHandler := observability.PromhttpMiddleware(serviceName,
-		observability.SentryRecoveryMiddleware(
-			observability.OtelHTTPMiddleware(serviceName, versionedMux)))
+	// Phase 5 / Plan 05-06 / D-22 / D-32 — DebugSession (outermost) → Promhttp →
+	// SentryRecovery → OtelHTTP → clientversion → mux. DebugSessionMiddleware
+	// elevates ctx LogLevel к Debug когда все три gate'a совпадают (X-Debug-
+	// Session header + JWT IsTester=true + featureflag tester_debug_logging ON).
+	// Silent passthrough на LevelInfo иначе. См. RESEARCH §1.8.
+	ffAdapter := observability.NewFeatureflagAdapter(flagStore)
+	rootHandler := observability.DebugSessionMiddleware(signer, ffAdapter)(
+		observability.PromhttpMiddleware(serviceName,
+			observability.SentryRecoveryMiddleware(
+				observability.OtelHTTPMiddleware(serviceName, versionedMux))))
 
 	srv := &http.Server{
 		Addr:              addr,

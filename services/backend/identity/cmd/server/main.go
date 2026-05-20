@@ -163,14 +163,18 @@ func run() error {
 	mux.Handle("/", h.Routes())
 
 	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
-	// Phase 5 / Plan 05-05 / D-32 — middleware chain (outermost first):
-	//   Promhttp → SentryRecovery → OtelHTTP → clientversion → mux
-	// Promhttp остаётся outermost (Plan 05-04) — измеряет wall-clock включая
-	// OTel/Sentry overhead. SentryRecovery → OtelHTTP → clientversion → routes
-	// идут внутрь. Plan 05-06 добавит DebugSession outermost-most.
-	rootHandler := observability.PromhttpMiddleware(serviceName,
-		observability.SentryRecoveryMiddleware(
-			observability.OtelHTTPMiddleware(serviceName, versionedMux)))
+	// Phase 5 / Plan 05-06 / D-22 / D-32 — middleware chain (outermost first):
+	//   DebugSession → Promhttp → SentryRecovery → OtelHTTP → clientversion → mux
+	// DebugSessionMiddleware (Plan 05-06) — outermost-most observability layer
+	// per RESEARCH §1.8 three-gate model. Wraps Plan 05-05's 4-layer chain.
+	// При совпадении X-Debug-Session header + JWT IsTester=true + featureflag
+	// tester_debug_logging=ON для userID, ctx carries slog.LevelDebug для этого
+	// запроса; иначе silent passthrough на LevelInfo. NO slog emission на гейте.
+	ffAdapter := observability.NewFeatureflagAdapter(flagStore)
+	rootHandler := observability.DebugSessionMiddleware(signer, ffAdapter)(
+		observability.PromhttpMiddleware(serviceName,
+			observability.SentryRecoveryMiddleware(
+				observability.OtelHTTPMiddleware(serviceName, versionedMux))))
 
 	srv := &http.Server{
 		Addr:              addr,
