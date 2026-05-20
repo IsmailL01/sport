@@ -523,8 +523,99 @@ ssh myvps 'docker stats --no-stream $(docker ps --filter "name=niko-prod-" -q)'
 
 ## Acceptance Walkthrough
 
-> ⏳ **TODO anchor** — Plan 05-06 task 6 (final acceptance walkthrough) will append the 11-step checklist here (note: steps 1, 2, 7 are deferred per ADR-0010 amendment — see Plan 05-06 v3 `<how-to-verify>` block).
+> Final 11-step end-to-end runtime acceptance for **Phase 5 closeout** (Plan 05-06 USER ACTION 4). Executed by user with orchestrator support; each step's pass/fail recorded in `.planning/phases/05-observability-backend/05-06-SUMMARY.md` evidence block.
+>
+> **Carrier swap reminder (ADR-0010 amendment 2026-05-19 PM):** Sentry SaaS *activation* is deferred to post-v1.0. Steps 1, 2, 7 below are marked **DEFERRED**; their assertions move to "MustInitSentry boot log shows `observability.sentry: disabled — empty DSN`" — the D-38 contract that proves the dormant-by-design path is observable from service startup logs.
+
+### Walkthrough steps
+
+1. ~~**Sentry UI reachable**~~ — **DEFERRED per ADR-0010 amendment 2026-05-19 PM.** No sentry.io org for v1.0. Verify the dormant contract instead:
+
+   ```bash
+   ssh deploy@<prod-vps-ip> 'docker logs sport-identity-1 2>&1 | grep "observability.sentry: disabled"'
+   # Expect: INFO line "observability.sentry: disabled — empty DSN" with attr next_step="see ADR-0010 amendment 2026-05-19 PM"
+   ```
+
+2. ~~**Sentry admin login + 4 projects visible**~~ — **DEFERRED.** When activated post-v1.0: SOPS edit to populate the 4 DSNs → `make ansible-deploy` → service containers restart with non-empty `SENTRY_DSN_BACKEND` → D-38 guard skipped, full SDK init proceeds. No code change required.
+
+3. **Generate synthetic load** — from a dev workstation with `BASE_URL` pointing at the prod app VPS:
+
+   ```bash
+   python3 scripts/smoke_metrics.py --load 60
+   ```
+
+   Expect 60-sec sustained traffic across the 8 services (identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph).
+
+4. **4 Grafana panels populated within 5 min** — open `https://82-25-71-215.sslip.io:8443/grafana/` (Caddy basicauth — see §8 for credentials extraction); accept self-signed cert warning per D-37; navigate to each of the 4 dashboards:
+   - P99 HTTP latency
+   - HTTP error rate (5xx)
+   - NATS consumer queue depth
+   - JWT validation failures
+
+   **EACH panel must show non-empty data** within 5 min of step 3 load start. Screenshot each to `.planning/phases/05-observability-backend/evidence/grafana-{p99,errors,queue,jwt}.png`.
+
+5. **PII live probe green:**
+
+   ```bash
+   python3 scripts/pii_live_probe.py --duration 60
+   # Expect:
+   #   Scanned N log lines across M streams over 60s window
+   #   ✓ 0 PII matches in N log lines
+   #   🎉 Phase 5 / OBS-06 runtime check passed.
+   # exit 0
+   ```
+
+   Copy exact stdout into 05-06-SUMMARY evidence block.
+
+6. **Cardinality probe green:**
+
+   ```bash
+   python3 scripts/cardinality_probe.py
+   # Expect: "PASS: 8 services scraped, 0 forbidden labels, max <N> series on <metric>"
+   # exit 0
+   ```
+
+   Copy exact stdout into evidence block.
+
+7. ~~**Sentry envelope smoke green**~~ — **DEFERRED per ADR-0010 amendment.** When activated post-v1.0: `python3 scripts/smoke_sentry.py` would POST a synthetic envelope to the Sentry SaaS DSN. For v1.0, the equivalent assertion is the boot-log INFO line from step 1.
+
+8. **Grafana-side Telegram alert E2E** — synthetic 5xx burst triggers D-26 `5xx_rate_over_5pct` rule:
+
+   ```bash
+   python3 scripts/smoke_metrics.py --inject-500 --duration 30
+   ```
+
+   Within 5 min, the rule fires in Grafana; Telegram chat receives the formatted alert via the Grafana Telegram contact-point (configured by Plan 05-07 from SOPS `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`). Screenshot the chat message → save to `.planning/phases/05-observability-backend/evidence/telegram-grafana-5xx.png`.
+
+   *Note:* Sentry-side P0 Telegram test deferred per steps 1+2+7. Grafana-side test is the **v1.0 alerting acceptance signal**.
+
+9. **OBS-08 deferral confirmation** — user explicitly confirms verbatim in 05-06-SUMMARY.md:
+
+   > "RU consent banner UX + mobile Settings toggle UI = Phase 17 territory; Phase 5 ships only the backend seam (DebugSessionMiddleware + `tester_debug_logging` featureflag + JWT `is_tester` claim coupling)."
+
+10. **ROADMAP §Phase 5 checkbox flip** — edit `.planning/ROADMAP.md` §"Phase 5: Observability (backend)"; flip the closing `[ ]` checkbox → `[x]`. Add note: "Sentry SaaS activation deferred per ADR-0010 amendment 2026-05-19 PM; v1.0 ships SDK substrate (wired-and-dormant)."
+
+11. **Write 05-06-SUMMARY.md** — following `$HOME/.claude/get-shit-done/templates/summary.md`:
+    - **Outcome** — Phase 5 closed; SDK substrate wired + dormant per ADR-0010 amendment.
+    - **Artifacts** — must_have artifact paths + final LOC.
+    - **Evidence block** — verbatim stdouts from steps 5+6+8; screenshots from steps 4+8; **steps 1, 2, 7 marked DEFERRED**.
+    - **Pinned deps** — Alloy 1.5.0, sentry-cli 2.40.0 (post-v1.0 activation), sentry-go 0.46.2, OTel 1.32.0, client_golang 1.20.5.
+      ~~getsentry/self-hosted 26.5.0~~ DROP (no self-hosted Sentry in v1.0 per ADR-0010).
+    - **Post-v1.0 activation list** — sentry.io org + 4 projects + DSN to SOPS + redeploy.
+    - **Phase 17 inheritance** — mobile SDK install, Settings toggle, RU consent banner.
+
+### Failure handling
+
+If any step 3-6 or 8 fails:
+1. Capture failure mode in 05-06-SUMMARY.md "Issues encountered" section
+2. **DO NOT** proceed to step 10 (ROADMAP flip)
+3. Spawn `/gsd-plan-phase 5 --gaps` follow-up plan to close the gap
+
+### Resume signal
+
+Type `approved` after all walkthrough steps pass and ROADMAP §Phase 5 checkbox is flipped to [x]. Reply with `blocked: <step-N>` + description if any step fails.
 
 ---
 
 *Phase: 05-observability-backend / Plan 05-02 v3 Task 6 / 2026-05-19 PM*
+*Acceptance Walkthrough authored: 2026-05-20 — Phase 5 / Plan 05-06 Task 5*

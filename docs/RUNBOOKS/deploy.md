@@ -559,9 +559,110 @@ Postmortem ref: <link if applicable>
 
 ---
 
+## 12. Alloy log shipper deploy & rollback (Phase 5 / Plan 05-06)
+
+> Per Phase 5 / OBS-06 / D-27 / D-29: Grafana Alloy installed via apt + systemd on the prod VPS (NOT containerized), ships container stdout to Loki on observability VPS (`srv1561293`) via Caddy-fronted endpoint per D-36. Pinned at v1.5.0 (RESEARCH §4).
+>
+> **Pre-req:** observability-stack must be deployed first (Plan 05-07 / `bash scripts/deploy_observability_stack.sh` on `srv1561293`); otherwise Alloy logs ship into the void (HTTP 503 from missing Loki backend). See `sentry-ops.md §7-§14` for the observability-stack lifecycle.
+
+### 12.1. First-time deploy
+
+```bash
+# From dev workstation, prod inventory:
+cd infra/ansible
+
+# Dry-run (syntax + diff, no remote touch):
+ansible-playbook -i inventory/prod --check --diff site.yml --tags=alloy
+
+# Live deploy:
+ansible-playbook -i inventory/prod site.yml --tags=alloy
+```
+
+The `alloy` tag runs only the new third play (`Deploy Grafana Alloy log shipper to prod VPS`). It does NOT re-touch `common`, `docker`, `ufw`, or `sport-stack` roles — those run only with their respective tags or default (no tags = all plays).
+
+**Tasks in order:** Grafana apt key + repo → apt install alloy=1.5.0* → add `alloy` user to `docker` group (RESEARCH §P17 — required for `/var/run/docker.sock`) → template `/etc/alloy/config.alloy` + systemd override → daemon-reload + enable + start → smoke probes (no `level=error`; report reader count).
+
+**Acceptance:** smoke probe in role output shows `alloy started_reader log lines: N` где N ≥ 1 once sport-stack containers are up. If N = 0, either `/var/run/docker.sock` is unreachable (regression) or sport-stack isn't running yet (acceptable mid-deploy; re-run smoke probe later).
+
+### 12.2. Routine redeploy (config change)
+
+If you edit `roles/alloy-shipper/templates/alloy-config.alloy.j2` or `defaults/main.yml`:
+
+```bash
+cd infra/ansible
+ansible-playbook -i inventory/prod site.yml --tags=alloy
+```
+
+Handlers (`Restart alloy`) fire only on template changes — idempotent re-run no-ops on unchanged config.
+
+### 12.3. Verify logs are flowing
+
+From dev workstation:
+
+```bash
+# Replace <ip> with prod VPS IP if not using ssh alias
+ssh deploy@<prod-vps-ip> 'sudo systemctl status alloy.service'
+# Expect: Active: active (running)
+
+# Tail recent alloy logs:
+ssh deploy@<prod-vps-ip> 'sudo journalctl -u alloy.service -n 100 --no-pager'
+# Look for "started reader" lines (one per discovered container)
+# Look for absence of "level=error" lines
+
+# Query Loki via Grafana proxy (basicauth — see sentry-ops.md §8 for password):
+python3 scripts/pii_live_probe.py --duration 60
+# Should report N > 0 log lines scanned + 0 PII matches
+```
+
+### 12.4. Rollback
+
+Alloy deployed via apt → rollback = pin to previous version OR stop the service.
+
+**Stop and disable (fast):**
+
+```bash
+ssh deploy@<prod-vps-ip> 'sudo systemctl stop alloy.service && sudo systemctl disable alloy.service'
+# Logs stop shipping immediately; existing logs in Loki retained until retention TTL.
+```
+
+**Re-enable after fix:**
+
+```bash
+ssh deploy@<prod-vps-ip> 'sudo systemctl enable --now alloy.service'
+```
+
+**Pin to previous apt version (if v1.5.0 has a bug):**
+
+Edit `infra/ansible/roles/alloy-shipper/defaults/main.yml`:
+
+```yaml
+alloy_version_spec: "1.4.*"  # previous LTS line
+```
+
+Then redeploy:
+
+```bash
+cd infra/ansible
+ansible-playbook -i inventory/prod site.yml --tags=alloy
+```
+
+The role's apt task will downgrade Alloy package to the matching version. `Restart alloy` handler fires automatically.
+
+### 12.5. Common failure modes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `level=error` in alloy logs about `/var/run/docker.sock: permission denied` | `alloy` user not in `docker` group (RESEARCH §P17 regression) | Re-run role: `ansible-playbook ... --tags=alloy`; the `groups: docker append=true` task heals + handler restarts |
+| Caddy returns 403 to Loki push | Alloy source IP not in `LOKI_PUSH_ALLOWED_SOURCE` SOPS slot | Update SOPS + redeploy observability-stack (`sentry-ops.md §11`) |
+| Caddy returns 401 | basicauth set on `/loki/*` path (should NOT be — only `/grafana/*` and `/prometheus/*`) | Check `infra/observability-stack/caddy/Caddyfile` — `/loki/api/v1/push` should bypass basicauth |
+| Loki receives logs but Grafana shows no data | Loki labels mismatch dashboard queries; or time-window stale | Use Grafana Explore → Loki → query `{service=~".+"}` to verify ingestion |
+
+---
+
 *RUNBOOK created: 2026-05-17 — Phase 3 Plan 03-03 Task 1*
 *§5+§6 rewritten: 2026-05-18 — Phase 4 Plan 04-04 (save/scp/load + drill log)*
 *§10 added: 2026-05-18 — Phase 4 Plan 04-05 (branch protection)*
 *§11 added: 2026-05-18 — Phase 4 Plan 04-06 (deployment freeze)*
+*§12 added: 2026-05-20 — Phase 5 Plan 05-06 (Alloy log shipper deploy + rollback)*
 *Provider-agnostic per CONTEXT D-25*
 *Owner: solo dev (Ismail)*
