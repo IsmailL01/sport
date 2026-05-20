@@ -1,14 +1,14 @@
-# Requirements: Running Ecosystem — Milestone v1.0 Production Readiness
+# Requirements: Running Ecosystem — Milestone v1.0 Closed Beta
 
-**Milestone:** v1.0 Production Readiness — IN PROGRESS
-**Milestone redefined:** 2026-05-15 (replacing earlier feature-focused v1.0 scope)
+**Milestone:** v1.0 Closed Beta — IN PROGRESS
+**Milestone redefined:** 2026-05-20 per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) (was 21-phase enterprise-hardening scope from 2026-05-15)
 **Core Value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
 
-**Scope note:** This document covers **v1.0 hardening work** — taking the Phase 8/M10 code-complete baseline through infra automation, signed release builds, observability without PII leak, and a tagged release after 48h staging soak. Feature work (privacy zones, segments, coaching, premium, GDPR consent flow) is **explicitly out of v1.0** and tracked under §Deferred from v1.0.
+**Scope note:** This document tracks REQ-IDs across **Phases 1-9 of the closed-beta scope**. Phases 1-5 already shipped (REL/SEC/INFRA/CICD/OBS). Phases 6-9 (SIGN/BUILD/STAB/DIST/LAUNCH) remain. Many REQ-IDs from the retired 21-phase scope are **flagged "dropped per ADR-0011"** below — preserved for audit trail, not active scope.
 
 ## v1.0 Requirements
 
-Total: **96 REQ-IDs across 21 phases**.
+Total: **96 REQ-IDs originally enumerated; ~64 IDs across the dropped phases are now flagged "dropped per ADR-0011"**. Active scope per current ROADMAP.md: REL-01..05 + SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 + OBS-01/03..07 (OBS-02/08 dropped or amended) + SIGN-01..02 + BUILD-01..02 + STAB-01 + DIST-01..02 + LAUNCH-01..02.
 
 ### Phase 1 — Release Contract & Version Baseline (REL)
 
@@ -62,149 +62,102 @@ Total: **96 REQ-IDs across 21 phases**.
 - [x] **OBS-07**: Cardinality budget — no per-`user_id` labels on metrics; bucketed cohorts only; verified via Prom label-cardinality probe — **DONE Plan 05-04** (`scripts/cardinality_probe.py` + CI gate + branch protection 10 required checks)
 - [ ] **OBS-08**: Tester-mode debug-logging opt-in per session via Settings toggle with explicit RU consent banner — **PENDING Plan 05-06** (DebugSessionMiddleware; backend seam ready in `slog_handler.go` via `WithLogLevel(ctx, lvl)` / `LogLevelFromContext(ctx)`)
 
-### Phase 6 — Edge Protection & Rate-Limiting (EDGE)
+---
 
-- [ ] **EDGE-01**: `/auth/login`, `/auth/register`, `/auth/otp/*` rate-limited 5/min per IP via `pkg/ratelimit` (closes CONCERNS.md P0)
-- [ ] **EDGE-02**: Existing rate limits (feed/messaging/social-graph) re-verified under k6 load; no Redis-down false-allows
-- [ ] **EDGE-03**: Caddy WAF rules block bad UAs, scanners, malformed TLS, rate-limit unauth at edge
-- [ ] **EDGE-04**: Anti-replay budget on JWT (jti + Redis dedup with TTL)
-- [ ] **EDGE-05**: DDoS mitigation strategy documented in `docs/RUNBOOKS/incident-response.md`
+## Active New-Scope Requirements (Phases 6-9 per ADR-0011)
 
-### Phase 7 — DB + Queues + State Ops (DB)
+### Phase 6 — Release Signing (SIGN)
 
-- [ ] **DB-01**: pgBackRest configured for daily full + continuous WAL archiving to Hetzner Storage Box, 30-day retention, encrypted at rest
-- [ ] **DB-02**: **Restore drill proven on clean VPS** — fresh VPS, install Postgres+Timescale, pgBackRest restore from Storage Box, verify schema + sample data, time-to-restore <30 min. No deferral (per user redline).
-- [ ] **DB-03**: R18 zero-downtime migration adds `user_id` to `personal_records` + `sessions`. **Backfill strategy loudly deferred to `/gsd-discuss-phase 7`** — agent inspects schema + row counts before choosing (a) `users.email` join, (b) JWT log archive backfill, (c) hybrid with `orphaned=true` flag
-- [ ] **DB-04**: NATS JetStream durability config audit; retention/max-age/replicas documented in `docs/RUNBOOKS/nats-ops.md`
-- [ ] **DB-05**: MinIO bucket policies tightened — presigned URL expiry ≤24h, max upload size, public buckets gated by Caddy auth
-- [ ] **DB-06**: Schema-drift detection in CI — `golang-migrate version` vs DB mismatch fails build
-- [ ] **DB-07**: `docs/RUNBOOKS/db-ops.md` covers routine backup verification, PITR, replication setup (deferred docs for v1.1)
-- [ ] **DB-08**: Dead-letter queue for failed NATS messages with admin UI access via `/admin/`
+- [ ] **SIGN-01**: Android release keystore — generated offline (single workstation, deleted from disk after encryption); encrypted to `.secrets/android-release.keystore.sops`; **2 offline physical backups in separate physical locations**; recovery playbook in `docs/SECRETS.md` §"Android Keystore Loss"
+- [ ] **SIGN-02**: iOS Apple Developer Program enrolled; distribution certificate (private key in SOPS); distribution provisioning profile for app bundle ID; ASC API key (P8 file) in SOPS for unattended TestFlight uploads; EAS-managed-credentials vs fastlane-Match decision in `docs/SECRETS.md` §"iOS signing"
 
-### Phase 8 — Load + Chaos Baselines (LOAD)
+### Phase 7 — Release Builds + Mobile Stability (BUILD + STAB)
 
-- [ ] **LOAD-01**: k6 scenarios in `infra/loadtest/` — feed scroll (100 users × 10min), session save burst (10 simultaneous 5000-pt payloads), realtime push fanout (100 stories → 1000 followers), auth burst (1000 logins / 10min)
-- [ ] **LOAD-02**: Chaos drill — kill `messaging` mid-conversation, mobile clients reconnect within SLO (<30s)
-- [ ] **LOAD-03**: Partition test — simulate social-graph ↔ feed network partition, verify graceful degradation
-- [ ] **LOAD-04**: Baselines published in `docs/PERF-BASELINE.md` with P50/P95/P99 per endpoint
-- [ ] **LOAD-05**: Reconnect storm — kill `realtime-gw`, 100 clients reconnect, measure recovery latency
-- [ ] **LOAD-06**: Load-test integration with CI — nightly run on staging, regression alerts via Grafana
+- [ ] **BUILD-01**: EAS `production` profile (Android) — points at production backend; R8 + ProGuard verified (no strip Mapbox JNI / MMKV / react-native-health JNI / Hermes / expo-task-manager); `arm64-v8a` only (drop `armeabi-v7a` per ADR-0011)
+- [ ] **BUILD-02**: EAS `production` profile (iOS) — Hermes enabled, bitcode disabled, staging↔prod flavor switching, iOS 16+ baseline
+- [ ] **STAB-01**: Background reliability — Android foreground service notification visible; iOS SLC fallback works on app foregrounding; MIUI + One UI mitigations only (in-app auto-start dialog + battery-saver-kill recovery via `recoverLast`); 4-vendor matrix from old Phase 16 deferred — monitor remaining vendors during beta. 1-hour pocket-walk session on Pixel + iPhone records ≥95% of expected GPS points.
 
-### Phase 9 — Android Release Signing (AND-SIGN)
+### Phase 8 — Closed-Beta Distribution (DIST)
 
-- [ ] **AND-SIGN-01**: Release keystore generated offline (air-gapped or single workstation, immediately deleted from disk after encryption)
-- [ ] **AND-SIGN-02**: Encrypted keystore in `.secrets/android-release.keystore.sops`; Git history clean
-- [ ] **AND-SIGN-03**: Two offline physical backups in separate physical locations (per user redline)
-- [ ] **AND-SIGN-04**: Recovery playbook in `docs/SECRETS.md` §"Android Keystore Loss" with explicit steps; keystore loss = app dies (critical)
-- [ ] **AND-SIGN-05**: Reproducible build flags set; SLSA provenance attestation included in CI artifacts
+- [ ] **DIST-01**: Android self-hosted update channel — Caddy serves `/android/manifest.json` (Ed25519-signed) with latest version + APK signed-URL + min-supported-version + force-update flag; APKs on Hetzner Storage Box behind 24h signed URLs (regenerated per request); in-app check-on-launch + Settings "Check for updates" both verify signature; force-update path blocks app usage when `min-supported > installed`
+- [ ] **DIST-02**: iOS TestFlight pipeline — `.github/workflows/ios-release.yml` triggers on `v1.0-*` tags; auto-bumps CFBundleVersion; uploads to internal TestFlight group via ASC API; closed-beta testers seeded by Apple ID
 
-### Phase 10 — iOS Release Signing (IOS-SIGN)
+### Phase 9 — Closed-Beta Launch (LAUNCH)
 
-- [ ] **IOS-SIGN-01**: Apple Developer Program enrolled and verified
-- [ ] **IOS-SIGN-02**: Distribution certificate generated, private key encrypted in SOPS
-- [ ] **IOS-SIGN-03**: Distribution provisioning profile generated for app bundle ID, refresh automation documented
-- [ ] **IOS-SIGN-04**: App Store Connect API key (P8 file) stored in SOPS for unattended CI uploads
-- [ ] **IOS-SIGN-05**: EAS-managed credentials OR fastlane Match approach decided + documented in `docs/SECRETS.md`
+- [ ] **LAUNCH-01**: Solo-dev smoke — tag `v1.0.0-beta.1` → CI publishes Android APK to Caddy manifest + iOS build to TestFlight internal group; install on own Android + own/friend iPhone; complete 1 full GPS-track session per platform; no crashes; no data loss
+- [ ] **LAUNCH-02**: Closed-beta watchlist — invite 5-10 testers (TestFlight + Android manifest URL); 72h triage via `scripts/debug-tail.sh <user-id>` (Loki on `srv1561293`); feedback intake decided in plan (GitHub Issues template OR Telegram channel); P0 surfaces → hotfix → re-tag → re-distribute; ship-when-stable (no formal soak gate)
 
-### Phase 11 — Android Release Build Config (AND-BUILD + HEALTH-04 Android side)
+---
 
-- [ ] **AND-BUILD-01**: EAS profile `production` in `apps/mobile-rn/eas.json` points at production backend; `staging` profile points at staging
-- [ ] **AND-BUILD-02**: R8 + ProGuard rules tested — do NOT strip Mapbox SDK JNI, MMKV native, react-native-health JNI, expo-task-manager background classes, Hermes runtime
-- [ ] **AND-BUILD-03**: Resource shrinking enabled; APK size measured baseline vs after
-- [ ] **AND-BUILD-04**: BuildConfig surfaces clean — no `__DEV__` true in release, no `EXPO_PUBLIC_*_LOCAL` debug flags
-- [ ] **AND-BUILD-05**: Debug symbols uploaded to Sentry on CI; not bundled in APK
-- [ ] **AND-BUILD-06**: Reproducible build verified — two CI runs of same tag produce byte-identical APK (modulo signature)
+## Dropped per ADR-0011 (preserved for audit trail)
 
-### Phase 12 — iOS Release Build Config (IOS-BUILD + HEALTH-04 iOS side)
+The following REQ-IDs were defined in the 21-phase enterprise-hardening scope and are **dropped from v1.0 closed-beta scope** per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md). Not deleted — kept for audit traceability and re-expansion triggers documented in ROADMAP.md.
 
-- [ ] **IOS-BUILD-01**: EAS profile `production` for iOS targets production backend; `staging` for staging
-- [ ] **IOS-BUILD-02**: Hermes engine enabled (SDK 54 default verified)
-- [ ] **IOS-BUILD-03**: Bitcode disabled (Xcode 14+)
-- [ ] **IOS-BUILD-04**: BuildConfig + Info.plist clean for release (no dev-mode flags, no NSAllowsLocalNetworking in prod)
-- [ ] **IOS-BUILD-05**: Reproducible build verified — two CI runs of same tag produce byte-identical IPA (modulo signature)
+### Dropped: Phase 6 (was Edge Protection & Rate-Limiting) — EDGE-*
 
-### Strava Read-Only OAuth — shared between Phase 11 + Phase 12, validated in Phase 21 (HEALTH)
+- ~~EDGE-01..05~~ — **DROPPED per ADR-0011.** Residual risk: `/auth/*` rate-limit gap (CONCERNS.md P0). Mitigation: closed-beta blast radius = 5-10 friend testers. Logged in ROADMAP.md v1.0.1 backlog as `AUTH-RATELIMIT`.
 
-- [ ] **HEALTH-04**: Strava read-only OAuth — PKCE flow on iOS + Android (no client_secret on device), backend `/integrations/strava/{exchange,refresh}` endpoints, READ scope (`activity:read`) only. Implementation code in Phase 11 (Android side) + Phase 12 (iOS side); validation in Phase 21 staging soak ("≥1 tester connects Strava and imports historical data"). *(Registered as standalone REQ-ID per user redline — not embedded silently in mobile-build phases.)*
+### Dropped: Phase 7 (was DB + Queues + State Ops) — DB-*
 
-### Phase 13 — Mapbox SDK 11.x Migration (MAPBOX11)
+- ~~DB-01..08~~ — **DROPPED per ADR-0011.** Residual risk: no proven pgBackRest restore drill; no dead-letter queue; no schema-drift CI detection beyond what shipped in Phase 4 CICD; NATS durability audit deferred. Mitigation: `pg_dump` snapshot before each migration (already in `docs/RUNBOOKS/deploy.md §6.4`); DB-03 R18 `user_id` zero-downtime migration deferred to v1.0.x if/when needed.
 
-- [ ] **MAPBOX11-01**: `@rnmapbox/maps` bumped to `^11.0` (or specific 11.x pin TBD); breaking changes documented in `docs/DECISIONS/0008-mapbox-sdk-11-migration.md`
-- [ ] **MAPBOX11-02**: **Debug build regresses ALL Phase 1 tracker features** — SessionManager lifecycle, tracker hooks, simplifyForDisplay dual-source, createCustomPack NE-first bounds, closure feedback Toast, RegionPickerScreen 4-corner draggable
-- [ ] **MAPBOX11-03**: All 536+ existing tests green after SDK bump
-- [ ] **MAPBOX11-04**: Native libs build on iOS + Android, no JNI crashes on emulator
-- [ ] **MAPBOX11-05**: Decision flagged if any 11.x breaking change cannot be reconciled — phase blocks the milestone until resolved
+### Dropped: Phase 8 (was Load + Chaos Baselines) — LOAD-*
 
-### Phase 14 — Android Native + ABI Matrix (AND-NATIVE)
+- ~~LOAD-01..06~~ — **DROPPED per ADR-0011.** Residual risk: no load profile, no chaos drill, no perf baseline. Mitigation: 5-10 testers won't hit limits. Re-expand if beta passes >50 users.
 
-- [ ] **AND-NATIVE-01**: `arm64-v8a` release APK installs and runs on Pixel + Samsung + Xiaomi physical devices
-- [ ] **AND-NATIVE-02**: `armeabi-v7a` release APK installs and runs on older device (low-end target from Phase 20)
-- [ ] **AND-NATIVE-03**: 16 KB page-size validated — `android:extractNativeLibs="false"` + rebuilt Mapbox + MMKV native with 16 KB ELF alignment on Android 15+ device
-- [ ] **AND-NATIVE-04**: APK splits per ABI vs universal APK decision documented (lean: universal for closed beta)
-- [ ] **AND-NATIVE-05**: Mapbox + MMKV + react-native-health native libs verified loading on each ABI
+### Renamed: Phase 9-10 (was Android+iOS Release Signing) — AND-SIGN-* / IOS-SIGN-* → consolidated as **SIGN-01..02** (above)
 
-### Phase 15 — iOS Native + Device Class Compat (IOS-NATIVE)
+- ~~AND-SIGN-01..05~~ → consolidated into **SIGN-01** above (5 ID granularity → 1 acceptance gate; keystore + 2 offline backups + recovery playbook are the load-bearing items; SLSA provenance attestation explicitly best-effort per ADR-0011)
+- ~~IOS-SIGN-01..05~~ → consolidated into **SIGN-02** above
 
-- [ ] **IOS-NATIVE-01**: arm64-only IPA installs and runs on iPhone 13+, iPhone 11/12, iPhone SE
-- [ ] **IOS-NATIVE-02**: iOS 16 baseline confirmed
-- [ ] **IOS-NATIVE-03**: Native libs (Mapbox 11.x post-Phase-13, MMKV, react-native-health) verified loading on each device class
+### Renamed/Reduced: Phase 11-12 (was Android+iOS Release Build Config) — AND-BUILD-* / IOS-BUILD-* → consolidated as **BUILD-01..02** (above)
 
-### Phase 16 — Background Reliability in Release Builds (BG)
+- ~~AND-BUILD-01..06~~ → consolidated into **BUILD-01** above. Dropped sub-IDs: `AND-BUILD-03` (resource shrinking measurement — nice-to-have); `AND-BUILD-05` (Sentry symbol upload — mobile Sentry dropped per CRASH-* drop); `AND-BUILD-06` (reproducible-build byte-identical verification — funded-team rigor, not closed-beta gate).
+- ~~IOS-BUILD-01..05~~ → consolidated into **BUILD-02** above. Dropped sub-IDs: `IOS-BUILD-05` (reproducible-build verification, same reason).
 
-- [ ] **BG-01**: **Pixel field tests pass on RELEASE APK** (inherited from old Phase 1) — T1 ≤3% distance, T2/T9 ≤5% area, T6 ≤10%/h battery + ≤100MB memory, T7 ≥50fps, T8 ≥95% record-time
-- [ ] **BG-02**: **iPhone field tests pass on RELEASE IPA** — same NFR thresholds
-- [ ] **BG-03**: Xiaomi MIUI/HyperOS — recording survives ≥30 min in pocket; auto-start permission UX surfaces in-app dialog; battery saver kill recovered via recoverLast
-- [ ] **BG-04**: Huawei EMUI (no GMS) — same as Xiaomi; no Google Play Services dependency in critical path
-- [ ] **BG-05**: Samsung One UI — power saving mode handled; deep sleep apps whitelist guidance shown
-- [ ] **BG-06**: Generic Doze + App Standby — foreground service notification visible; location at degraded cadence
-- [ ] **BG-07**: Low-end memory pressure (3GB RAM) — 2h session no OOM; SQLite WAL ≤64MB
-- [ ] **BG-08**: iOS SLC fallback — gap-resume on AppState foreground verified on iOS 16/17/18 release IPA; no interpolation
+### Dropped: HEALTH-04 (was shared Phase 11+12 + Phase 21 validation)
 
-### Phase 17 — Crash Reporting (CRASH)
+- ~~HEALTH-04~~ — **DROPPED per ADR-0011.** Strava read-only OAuth integration deferred to v1.1. Mitigation: closed-beta testers can import historical data manually if interested; not a launch-gate feature.
 
-- [ ] **CRASH-01**: Mobile Sentry SDK installed on iOS + Android; routed to `staging-mobile` / `prod-mobile` Sentry projects based on EAS profile
-- [ ] **CRASH-02**: PII-strip middleware in `apps/mobile-rn/src/observability/sentry.ts` removes GPS coords, session_id, external_uuid, DM content, phone numbers, Strava OAuth tokens, Mapbox tokens — verified via test fixtures
-- [ ] **CRASH-03**: Staging vs prod Sentry projects strictly separate (hard rule from milestone brief)
-- [ ] **CRASH-04**: Opt-in telemetry screen in Settings with explicit event list; default-OFF until user opts in
-- [ ] **CRASH-05**: Telemetry event allowlist documented in `docs/TELEMETRY.md`; nothing else fires
-- [ ] **CRASH-06**: Debug symbols upload from CI to corresponding Sentry project on each release
+### Dropped: Phase 13 (was Mapbox SDK 11.x Migration) — MAPBOX11-*
 
-### Phase 18 — Android Self-Hosted Update Channel (AND-DIST)
+- ~~MAPBOX11-01..05~~ — **DROPPED per ADR-0011.** Stay on `@rnmapbox/maps@^10.3` for closed beta. Residual risk: no known native crashes at 10.3; SDK 11 has API breaks unrelated to stability gains. Re-expand if 10.3 hits an EOL or security advisory.
 
-- [ ] **AND-DIST-01**: Caddy serves `/android/manifest.json` with Ed25519 signature; manifest contains latest version, APK signed-URL, min-supported-version, force-update flag
-- [ ] **AND-DIST-02**: APKs uploaded to Hetzner Storage Box; served via 24h signed URLs (regenerated on each request)
-- [ ] **AND-DIST-03**: In-app check-on-launch + Settings "Check for updates" button — both verify manifest signature before showing update UI
-- [ ] **AND-DIST-04**: "Update available" UX with download progress; install via Android `ACTION_VIEW` on APK
-- [ ] **AND-DIST-05**: Force-update path — `min-supported-version > installed` blocks app usage until update
-- [ ] **AND-DIST-06**: Crash-rate auto-halt — Sentry crash-free sessions below 99% on a new release reverts manifest to previous version automatically; manual override in admin UI
+### Dropped: Phase 14-15 (was Native + ABI Matrix) — AND-NATIVE-* / IOS-NATIVE-*
 
-### Phase 19 — iOS TestFlight Pipeline (IOS-DIST)
+- ~~AND-NATIVE-01..05~~ — **DROPPED per ADR-0011.** `arm64-v8a` only (per **BUILD-01** above). No 16KB page-size validation for Android 15+ — risk reviewed if tester reports Android 15+ failure.
+- ~~IOS-NATIVE-01..03~~ — **DROPPED per ADR-0011.** arm64 + iOS 16+ baseline kept in **BUILD-02**; multi-device-class validation reduced to "works on dev's phone + friend's phone" per LAUNCH-01.
 
-- [ ] **IOS-DIST-01**: CI workflow `.github/workflows/ios-release.yml` triggers on `v1.0-*` tags; uploads to TestFlight via ASC API
-- [ ] **IOS-DIST-02**: Build number auto-bumps on each CI run (CFBundleVersion += 1)
-- [ ] **IOS-DIST-03**: Internal TestFlight group seeded with closed-beta testers' Apple IDs
-- [ ] **IOS-DIST-04**: Crash report integration with Sentry (Phase 17); ASC review-rejection alerts routed to on-call
+### Reduced: Phase 16 (was Background Reliability) — BG-* → folded into STAB-01 (above)
 
-### Phase 20 — Device Matrix + Physical Tests (DEVICES)
+- ~~BG-01..02~~ (Pixel + iPhone full NFR matrix on release builds) → reduced to **STAB-01** "1h pocket-walk records ≥95% of expected GPS points" (single threshold instead of 6 NFRs × 2 platforms)
+- ~~BG-03~~ (Xiaomi MIUI/HyperOS) → kept as MIUI mitigation in **STAB-01**
+- ~~BG-04~~ (Huawei EMUI no-GMS) → **DROPPED.** Monitor during beta; mitigate if a tester surfaces it
+- ~~BG-05~~ (Samsung One UI) → kept as One UI mitigation in **STAB-01**
+- ~~BG-06..08~~ (Generic Doze, low-end memory, iOS SLC) → SLC kept in **STAB-01**; Doze + low-end-memory monitored in beta
 
-- [ ] **DEVICES-01**: Pixel 6+ — T1/T2/T6/T7/T8/T9 all pass on release APK (re-verified after distribution channel wired)
-- [ ] **DEVICES-02**: Samsung Galaxy A/S (One UI) — full per-device protocol passes
-- [ ] **DEVICES-03**: Xiaomi flagship (MIUI/HyperOS) — same; auto-start whitelist UX validated
-- [ ] **DEVICES-04**: Huawei (no GMS) — same; verifies non-Google distribution path
-- [ ] **DEVICES-05**: Low-end <4GB RAM Android — full protocol with extra memory monitoring
-- [ ] **DEVICES-06**: Android 15+ device — 16 KB page-size validation in real-world conditions
-- [ ] **DEVICES-07**: iPhone 13+ — T1/T2/T6/T7/T8/T9 on release IPA
-- [ ] **DEVICES-08**: iPhone older (iPhone 11/12 or SE) — same protocol
+### Dropped: Phase 17 (was Crash Reporting) — CRASH-*
 
-### Phase 21 — Staging E2E + Go/No-Go + Tag `v1.0-rc.1` (E2E)
+- ~~CRASH-01..06~~ — **DROPPED per ADR-0011.** No mobile Sentry SDK in v1.0. Backend Sentry already dormant per D-38. Crashes surface via tester reports + Loki tails (`scripts/debug-tail.sh`). Re-expand if beta passes >50 users.
 
-- [ ] **E2E-01**: Staging environment fully deployed via `infra/ansible/` to fresh Hetzner VPS in <60min (Phase 3 acceptance re-verified)
-- [ ] **E2E-02**: ≥8 real runners enrolled — mix iOS + Android, ≥2 on de-Googled Android (Huawei or LineageOS), ≥1 on Xiaomi MIUI or equivalent aggressive killer (per user redline)
-- [ ] **E2E-03**: 48-hour soak — each tester runs ≥3 real sessions, opens chats, scrolls feed, **connects Strava (HEALTH-04 validation)**, zero P0/P1 issues
-- [ ] **E2E-04**: Restore drill passed (Phase 7 acceptance re-verified in soak window)
-- [ ] **E2E-05**: Rollback drill passed (Phase 4 acceptance re-verified)
-- [ ] **E2E-06**: **On-call rotation documented in `docs/RUNBOOKS/oncall.md`** per user redline — weekly schedule (primary/backup), explicit response-time SLA, fallback flow if primary unreachable. NOT just "rotation set up" — actual schedule + ETAs + fallback flow committed.
-- [ ] **E2E-07**: If all green — tag `v1.0-rc.1`; flip `docs/DECISIONS/0005-phase-1-field-test-outcomes.md` from `Accepted (deferred-aware closure)` to `Accepted (closed)` with measured NFR values; update STATUS.md + DEVELOPMENT_PLAN.md
+### Renamed: Phase 18-19 (was Distribution) — AND-DIST-* / IOS-DIST-* → consolidated as **DIST-01..02** (above)
+
+- ~~AND-DIST-01..06~~ → consolidated into **DIST-01** above. Dropped sub-ID: `AND-DIST-06` (crash-rate auto-halt — depends on mobile Sentry which was dropped).
+- ~~IOS-DIST-01..04~~ → consolidated into **DIST-02** above. Dropped sub-ID: `IOS-DIST-04` (Sentry crash integration + ASC review-rejection alerts — mobile Sentry dropped; ASC review applies to public submission, not internal TestFlight).
+
+### Dropped: Phase 20 (was Device Matrix + Physical Tests) — DEVICES-*
+
+- ~~DEVICES-01..08~~ — **DROPPED per ADR-0011.** Solo dev = 2 devices (own Android + own/friend iPhone). Testers contribute ~5-10 additional devices total. No structured 8-class protocol; vendor-specific failures discovered by tester reports.
+
+### Dropped: Phase 21 (was Staging E2E + Go/No-Go) — E2E-*
+
+- ~~E2E-01~~ (Hetzner staging in <60min) — **DROPPED per ADR-0011.** No separate staging; prod = single VPS shipped in Phase 3.
+- ~~E2E-02~~ (≥8 real runners, ≥2 de-Googled, ≥1 MIUI) — **DROPPED per ADR-0011.** Replaced by LAUNCH-02 (5-10 friend testers, no enforced device-class distribution).
+- ~~E2E-03~~ (48h soak + Strava + zero P0/P1) — **DROPPED per ADR-0011.** Replaced by LAUNCH-02 72h watchlist with ship-when-stable policy (no formal soak gate).
+- ~~E2E-04~~ (restore drill re-verified) — **DROPPED per ADR-0011.** DB-* dropped; `pg_dump` snapshot policy substitutes.
+- ~~E2E-05~~ (rollback drill re-verified) — **DROPPED.** Drill already passed on prod 2026-05-18 (Phase 4 CICD-04); no re-verification gate.
+- ~~E2E-06~~ (on-call rotation + SLA + fallback) — **DROPPED per ADR-0011.** Solo dev = no on-call rotation; if asleep, P0 surfaces in the morning.
+- ~~E2E-07~~ (tag `v1.0-rc.1`) — **REPLACED** by LAUNCH-01 tag `v1.0.0-beta.1`.
 
 ---
 
@@ -283,40 +236,26 @@ Per user redline: "Old REQ-IDs (except HEALTH-04) move to v1.1+ in REQUIREMENTS.
 
 ## Traceability
 
-**Coverage:**
-- v1.0 requirements: **96 REQ-IDs** across 21 phases (HEALTH-04 shared between Phases 11+12)
-- Mapped to phases: **96/96** ✓
-- Unmapped: 0
-- Deferred to v1.1+: HEALTH-01/02/03/05/06/07/08/09/10, SOCIAL-01..06 (except SOCIAL-04 implicit), COACH-01..06, PREMIUM-01..06, XCUT-01..06 (XCUT-07/08 partially in v1.0)
-- Resolved by new Phase 16: PHASE1-01..14 (old REQ-IDs)
+**Active closed-beta coverage (per ADR-0011):**
 
 | Requirement Range | Phase | Status |
 |-------------------|-------|--------|
-| REL-01..05 | Phase 1: Release contract | **Complete** (2026-05-15; Plans 01-01..03 shipped on `feat/cursona-redesign`) |
-| SEC-01..09 | Phase 2: Secrets hardening | Pending |
-| INFRA-01..07 | Phase 3: IaC | Pending |
-| CICD-01..06 | Phase 4: CI/CD | Pending |
-| OBS-01..08 | Phase 5: Observability backend | **Partial** — OBS-01/03/04/05/06/07 complete (5 of 8 Phase 5 plans shipped); OBS-02 deferred post-v1.0 per ADR-0010 amendment; OBS-06 runtime probe + OBS-08 DebugSession pending Plan 05-06 |
-| EDGE-01..05 | Phase 6: Edge + rate-limit | Pending |
-| DB-01..08 | Phase 7: DB + queues + state | Pending |
-| LOAD-01..06 | Phase 8: Load + chaos | Pending |
-| AND-SIGN-01..05 | Phase 9: Android signing | Pending |
-| IOS-SIGN-01..05 | Phase 10: iOS signing | Pending |
-| AND-BUILD-01..06 | Phase 11: Android build config | Pending |
-| HEALTH-04 (shared) | Phase 11+12 impl, Phase 21 validation | Pending |
-| IOS-BUILD-01..05 | Phase 12: iOS build config | Pending |
-| MAPBOX11-01..05 | Phase 13: Mapbox SDK 11.x migration | Pending |
-| AND-NATIVE-01..05 | Phase 14: Android native + ABI | Pending |
-| IOS-NATIVE-01..03 | Phase 15: iOS native + device class | Pending |
-| BG-01..08 | Phase 16: Background reliability | Pending |
-| CRASH-01..06 | Phase 17: Crash reporting | Pending |
-| AND-DIST-01..06 | Phase 18: Android self-hosted distribution | Pending |
-| IOS-DIST-01..04 | Phase 19: iOS TestFlight | Pending |
-| DEVICES-01..08 | Phase 20: Device matrix | Pending |
-| E2E-01..07 | Phase 21: Staging E2E + go/no-go | Pending |
+| REL-01..05 | Phase 1: Release contract | **Complete** 2026-05-15 (Plans 01-01..03) |
+| SEC-01..09 | Phase 2: Secrets hardening | **Complete** 2026-05-16 (Plans 02-01..04) |
+| INFRA-01/03/05/07 | Phase 3: IaC | **Complete** 2026-05-17 (Plans 03-01..03; -02/-04 deferred v1.1, -06 moved Phase 5) |
+| CICD-01..06 | Phase 4: CI/CD | **Complete** 2026-05-18 (Plans 04-01..06). Cosign/SLSA kept wired, best-effort per ADR-0011. |
+| OBS-01/03..07 | Phase 5: Observability backend | **Complete** 2026-05-20 (Plans 05-02..07). OBS-02 deferred per ADR-0010; OBS-08 mobile UX dropped per ADR-0011 (backend seam shipped; env-allowlist refactor lazy). |
+| SIGN-01..02 | Phase 6: Release signing | Pending |
+| BUILD-01..02 + STAB-01 | Phase 7: Release builds + mobile stability | Pending |
+| DIST-01..02 | Phase 8: Closed-beta distribution | Pending |
+| LAUNCH-01..02 | Phase 9: Closed-beta launch | Pending |
+
+**Dropped per ADR-0011 (preserved above for audit trail):** EDGE-01..05, DB-01..08, LOAD-01..06, AND-SIGN-01..05, IOS-SIGN-01..05, AND-BUILD-01..06, IOS-BUILD-01..05, HEALTH-04, MAPBOX11-01..05, AND-NATIVE-01..05, IOS-NATIVE-01..03, BG-01..08, CRASH-01..06, AND-DIST-01..06, IOS-DIST-01..04, DEVICES-01..08, E2E-01..07.
+
+**Re-expansion triggers:** revisit the dropped section if (a) beta passes >50 users, (b) a P0 incident exposes a dropped phase's gap, OR (c) team grows beyond 1 dev. See ROADMAP.md "Archived Phases" + ADR-0011 §Re-expansion triggers.
 
 ---
 
-*Requirements redefined: 2026-05-15*
-*Replaces earlier feature-focused v1.0 scope (2026-05-14)*
-*Old `docs/DEVELOPMENT_PLAN.md` task IDs (`P<phase>-<section>-<number>`) remain canonical implementation breakdown where applicable; new REQ-IDs above provide GSD-side traceability for v1.0 hardening work.*
+*Requirements rewritten: 2026-05-20 per ADR-0011 (was 21-phase enterprise-hardening scope from 2026-05-15)*
+*Replaces earlier feature-focused v1.0 scope (2026-05-14) — the 2026-05-15 21-phase scope was an interstitial overshoot*
+*Old `docs/DEVELOPMENT_PLAN.md` task IDs (`P<phase>-<section>-<number>`) remain canonical implementation breakdown where applicable; new REQ-IDs above provide GSD-side traceability for the closed-beta scope.*
