@@ -30,7 +30,9 @@
 
 ### Полный реестр (v1.0)
 
-10 типов секретов в проекте по состоянию на Phase 2 (см. `02-CONTEXT.md` §scout_findings #45). Каждая запись имеет playbook ротации ниже — см. соответствующий `## Rotation Playbook —`.
+11 типов секретов в проекте по состоянию на Phase 6¹ (см. `02-CONTEXT.md` §scout_findings #45). Каждая запись имеет playbook ротации ниже — см. соответствующий `## Rotation Playbook —`.
+
+¹ *(11th added 2026-05-20 per Phase 6 SIGN-01, ADR-0011 closed-beta scope)*
 
 | #  | Тип секрета                                | Env-var name (или PRIMARY)                          | Где в SOPS                                    | Bundle? | Назначение / Playbook                                           |
 | -- | ------------------------------------------ | --------------------------------------------------- | --------------------------------------------- | ------- | --------------------------------------------------------------- |
@@ -44,6 +46,7 @@
 | 8  | OAuth client secrets (Strava + future)     | `STRAVA_CLIENT_SECRET` (+ Google/Apple deferred)    | `.secrets/{dev,staging,prod}/oauth.yaml`      | ❌ НЕТ   | OAuth confidential client flow; см. §OAuth client secrets playbook |
 | 9  | SOPS master key (per dev)                  | `SOPS_AGE_KEY_FILE` → `~/.config/sops/age/keys.txt` | НЕ в SOPS (это сам ключ!)                     | ❌ НЕТ   | Decrypt-key для всех `.secrets/**/*.yaml`; см. §SOPS_AGE_KEY playbook |
 | 10 | NATS auth                                   | (NATS_AUTH_TOKEN — deferred v1.1)                   | (deferred — v1.1)                              | ❌ НЕТ   | Auth для NATS брокера; см. §NATS auth playbook (deferred-v1.1 stub) |
+| 11 | Android release keystore + iOS distribution bundle | (none — base64 in YAML)                            | `.secrets/prod/mobile-signing.yaml`            | ✅ ДА    | App signing для closed-beta release builds; см. §"Mobile signing — recovery" ниже |
 
 > **Канонический store** — SOPS-encrypted `.secrets/{dev,staging,prod}/<group>.yaml`. Локальные dev-копии (`~/.netrc`, `~/.gradle/gradle.properties`, `apps/mobile-rn/.env`) — derived state, sync-from-SOPS не наоборот.
 
@@ -599,6 +602,95 @@ find .secrets -name '*.yaml' -exec sops --rotate --in-place {} \;
 6. Validation: проверить, что producers + consumers всех 8 сервисов подключаются успешно.
 
 **Сейчас (v1.0):** ничего не делать; NATS работает как unauth'd internal bus. Если в Phase 21 soak surfaces что-то требующее изоляции — flag в Incident Log + создать v1.1 phase для NATS auth migration.
+
+---
+
+## Mobile signing — recovery
+
+Запускается при одном из 4 сценариев потери material'а для подписи мобильных билдов. Phase 6 / SIGN-01 + SIGN-02. См. `docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md` §"closed-beta blast radius".
+
+**Контекст:** `.secrets/prod/mobile-signing.yaml` хранит Android keystore (PKCS12, RSA 4096, validity 100 лет, single alias `runningecosystem-release`) + iOS distribution bundle (Plan 06-02). Recovery невозможна без age private key — back-up на 2 macOS-native encrypted DMG (AES-256) USB sticks в 2 разных физических locations (D-07). DMG password — single 32-byte random в 1Password sealed entry "Sport mobile signing — USB DMG password" (D-08, Q2 resolution). Public SHA-256 fingerprint keystore'а — `.planning/phases/06-release-signing/evidence/keystore-sha256.txt` (2 формы: colon-separated + bare hex).
+
+### Сценарий (a). Age key потерян на workstation → restore from USB (~5 минут)
+
+1. Вставить USB-A (label: `SPORT-RECOVERY-A`) — лежит в <home location, see attestation в `.planning/phases/06-release-signing/06-01-SUMMARY.md §"Backup placement attestation"`>.
+2. Mount encrypted DMG: `hdiutil attach /Volumes/SPORT-RECOVERY-A/sport-recovery-a.dmg` (passphrase — из 1Password sealed entry "Sport mobile signing — USB DMG password"; mnemonic hint — на laminated RECOVERY-CARD на USB).
+3. Restore age key:
+   ```bash
+   cp /Volumes/SPORT_RECOVERY_A/age-keys.txt ~/.config/sops/age/keys.txt
+   chmod 600 ~/.config/sops/age/keys.txt
+   ```
+4. Verify decrypt работает:
+   ```bash
+   sops -d .secrets/prod/mobile-signing.yaml | yq -r '.android.key_alias'
+   # expected output: runningecosystem-release
+   ```
+5. `hdiutil detach /Volumes/SPORT_RECOVERY_A`. USB обратно в физический storage (home location).
+
+Если USB-A недоступен — повторить с USB-B (`SPORT-RECOVERY-B`) в другой локации.
+
+### Сценарий (b). Age key потерян везде (2 USB утеряны + workstation) — CATASTROPHIC
+
+**Последствие:** existing closed-beta Android APK installs не получат update (Android refuses signed-by-different-key forever, см. ADR-0011). iOS TestFlight builds работают до expiry distribution cert, после — невозможно publish new build с тем же bundle ID без revoke + reissue cert через Apple Developer portal.
+
+**Mitigation (defense-in-depth):** документировано в D-07 (2 USB в 2 разных физических locations) + Phase 2 D-04 (1Password sealed entry per dev для age key). Probability of all 3 channels (USB-A + USB-B + 1Password + workstation) failing simultaneously approaches zero.
+
+**Tester communication template** (см. `docs/RUNBOOKS/closed-beta-comms.md` если/когда сценарий случится):
+
+> К сожалению, нам пришлось пересоздать подпись приложения. Удалите старую версию Running Ecosystem (Android Settings → Apps → Running Ecosystem → Uninstall), затем установите новую версию по ссылке: <URL>. Извините за неудобства — это разовая операция, дальше всё снова будет автоматически обновляться.
+
+**Не делать:** не пытаться "восстановить" старую keystore через любые tools — Android keystore без приватного ключа невозможно реверс-инженерить (RSA 4096). Единственный путь — generate new keystore + new app signing identity + новые установки.
+
+### Сценарий (c). Keystore corrupted, age key OK
+
+1. SOPS YAML — текстовый формат; corruption улавливается визуально перед commit (5KB base64 field — заметная аномалия в `git diff`). Если уже committed:
+   ```bash
+   git restore .secrets/prod/mobile-signing.yaml
+   ```
+   из git history (encrypted form committed в репо — см. row #11 инвентаря).
+2. Round-trip verify recovered state:
+   ```bash
+   sops -d .secrets/prod/mobile-signing.yaml | yq -r '.android.keystore_base64' | base64 -d | wc -c
+   # expected: 4000-5000 (PKCS12 keystore byte size)
+   ```
+3. Если и git history broken (force-push повредил historical commit с keystore) — переход к сценарию (b).
+
+### Сценарий (d). iOS distribution cert revoked / expired (annual)
+
+Apple distribution certs истекают через 1 год от issue date. См. `https://developer.apple.com/account/resources/certificates/list`. Steps (~20 минут):
+
+1. Apple Dev portal → Certificates → **Distribution** → revoke old cert → **+** → Apple Distribution → upload CSR (Keychain Access → Certificate Assistant → Request a Certificate From a CA → save to disk).
+2. Download new `.cer`, double-click → installs в Keychain. Export private key + cert as `.p12` с explicit password (NOT default empty).
+3. Provisioning profile auto-regenerates когда cert changes; download new `.mobileprovision` с того же portal.
+4. Update SOPS — base64 + write через RAM disk (Pitfall 11 — `shred`/`rm -P` ineffective на APFS/SSD):
+   ```bash
+   # На RAM disk (см. Pattern 1 в 06-RESEARCH.md):
+   RAM_DEV=$(hdiutil attach -nomount ram://20480 | awk '{print $1}')
+   diskutil eraseVolume APFS SIGN_RAM "$RAM_DEV"
+
+   # base64 + JSON-encode для sops set --value-file:
+   base64 -i ~/Downloads/distribution.p12 | tr -d '\n' | jq -R . > /Volumes/SIGN_RAM/p12.b64.json
+   sops set --value-file .secrets/prod/mobile-signing.yaml '["ios"]["distribution_cert_p12_base64"]' /Volumes/SIGN_RAM/p12.b64.json
+
+   # Update password (если новый):
+   sops set .secrets/prod/mobile-signing.yaml '["ios"]["distribution_cert_password"]' "\"<new-p12-password>\""
+
+   # Teardown — zero SSD trace:
+   hdiutil detach /Volumes/SIGN_RAM
+   ```
+
+   *Note: `shred -u /tmp/p12.b64` и `rm -P /tmp/p12.b64` неэффективны на APFS/SSD per RESEARCH Pitfall 11 — prefer RAM disk для ephemeral plaintext.*
+5. Existing TestFlight builds работают до их собственного expiry (~90 дней от build date); новые build'ы используют new cert (Phase 7 / EAS production profile).
+6. Update Provisioning profile UUID в SOPS:
+   ```bash
+   PROFILE_UUID=$(security cms -D -i ~/Downloads/new.mobileprovision | plutil -extract UUID raw -)
+   sops set .secrets/prod/mobile-signing.yaml '["ios"]["provisioning_profile_uuid"]' "\"$PROFILE_UUID\""
+   ```
+7. Round-trip verify через `bash .planning/phases/06-release-signing/evidence/smoke-ios-cert-roundtrip.sh` (Plan 06-02 Task 2 implements).
+
+**Для Mapbox dashboard restriction tightening (D-19):** см. `.planning/phases/06-release-signing/evidence/keystore-sha256.txt` (2 формы: colon-separated + bare hex). После добавления Android SHA-256 + iOS Bundle ID restriction в Mapbox dashboard на `pk.` токен — записать в §"История ротаций" ниже.
+
+См. также `docs/SECRETS.md §SOPS_AGE_KEY` (recipient rotation в случае compromise age key самого по себе).
 
 ---
 
