@@ -1,28 +1,38 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: Closure
+milestone_name: ClosedBeta
 status: executing
 stopped_at: |
-  Phase 5 Wave 3 closed — Plan 05-05 (OTel OTLP/HTTP + sentry-go SDK + D-38 dormant
-  guard across 8 services) complete. 3 commits: a7831c3 (otel_init.go + 6 tests),
-  4bbb3d5 (sentry_init.go + 5 tests + headerWroteRecorder Hijacker passthrough),
-  5f1e276 (8-service main.go chain wire — Promhttp→SentryRecovery→OtelHTTP→
-  clientversion→mux per D-32). Pinned RESEARCH §4 deps: sentry-go v0.46.2,
-  otel v1.32.0, otel/sdk v1.32.0, otlptracehttp v1.32.0, otelhttp v0.57.0.
-  D-38 contract: empty SENTRY_DSN_BACKEND → both MustInit* log INFO "disabled —
-  empty DSN" + return no-op; dormant-by-design path для v1.0 per ADR-0010
-  amendment 2026-05-19 PM. go build/vet/test all green. pkg/observability now
-  44 passing test functions/sub-tests across 6 test files.
-  Wave 4 remains: Plan 05-06 (DebugSessionMiddleware + Alloy log shipping +
-  final OBS-06 runtime probe + phase closure).
-last_updated: "2026-05-20T18:00:00.000Z"
+  Phase 5 CLOSED 2026-05-20 — Plan 05-06 Tasks 1-5 shipped (DebugSessionMiddleware
+  + Alloy alloy-shipper role + pii_live_probe.py + ADR-0009 + observability
+  RUNBOOK; 5 commits ce6cf01..eb28259). Task 6 acceptance walkthrough DEFERRED
+  to Phase 9 smoke test per ADR-0011 (scope reset to closed-beta lean — 21-phase
+  enterprise-hardening was overkill for solo dev shipping to 5-10 friend testers).
+
+  Milestone REDEFINED 2026-05-20 per ADR-0011: 21 phases → 4 phases on top of
+  what shipped (Phases 1-5). New scope:
+  - Phase 6: Release signing (Android keystore + iOS Apple Dev certs)
+  - Phase 7: Release builds + mobile stability (EAS + foreground service + iOS SLC)
+  - Phase 8: Closed-beta distribution (Android signed-JSON + iOS TestFlight)
+  - Phase 9: Closed-beta launch (smoke + 5-10 testers + 72h watchlist)
+
+  Dropped (audit trail in REQUIREMENTS.md + ROADMAP.md "Archived Phases"):
+  EDGE-* DB-* LOAD-* CRASH-* MAPBOX11-* AND-NATIVE-* IOS-NATIVE-* BG-*
+  DEVICES-* E2E-* HEALTH-04. Re-expansion triggers documented in ADR-0011
+  (beta passes >50 users / P0 incident / team grows beyond 1 dev).
+
+  Cosign/SLSA in backend-cd.yml stays wired = best-effort, NOT gated. Rollback
+  Makefile + 9990/9991 drill migrations kept. Sentry SaaS stays dormant per D-38.
+
+  Next: Phase 6 ready to plan via `/gsd-discuss-phase 6`.
+last_updated: "2026-05-20T22:00:00.000Z"
 progress:
-  total_phases: 21
-  completed_phases: 3
-  total_plans: 19
-  completed_plans: 22
-  percent: 15
+  total_phases: 9
+  completed_phases: 5
+  total_plans: 23
+  completed_plans: 23
+  percent: 56
 ---
 
 # Project State
@@ -32,17 +42,19 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-05-15 — milestone v1.0 redefined)
 See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress)
 
-**Milestone:** v1.0 Production Readiness — IN PROGRESS, **REDEFINED 2026-05-15** as 21-phase hardening scope. Earlier 8-phase feature scope superseded. Feature work (privacy zones, segments, coaching, premium, GDPR) slides to v1.1+. Target close: tagged `v1.0-rc.1` after 48h staging soak with ≥8 real runners.
+**Milestone:** v1.0 Closed Beta — IN PROGRESS, **REDEFINED 2026-05-20** per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) (was 21-phase enterprise-hardening, retired). Closed beta = solo dev shipping to 5-10 friend testers via TestFlight + self-hosted Android channel. Target close: tag `v1.0.0-beta.1` published + 72h watchlist clean (no P0). No formal soak gate.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** Phase 05 — observability-backend
+**Current focus:** Phase 6 — Release signing (next, ready to plan)
 
-**Brownfield note:** Codebase remains at Phase 8 / M10 code-complete on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors landed under the superseded scope — kept as-is in git history; planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`). Pixel + iPhone field-test acceptance criteria inherited by new Phase 16 (CONTEXT skeleton seeded).
+**Brownfield note:** Codebase remains on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors + Phases 1-5 of v1.0 hardening on top). Old planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`. 21-phase scope archive at `.planning/phases/_archive/superseded-21-phase-v1.0/`.
 
 ## Current Position
 
-Phase: 05 (observability-backend) — EXECUTING (Wave 3 CLOSED; Wave 4 remaining = Plan 05-06)
-Plan: 5 of 6 complete (05-02, 05-03, 05-04, 05-05, 05-07 ✓; 05-06 pending)
-Last completed: Plan 05-05 — OTel OTLP/HTTP + sentry-go SDK + D-38 dormant guard across 8 services, 2026-05-20 (3 commits a7831c3..5f1e276). Pinned RESEARCH §4 deps; D-38 empty-DSN guard in both MustInitSentry + MustInitTracer with slog buffer test assertion (dormant-by-design for v1.0 per ADR-0010 amendment); Promhttp→SentryRecovery→OtelHTTP→clientversion→mux chain in all 8 Go services; pkg/observability 44 tests GREEN. Prior: Plan 05-04 — Prom /metrics + middleware + 3 dashboards + cardinality CI gate.
+Phase: **05 CLOSED 2026-05-20** — all 6 plans shipped (Task 6 acceptance walkthrough deferred to Phase 9 per ADR-0011)
+Plan: 6 of 6 ✓
+Last completed: **Plan 05-06** — DebugSessionMiddleware + Alloy alloy-shipper role + pii_live_probe.py + ADR-0009 + observability RUNBOOK (5 commits ce6cf01..eb28259, 2026-05-20). Task 6 walkthrough conditionally deferred — re-trigger if Phase 9 watchlist exercises the observability stack and finds Alloy not shipping logs. Prior: Plan 05-05 — OTel OTLP/HTTP + sentry-go SDK + D-38 dormant guard.
+
+**Next phase (open):** Phase 6 — Release signing. `shared` workstream. Android keystore + 2 offline backups + recovery RUNBOOK; iOS Apple Dev certs + distribution provisioning + ASC API key in SOPS. Ready to plan via `/gsd-discuss-phase 6`.
 Status: Executing Phase 05
 
 Progress: [▓▓▓░░░░░░░] ~22% of new v1.0 scope (REL-01..05 + SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 — 22-of-96 REQ-IDs complete)
@@ -72,7 +84,8 @@ Plan 02-04 actual: ~95 min spread across 2 sessions (Task 2 docs ~25 min prior s
 
 **Recent Trend:**
 
-- Last activity: 2026-05-20 — **Phase 5 Wave 3 closed**. Plan 05-05 shipped (3 commits a7831c3..5f1e276 — otel_init.go + sentry_init.go + 8-service main.go chain wire). pkg/observability now 44 passing tests across 6 files. D-38 empty-DSN dormant guard means services boot cleanly without Sentry DSN (Sentry SaaS activation deferred to post-v1.0 per ADR-0010 amendment). Next: Plan 05-06 (Wave 4 final — DebugSessionMiddleware + Alloy log shipping + OBS-06 runtime probe + phase closure).
+- Last activity: 2026-05-20 — **Milestone v1.0 REDEFINED per ADR-0011** (21-phase enterprise-hardening → 4-phase closed-beta lean). 2 commits: `b77c742` scope reset (ROADMAP + REQUIREMENTS + PROJECT + CLAUDE + ADR-0011 + scripts/debug-tail.sh + 21-phase archive); Commit 2 = Phase 5 closeout (05-06-SUMMARY + STATE.md). **Phase 5 CLOSED**. Plan 05-06 Tasks 1-5 shipped (commits ce6cf01..eb28259 — DebugSessionMiddleware + alloy-shipper role + pii_live_probe.py + ADR-0009 + observability RUNBOOK); Task 6 walkthrough DEFERRED to Phase 9 smoke test conditional on observability being actually exercised. Cosign/SLSA stays wired best-effort per ADR-0011. Next: Phase 6 (Release signing — ready to plan via /gsd-discuss-phase 6).
+- 2026-05-20 — **Phase 5 Wave 3 closed**. Plan 05-05 shipped (3 commits a7831c3..5f1e276 — otel_init.go + sentry_init.go + 8-service main.go chain wire). pkg/observability now 44 passing tests across 6 files. D-38 empty-DSN dormant guard means services boot cleanly without Sentry DSN.
 - 2026-05-18 — **Phase 4 closed**. Plans 04-04 (drill PASS + save/scp/load pivot, commit `fb3bfe4`) + 04-05 (branch protection, commit `d972bcc`) + 04-06 (deploy.md §11, pending commit). v1.0.1 backlog populated в ROADMAP с 6 debt items. Branch `main` locked с 8 required checks.
 - 2026-05-18 — Codebase map refreshed after phases 2-4 closeout (`c8eb755`).
 - 2026-05-17 — **Phase 3 closed**. 3 plans across 3 waves; pivoted mid-execution Hetzner Cloud → provider-agnostic VPS (5→3 plans). INFRA-07 baseline 66.5s on 148.253.214.156.
