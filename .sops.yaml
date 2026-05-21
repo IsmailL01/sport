@@ -20,7 +20,13 @@
 #           sops updatekeys .secrets/<env>/*.yaml
 #       (non-destructive — re-wraps the data-encryption key against the new
 #       recipient list, does NOT re-encrypt plaintext values).
-#   - CI deploy key (Phase 4) appended here once issued.
+#   - CI: age19ysu774h4crzynkpf9pjpe829cxt0e3ckgfmnkweag0h7dxmp4kqn9vswx
+#       ✓ Added in Phase 7 Plan 07-01 Task 1 — lifts D-14-CI-AGE-KEY deferral
+#       (CI private half lives in GitHub Actions secret SOPS_AGE_KEY_CI; the public
+#       half is here; sops updatekeys re-wrapped all .secrets/prod/*.yaml DEKs
+#       against both DEV_A + CI recipients on 2026-05-21).
 creation_rules:
   - path_regex: \.secrets/.*\.yaml$
-    age: age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my
+    age: >-
+      age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my,
+      age19ysu774h4crzynkpf9pjpe829cxt0e3ckgfmnkweag0h7dxmp4kqn9vswx
