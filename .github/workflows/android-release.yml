@@ -6,17 +6,26 @@
 #   3. Restore CI age key from SOPS_AGE_KEY_CI secret → ~/.config/sops/age/keys.txt
 #   4. sops -d .secrets/prod/mobile-signing.yaml → extract base64 keystore +
 #      both passwords; write keystore to apps/mobile-rn/android/app/release.keystore;
-#      forward passwords to $GITHUB_ENV
+#      emit ::add-mask:: directives BEFORE writing to $GITHUB_ENV (P0 incident
+#      response 2026-05-22 — bare `echo "X=$value" >> $GITHUB_ENV` does NOT
+#      auto-mask; only `${{ secrets.X }}` references do); forward to $GITHUB_ENV
 #   5. npm ci (apps/mobile-rn)
-#   6. expo/expo-github-action@v8 (EXPO_TOKEN from secrets)
-#   7. npx eas build --platform android --profile production --non-interactive
-#      --no-wait (Path A: eas.json env block + $GITHUB_ENV propagation lets
-#      EAS Cloud builder env honor RUNNING_ECO_RELEASE_* gradle properties)
+#   6. Install eas-cli explicitly via npm (replaces expo/expo-github-action — the
+#      `npx eas` invocation failed with "npm error could not determine executable
+#      to run" in run 26245775886; root cause: relying on transient PATH from
+#      action setup instead of an explicit global install)
+#   7. `eas build --platform android --profile production --non-interactive
+#      --no-wait` (Path A: eas.json env block + $GITHUB_ENV propagation lets
+#      EAS Cloud builder env honor RUNNING_ECO_RELEASE_* gradle properties).
+#      EXPO_TOKEN passed via step env from `secrets.EXPO_TOKEN`.
 #
 # Pinned versions:
 #   - actions/checkout@v4, actions/setup-node@v4, actions/setup-java@v4
-#   - expo/expo-github-action@v8 (latest major as of 2026-05-21, current = 8.2.1)
+#   - eas-cli installed via `npm install -g eas-cli` (latest at run-time)
 #   - SOPS_VERSION=3.13.1 (matches dev workstation; min ≥3.11 per evidence/tool-versions.txt)
+#
+# See docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md for incident
+# context behind the ::add-mask:: + eas-cli explicit-install changes.
 
 name: Android release build
 
@@ -70,31 +79,37 @@ jobs:
           sops -d .secrets/prod/mobile-signing.yaml > /tmp/mobile-signing.yaml
           yq -r '.android.keystore_base64' /tmp/mobile-signing.yaml | base64 -d > apps/mobile-rn/android/app/release.keystore
           chmod 600 apps/mobile-rn/android/app/release.keystore
-          {
-            echo "RUNNING_ECO_RELEASE_STORE_PASSWORD=$(yq -r '.android.keystore_password' /tmp/mobile-signing.yaml)"
-            echo "RUNNING_ECO_RELEASE_KEY_PASSWORD=$(yq -r '.android.key_password' /tmp/mobile-signing.yaml)"
-          } >> "$GITHUB_ENV"
+          # Read passwords into shell vars first, then register them with the
+          # log masker BEFORE any subsequent step (incl. `echo ... >> $GITHUB_ENV`)
+          # writes them anywhere visible. Bare `echo "VAR=$value" >> $GITHUB_ENV`
+          # does NOT auto-mask — only `${{ secrets.X }}` references do. (See
+          # docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md for the
+          # P0 incident this guards against.)
+          STORE_PASS=$(yq -r '.android.keystore_password' /tmp/mobile-signing.yaml)
+          KEY_PASS=$(yq -r '.android.key_password' /tmp/mobile-signing.yaml)
+          echo "::add-mask::$STORE_PASS"
+          echo "::add-mask::$KEY_PASS"
+          echo "RUNNING_ECO_RELEASE_STORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
+          echo "RUNNING_ECO_RELEASE_KEY_PASSWORD=$KEY_PASS" >> "$GITHUB_ENV"
           rm -f /tmp/mobile-signing.yaml
 
       - name: Install dependencies
         working-directory: apps/mobile-rn
         run: npm ci
 
-      - name: Setup EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Install eas-cli
+        run: npm install -g eas-cli
 
       - name: Trigger EAS build
         working-directory: apps/mobile-rn
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           RUNNING_ECO_RELEASE_STORE_FILE: release.keystore
           RUNNING_ECO_RELEASE_STORE_PASSWORD: ${{ env.RUNNING_ECO_RELEASE_STORE_PASSWORD }}
           RUNNING_ECO_RELEASE_KEY_PASSWORD: ${{ env.RUNNING_ECO_RELEASE_KEY_PASSWORD }}
           RUNNING_ECO_RELEASE_KEY_ALIAS: runningecosystem-release
         run: |
-          npx eas build \
+          eas build \
             --platform android \
             --profile production \
             --non-interactive \
