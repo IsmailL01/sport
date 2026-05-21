@@ -149,3 +149,13 @@ temp/
 # Prior accidental gitlinks (mode 160000) for these paths were removed в Plan 04-02
 # Task 5 deviation fix — CI checkout was failing with "no submodule mapping found".
 .claude/worktrees/
+
+# ===== Phase 7 / Plan 07-01 — keystore artifacts =====
+# CI writes these at build time from SOPS-decrypted .secrets/prod/mobile-signing.yaml;
+# they must never be committed. Note: `*.keystore` at top of file already covers this,
+# but kept explicit for clarity + defense-in-depth.
+apps/mobile-rn/android/app/release.keystore
+# credentials.json: Path A keystore injection (RESEARCH §0) does NOT write this file,
+# but Expo's classic indirection would have — gitignored defensively in case anyone
+# ever runs `eas credentials` locally.
+apps/mobile-rn/credentials.json
