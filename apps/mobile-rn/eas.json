@@ -32,7 +32,12 @@
         "resourceClass": "m-medium"
       },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "env": {
+          "RUNNING_ECO_RELEASE_STORE_FILE": "release.keystore",
+          "RUNNING_ECO_RELEASE_KEY_ALIAS": "runningecosystem-release"
+        },
+        "image": "latest"
       }
     }
   },
