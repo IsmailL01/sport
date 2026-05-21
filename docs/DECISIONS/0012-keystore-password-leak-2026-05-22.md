@@ -8,6 +8,9 @@
 - ADR-0006 (Mapbox token incident — sibling treat-as-compromise precedent on a different secret family)
 - ADR-0011 + Amendment 4 (lean key custody — SOPS-only, no external backup; informs why the rotation does NOT also update OneDrive / RECOVERY-CARD)
 
+**Amendments:**
+- 2026-05-22 — Self-inflicted chat-dump leak + re-rotation (see §"Amendment 2026-05-22 — Re-rotation after self-inflicted chat leak" below)
+
 ## Контекст
 
 CI run `26245775886` (workflow `android-release.yml`, push to tag `v1.0.0-beta.0` at 2026-05-21T18:38:03Z) failed at the "Trigger EAS build" step with `npm error could not determine executable to run`. Inspection of the run's log revealed plaintext exposure of the Android keystore password value in three step env blocks:
@@ -168,7 +171,68 @@ Tracked in `v1.0.1 Backlog` as `SECRETS-LEAK-PLAYBOOK-AMEND` (alongside `CI-MASK
 - ADR-0011 Amendment 4 — explains why rotation does NOT update OneDrive / RECOVERY-CARD (no external backup by design).
 - `docs/SECRETS.md` (to be amended Phase B above) — leak-response playbook.
 
+## Amendment 2026-05-22 — Re-rotation after self-inflicted chat leak
+
+**Status:** Closed.
+**Trigger:** During post-rotation verification of the original incident response (above), the executing AI agent (Claude / Anthropic) leaked the freshly-rotated keystore password into the agent chat transcript via an `xxd | tail -3` byte-dump diagnostic. The diagnostic was issued while investigating an apparent fingerprint discrepancy between two shell-pipeline forms.
+
+### Root cause of the diagnostic detour
+
+Two shell pipelines computing the "same" fingerprint disagreed:
+
+```bash
+# Form A: live pipeline
+sops -d ... | yq -r '.android.keystore_password' | shasum -a 256 | cut -c1-12
+# → produces sha256(value + "\n")
+
+# Form B: capture then process
+P=$(sops -d ... | yq -r '.android.keystore_password')
+printf '%s' "$P" | shasum -a 256 | cut -c1-12
+# → produces sha256(value), no trailing newline
+```
+
+`yq -r` always appends a trailing newline to its output. In Form A, `shasum` reads value-plus-newline from the pipe. In Form B, `$()` command substitution strips trailing newlines, and `printf '%s'` adds none — so `shasum` reads value-only. Both fingerprints are "valid" hashes of related strings, but they differ. Treating this as evidence of corruption was incorrect.
+
+### Root cause of the leak
+
+The investigation used `xxd | tail -3` on the value variables to confirm they were byte-identical. `xxd` output renders the value bytes as both hex and ASCII, exposing the plaintext. The output entered the agent's tool-result stream, which is logged into the conversation transcript on the AI vendor's infrastructure (Anthropic).
+
+### Blast radius
+
+- Anthropic conversation logs (out of solo-dev control; treat-as-compromise per ADR-0006 chain-of-custody reasoning).
+- The agent's own in-context memory (in-session only).
+- Not in any git commit, not in any CI log, not in any external system controlled by the dev.
+
+### Re-rotation
+
+Same process as STEP 3 of the original incident — `keytool -storepasswd` (PKCS12 invariant) + SOPS bundle update + round-trip verify + cert-SHA preservation check. Commit `21b992c` (feat/cursona-redesign).
+
+Old fp (compromised via chat-dump) → DESTROYED.
+New fp held in shell var only during rotation; never printed; SOPS bundle is the only durable home.
+
+### Lessons added to ADR mitigations
+
+**Phase A — discipline rules** (effective immediately for all future credential handling in this codebase):
+
+1. **Single canonical fingerprint form.** Use `printf '%s' "$VAR" | shasum -a 256 | cut -c1-12` exclusively. Do not mix forms. Trailing-newline discrepancies are NOT a security signal.
+2. **No byte-level inspection of values.** Never `xxd`, never `od -c`, never `hexdump`, never `wc -c` paired with sample-char display, never `${VAR:0:N}` / `${VAR: -N}` extraction. The bytes ARE the secret.
+3. **Length is acceptable; bytes are not.** `echo "len=${#PASS}"` is fine. `echo "first=${PASS:0:1}"` is not.
+4. **Fingerprint discrepancies are a shape problem, not a value problem.** If two checks disagree, suspect the pipeline shape (newlines, encoding, exit codes), not the underlying secret. Reproduce on a known-good test value (e.g., literal `"test123"`) to isolate the shape difference before touching the real secret.
+
+**Phase C — added v1.0.1 backlog item**:
+- **`CRED-DIAG-DISCIPLINE`** — codify the four rules above in `docs/SECRETS.md` as a "Credential diagnostics" section. Add a pre-commit grep rule for `xxd .*\$[A-Z_]+` patterns in shell scripts under `evidence/` and `scripts/` (lightweight, false-positive-tolerant — humans can override).
+
+### Sub-incident "evidence destruction" risk repeated, this time cleanly
+
+For this re-rotation, NO logs were destroyed. Anthropic conversation logs are not under solo-dev control to delete — accepting that exposure window (mitigation: rotation invalidates the credential) is the only path forward, identical to ADR-0006's reasoning about the Mapbox chat leak being beyond user-side revoke.
+
+### Updated references
+
+- Commit `21b992c` — re-rotation SOPS update.
+- `/tmp/mobile-signing.pre-rerotation.1779404090.yaml` — rollback artifact for THIS rotation (separate from the original `pre-rotation.1779397205.yaml`).
+- This amendment supersedes the "STEP 3 rotation" mention earlier — the new operative fingerprint replaces the previously-cited one for any forward verification.
+
 ---
 
-_Phase: 07 Release builds + mobile stability (Plan 07-01 Task 5 → tag-triggered Android pipeline) — incident occurred during Stage A' CI smoke validation. Plan 07-01 Task 6 (R8 device smoke) remains pending re-fire of CI under the patched workflow + rotated credentials, per the post-incident pause discipline._
+_Phase: 07 Release builds + mobile stability (Plan 07-01 Task 5 → tag-triggered Android pipeline) — incident occurred during Stage A' CI smoke validation. Plan 07-01 Task 6 (R8 device smoke) remains pending re-fire of CI under the patched workflow + re-rotated credentials, per the post-incident pause discipline._
 _Подписано: 2026-05-22. Поправки append-only — отдельный ADR (например 0012.1 или новый N) если sub-decision требует material revision._
