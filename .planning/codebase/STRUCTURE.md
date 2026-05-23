@@ -1,572 +1,483 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-05-18
+**Analysis Date:** 2026-05-23
 
 ## Directory Layout
 
 ```
-sport/                                  # Monorepo root
-├── .github/workflows/                  # CI/CD pipelines (3 active workflows)
-│   ├── backend-ci.yml                  # Test + lint + SAST + secret-scan-diff + trivy + no-latest guard
-│   ├── backend-cd.yml                  # Build + cosign keyless + SLSA L2 + push GHCR
-│   └── secret-scan-full.yml            # Full-history secret scan (cron)
-├── .planning/                          # GSD planning artifacts (kept in repo)
-│   ├── STATE.md                        # Current phase + decisions
-│   ├── ROADMAP.md                      # Phase roadmap
-│   ├── PROJECT.md                      # Project charter
-│   ├── REQUIREMENTS.md                 # Distilled requirements
-│   ├── MILESTONES.md                   # Milestone tracker
-│   ├── codebase/                       # Codebase maps (this file, ARCHITECTURE.md, ...)
-│   ├── phases/                         # Per-phase CONTEXT/RESEARCH/PLAN/SUMMARY docs
-│   └── config.json                     # GSD config
-├── .secrets/                           # SOPS-encrypted secrets at rest
-│   └── prod/shared.yaml                # age-encrypted; decrypt via `delegate_to: localhost`
-├── .sops.yaml                          # SOPS recipient config (age public key)
-├── .gitleaks.toml                      # Gitleaks rules
-├── .trivyignore.yaml                   # Trivy ignored CVEs
-├── .golangci.yml                       # Linter config (used by CI per-module loop)
-├── .pre-commit-config.yaml             # Pre-commit hooks
-├── .editorconfig                       # Cross-editor formatting
-├── .gitattributes                      # Line endings
-├── .gitignore                          # Repo ignores
-├── .trufflehog/                        # Trufflehog config
-├── .vscode/                            # Workspace settings
+sport/
 ├── apps/
-│   └── mobile-rn/                      # Expo React Native client (sole mobile app)
+│   ├── mobile-rn/                 # Expo React Native app (the only active client)
+│   │   ├── App.tsx                # Slim root: token init + ThemeProvider + RootNavigator
+│   │   ├── index.ts               # registerRootComponent(App)
+│   │   ├── app.json               # Expo manifest (permissions, bundle ids, scheme)
+│   │   ├── eas.json               # EAS build profiles (development / preview / production)
+│   │   ├── eslint.config.js       # Flat config; enforces @rnmapbox/maps import wall
+│   │   ├── jest.config.js         # jest-expo preset
+│   │   ├── tsconfig.json          # Strict TS, extends expo/tsconfig.base
+│   │   ├── package.json
+│   │   ├── android/               # Native Android project (custom dev client, R8/ProGuard)
+│   │   │   └── app/
+│   │   │       ├── build.gradle
+│   │   │       ├── proguard-rules.pro
+│   │   │       ├── release.keystore       # PKCS12 keystore (never committed plaintext)
+│   │   │       └── src/main/AndroidManifest.xml
+│   │   ├── assets/                # icons, splash, fonts
+│   │   ├── __mocks__/             # jest manual mocks (expo-sqlite stub)
+│   │   └── src/
+│   │       ├── auth/              # apiClient, tokenStorage, OAuth providers
+│   │       ├── design/            # ThemeProvider, tokens, design-system components
+│   │       ├── domain/            # PURE business logic (no platform deps)
+│   │       │   ├── session/       # SessionManager (imperative lifecycle owner)
+│   │       │   ├── training/      # plan generator
+│   │       │   ├── AreaCalculator.ts ClosureDetector.ts calories.ts records.ts
+│   │       │   ├── currency.ts streak.ts splits.ts metrics.ts gpx.ts stats.ts
+│   │       │   └── types.ts athlete.ts social.ts walletDomain.ts
+│   │       ├── health/            # HealthKit / Health Connect / Strava import adapters
+│   │       ├── location/          # LocationAdapter interface + adapters/ExpoLocationAdapter
+│   │       ├── map/               # ONLY place that imports @rnmapbox/maps
+│   │       │   ├── MapboxView.tsx components/ util/ offline.ts index.ts
+│   │       ├── media/             # MediaAdapter + ExpoMediaAdapter
+│   │       ├── modules/           # Cross-cutting feature modules (gamification, permissions, moderation)
+│   │       ├── navigation/        # RootNavigator, AppTabs, AuthStack, OnboardingStack, screens/
+│   │       ├── notifications/     # NotificationsAdapter + ExpoNotificationsAdapter
+│   │       ├── pipeline/          # GPS pipeline + filters
+│   │       ├── realtime/          # RealtimeAdapter + WebSocket / Mock adapters
+│   │       ├── sensors/           # BLE SensorAdapter + adapters
+│   │       ├── state/             # Zustand stores (activity, auth, sync, settings, …, social/)
+│   │       ├── storage/           # SQLite repositories (one per aggregate) + database.ts singleton
+│   │       ├── sync/              # Outbox sync engine (push + pull)
+│   │       ├── ui/                # Modals, screens, charts, social UI, Toast
+│   │       ├── util/              # geo, geojson, douglasPeucker, corridor, selfIntersection, speech, version
+│   │       ├── __fixtures__/      # Intentional lint-failure fixtures for ESLint guard tests
+│   │       └── __tests__/         # Unit + snapshot tests
+│   └── mobile_flutter.archived/   # Archived Flutter prototype (do NOT modify)
 ├── services/
-│   └── backend/                        # Go monorepo (go.work workspace)
+│   └── backend/                   # Go monorepo (multi-module: each service has its own go.mod)
+│       ├── api/                   # OpenAPI YAML specs (per service) + _shared/
+│       ├── identity/              # Auth + OTP + feature flags (:8081)
+│       ├── activity-sync/         # Session ingest from mobile
+│       ├── feed/                  # Activity feed
+│       ├── social-graph/          # Follow/relations
+│       ├── messaging/             # Chat (outbox pattern)
+│       ├── notifications/         # Expo push fanout + in-app (:8087)
+│       ├── realtime-gw/           # WebSocket gateway (subscribes to NATS)
+│       ├── media/                 # S3-backed media upload
+│       ├── gateway/admin/         # Static admin UI shell (index.html only)
+│       ├── pkg/                   # Shared Go packages (auth, observability, audit, ratelimit, …)
+│       ├── migrations/            # golang-migrate up/down SQL files (0000-0014…)
+│       ├── deploy/helm/           # Helm chart (currently identity only)
+│       ├── observability/         # prometheus.yml, loki.yml, grafana-datasources.yml, dashboards/
+│       └── scripts/openapi-routes-check/  # Go tool: verifies routes match OpenAPI
 ├── infra/
-│   └── ansible/                        # Provider-agnostic VPS deploy (Hetzner)
+│   ├── ansible/                   # Provisioning + deploy automation
+│   │   ├── site.yml               # Plays: bootstrap → sport-stack → alloy-shipper
+│   │   ├── ansible.cfg
+│   │   ├── inventory/{dev,prod}/
+│   │   ├── group_vars/
+│   │   └── roles/{common,docker,ufw,sport-stack,alloy-shipper}/
+│   └── observability-stack/       # Colocated obs VPS (Loki + Prometheus + Grafana + Caddy)
+│       ├── docker-compose.yml     # All containers bound to 127.0.0.1; Caddy is the ingress
+│       ├── caddy/ loki/ prometheus/ grafana/ systemd/
+│       └── grafana/{provisioning,dashboards-src,secrets}/
 ├── docs/
-│   ├── RUNNING_ECOSYSTEM_TZ.md         # Technical specification (source of truth)
-│   ├── DEVELOPMENT_PLAN.md             # Phased dev plan with task IDs
-│   ├── API-CONTRACT-v1.0.md            # v1.0 API contract
-│   ├── INTEGRATIONS.md                 # External integration catalog
-│   ├── SECRETS.md                      # Secrets handling guide
-│   ├── AUDIT.md                        # Audit-trail spec
-│   ├── CURRENCY.md                     # In-app currency rules
-│   ├── REVIEW_ROUNDS_1-3.md            # Past review notes
-│   ├── v1.0-SCOPE.md                   # v1.0 scope freeze
-│   ├── DECISIONS/                      # ADRs (0001–0007)
-│   └── RUNBOOKS/                       # Operational runbooks (deploy.md, sops-edit.md)
-├── tests/                              # Cross-cutting / field-test artifacts
-│   ├── FIELD_PROTOCOL.md
-│   └── runs/                           # Captured field-test traces
-├── Makefile                            # Top-level: `make rollback v=<tag>`, `make rollback-drill`
-├── CLAUDE.md                           # Project guidance for Claude Code (Russian)
-├── STATUS.md                           # Live status board
-├── README.md
-├── CHANGELOG.md
-├── CODEOWNERS
-└── DECISION.md                         # High-level decision log
-```
-
-## Mobile App Tree — `apps/mobile-rn/`
-
-```
-apps/mobile-rn/
-├── App.tsx                             # Root component (ErrorBoundary > Theme > Toast > RootNavigator)
-├── App.legacy.tsx                      # Pre-Cursona-redesign root, kept until flow stabilizes
-├── index.ts                            # Expo entry — registerRootComponent(App)
-├── app.json                            # Expo app config
-├── eas.json                            # EAS Build profiles
-├── package.json
-├── tsconfig.json
-├── jest.config.js
-├── eslint.config.js
-├── .prettierrc.json
-├── .env / .env.example                 # EXPO_PUBLIC_* — NOT secret-bearing
-├── __mocks__/                          # Jest manual mocks
-├── android/                            # Native Android project (Mapbox token plumbing)
-├── assets/                             # Icons, splash, fonts
-├── coverage/                           # Jest coverage output
-├── README.md
-└── src/
-    ├── auth/                           # Token storage, OAuth providers, apiClient
-    │   ├── apiClient.ts                # 401-refresh-retry, 426 force-update, X-Client-Version
-    │   ├── tokenStorage.ts             # Expo SecureStore wrapper
-    │   ├── authProviders.ts
-    │   └── __tests__/
-    ├── design/                         # Theme tokens + ThemeProvider (Cursona redesign)
-    │   ├── ThemeProvider.tsx
-    │   ├── tokens.ts
-    │   ├── components/
-    │   ├── icons/
-    │   └── index.ts
-    ├── domain/                         # PURE TS — no React/Expo/Mapbox imports
-    │   ├── AreaCalculator.ts           # Local-plane projection + shoelace
-    │   ├── ClosureDetector.ts
-    │   ├── athlete.ts | calories.ts | currency.ts | gpx.ts | lap.ts
-    │   ├── metrics.ts | records.ts | recordsFormat.ts | sensorAssociation.ts
-    │   ├── social.ts | splits.ts | stats.ts | streak.ts | walletDomain.ts | types.ts
-    │   ├── session/SessionManager.ts   # Run-session lifecycle
-    │   └── training/                   # banister, tss, vo2max, lthr, planGenerator, racePredictor, workoutSession
-    ├── pipeline/                       # GPS filter chain
-    │   ├── Pipeline.ts | Filter.ts | index.ts
-    │   └── filters/                    # Accuracy, Kalman, Jump, MinSegment
-    ├── map/                            # SOLE Mapbox import boundary
-    │   ├── MapboxView.tsx              # @rnmapbox/maps re-export façade
-    │   ├── offline.ts                  # Offline tile pack management
-    │   ├── util/
-    │   ├── components/                 # TrackLayer, CorridorLayer, ZoneLayer, HistoryTerritoryLayer, LocationPuckLayer, RegionPickerOverlay
-    │   └── index.ts                    # setMapboxAccessToken + re-exports
-    ├── location/                       # GPS adapter port + impls
-    │   ├── LocationAdapter.ts          # Interface
-    │   ├── adapters/ExpoLocationAdapter.ts
-    │   └── index.ts
-    ├── sensors/                        # External sensor adapter port + impls (HRM, footpod)
-    │   ├── SensorAdapter.ts
-    │   ├── adapters/
-    │   └── index.ts
-    ├── health/                         # Health data import adapters
-    │   ├── HealthAdapter.ts            # Interface
-    │   ├── HealthKitAdapter.ts         # iOS
-    │   ├── HealthConnectAdapter.ts     # Android
-    │   ├── StravaAdapter.ts            # OAuth
-    │   ├── MockHealthAdapter.ts
-    │   ├── sync.ts | importPlan.ts | importRepo.ts | importSanity.ts
-    │   └── index.ts
-    ├── realtime/                       # WebSocket adapter port + impls
-    │   ├── RealtimeAdapter.ts
-    │   ├── adapters/
-    │   └── index.ts
-    ├── notifications/                  # Push/in-app adapter port + impls
-    │   ├── NotificationsAdapter.ts
-    │   ├── adapters/
-    │   └── index.ts
-    ├── modules/                        # Feature modules (vertical slices)
-    │   ├── gamification/               # domain/, state/, sync/, index.ts
-    │   ├── moderation/
-    │   └── permissions/
-    ├── storage/                        # SQLite repositories (expo-sqlite)
-    │   ├── database.ts                 # Connection + schema management
-    │   ├── pointRepository.ts | lapRepository.ts | sessionRepository.ts
-    │   ├── recordsRepository.ts | relationsRepository.ts | sensorRepository.ts
-    │   ├── socialRepository.ts | walletRepository.ts
-    ├── state/                          # zustand stores (one per concern)
-    │   ├── activity.ts | auth.ts | featureflags.ts | featureflags.defaults.ts
-    │   ├── featureflagsApi.ts | forceUpdate.ts | history.ts | map.ts
-    │   ├── sensors.ts | settings.ts | sync.ts | training.ts | wallet.ts
-    │   ├── workoutPlayer.ts
-    │   ├── social/                     # useChatStore, useChatsStore, useNotificationsStore, useRealtimeStore, useUsersStore
-    │   └── __tests__/
-    ├── sync/                           # Offline-first sync engine
-    │   ├── syncEngine.ts               # Activity upload reconciliation
-    │   ├── messageSync.ts              # Conversation sync
-    │   └── mediaUpload.ts              # Presigned upload to S3/MinIO
-    ├── navigation/                     # React Navigation stacks
-    │   ├── RootNavigator.tsx           # Auth gate + push deep-link
-    │   ├── AppTabs.tsx | AuthStack.tsx | OnboardingStack.tsx
-    │   ├── types.ts
-    │   └── screens/                    # Screen components grouped by tab: auth/, chats/, journal/, me/, record/ + ForeignProfileScreen.tsx
-    ├── ui/                             # Modals, cards, widgets (pre-redesign mix)
-    │   ├── AuthScreen.tsx | HistoryModal.tsx | ManualEntryModal.tsx
-    │   ├── MetricsBar.tsx | ProfileModal.tsx | SensorsModal.tsx
-    │   ├── SessionDetailModal.tsx | StatsModal.tsx | Toast.tsx
-    │   ├── TodayCard.tsx | TrainingModal.tsx | WorkoutPlayer.tsx
-    │   ├── format.ts                   # Display formatters
-    │   ├── charts/
-    │   ├── screens/                    # ForceUpdateScreen.tsx + __tests__
-    │   └── social/                     # ChatScreen.tsx, UserSearchScreen.tsx
-    ├── util/                           # Pure helpers (no platform deps where possible)
-    │   ├── geo.ts                      # Projection helpers (lat/lon ↔ local plane)
-    │   ├── corridor.ts | douglasPeucker.ts | selfIntersection.ts
-    │   ├── geojson.ts | speech.ts | expoSpeechAdapter.ts | version.ts
-    │   └── __tests__/
-    ├── __fixtures__/                   # Test fixtures (GPS traces, etc.)
-    └── __tests__/                      # Cross-module integration tests (48 files)
-```
-
-## Backend Tree — `services/backend/`
-
-```
-services/backend/
-├── go.work                             # Workspace lists 9 modules
-├── go.work.sum
-├── Makefile                            # Dev-ops: build/run/test
-├── README.md
-├── docker-compose.yml                  # Dev (postgres + nats only)
-├── docker-compose.prod.yml             # Prod 13-container stack (4 stateful + 8 Go + 1 gateway)
-├── docker-compose.observability.yml    # Opt-in Prometheus + Grafana
-├── .dockerignore
-│
-├── pkg/                                # SHARED Go libraries (own go.mod)
-│   ├── go.mod | go.sum
-│   ├── auth/                           # JWT signer + verifier
-│   ├── audit/                          # Audit-log writer (Postgres)
-│   ├── clientversion/                  # X-Client-Version middleware + 426 force-update
-│   ├── featureflags/                   # Postgres-backed flag store with TTL cache
-│   ├── permissions/                    # ABAC checks
-│   ├── ratelimit/                      # Redis-backed buckets
-│   └── gamification/                   # XP / grades shared rules
-│
-├── identity/                           # Per-service module (same shape for all 8)
-│   ├── go.mod | go.sum
-│   ├── Dockerfile
-│   ├── cmd/server/main.go              # Entry: ENV, pool, middleware, http.Server
-│   └── internal/
-│       ├── domain/user.go              # Pure types
-│       ├── service/                    # auth.go, otp.go (business logic)
-│       ├── handler/                    # http.go, featureflags.go, otp.go
-│       └── repository/                 # repository.go (interface), memory/, postgres/
-│
-├── activity-sync/                      # Same 4-layer shape
-├── feed/                               # + internal/cleanup/ (janitor goroutines)
-├── media/                              # Same shape; uses MinIO presigned URLs
-├── messaging/                          # + internal/outbox/publisher.go + internal/permissions/
-├── notifications/                      # Same shape; Expo Push integration
-├── realtime-gw/                        # Variant: internal/gw/{connection,handler,registry}.go (no Postgres, only NATS+JWT)
-├── social-graph/                       # Same shape
-│
-├── gateway/                            # Caddy 2 — HTTPS terminator + reverse proxy
-│   ├── Caddyfile                       # Dev
-│   ├── Caddyfile.prod                  # Prod (ACME via Let's Encrypt, sslip.io)
-│   └── admin/                          # Static admin dashboard (HTML/JS)
-│
-├── api/                                # OpenAPI specs per service + redocly config
-│   ├── _shared/
-│   ├── identity.yaml | activity-sync.yaml | feed.yaml | media.yaml
-│   ├── messaging.yaml | notifications.yaml | realtime-gw.yaml
-│   ├── social-graph.yaml | gateway.yaml
-│   └── redocly.yaml
-│
-├── migrations/                         # golang-migrate format (up/down pairs)
-│   ├── 0000_extensions.{up,down}.sql
-│   ├── 0001_users.* … 0021_featureflags.*
-│   └── 9990_drill_metadata_col.* | 9991_drill_drop_metadata_col.*   # CICD-04 rollback drill
-│
-├── scripts/                            # Operator + smoke test scripts (Python + Bash)
-│   ├── drill_assert_schema.sh          # Used by rollback-drill
-│   ├── openapi-routes-check/
-│   ├── secrets/
-│   ├── smoke_abac_muted.py | smoke_moderation.py | smoke_otp.py
-│   ├── smoke_permissions.py | smoke_posts.py | smoke_ratelimit.py
-│   ├── smoke_realtime_feed.py | smoke_realtime_stories.py
-│   ├── smoke_stories.py | smoke_xp.py | test_clientversion_caddy.sh
-│
-├── deploy/                             # Reserved (helm/ + README) — currently unused (deployment is Ansible)
-└── observability/                      # Prometheus + Grafana provisioning files (opt-in)
-```
-
-## Infrastructure Tree — `infra/ansible/`
-
-```
-infra/ansible/
-├── ansible.cfg                         # Ansible config (callback plugins, retries, etc.)
-├── site.yml                            # Top-level playbook (2 plays: bootstrap + deploy)
-├── group_vars/
-│   └── all.yml                         # deploy_user, dev_admin_ips, caddy_acme_email, ssh keys
-├── inventory/
-│   ├── dev/hosts.yml
-│   └── prod/
-│       ├── hosts.yml
-│       └── group_vars/                 # Prod-specific overrides
-└── roles/
-    ├── common/                         # OS bootstrap + SSH hardening
-    │   ├── tasks/ | handlers/ | defaults/ | files/
-    ├── docker/                         # Docker engine install + deploy in docker group
-    ├── ufw/                            # OS firewall (replaces Hetzner Cloud Firewall post Phase 3 pivot)
-    └── sport-stack/                    # Application deployer (the heavy lifter)
-        ├── tasks/
-        │   ├── main.yml                # Orchestrates the 7 steps
-        │   ├── decrypt_sops.yml        # delegate_to: localhost SOPS decrypt → /run/sport.env tmpfs
-        │   ├── run_migrations.yml      # One-shot migrate/migrate container
-        │   └── smoke_probe.yml         # curl loop on /healthz — gates INFRA-07
-        ├── templates/
-        │   ├── sport-stack.service.j2  # systemd umbrella unit
-        │   └── sport.env.j2            # Templated environment file
-        ├── handlers/
-        └── defaults/
+│   ├── DECISIONS/                 # ADRs (0001-0012)
+│   ├── RUNBOOKS/                  # Operational runbooks (deploy, rollback, …)
+│   ├── RUNNING_ECOSYSTEM_TZ.md    # Technical requirements (the spec)
+│   ├── DEVELOPMENT_PLAN.md        # Phase/task plan with IDs
+│   ├── API-CONTRACT-v1.0.md       # v1.0 release contract
+│   ├── SECRETS.md                 # Secret management runbook
+│   ├── INTEGRATIONS.md            # External integrations log
+│   ├── CURRENCY.md TELEMETRY.md AUDIT.md v1.0-SCOPE.md REVIEW_ROUNDS_1-3.md
+│   ├── gitleaks-history-scan.json trufflehog-history-scan.json
+├── .planning/
+│   ├── STATE.md MILESTONES.md PROJECT.md REQUIREMENTS.md ROADMAP.md config.json
+│   ├── codebase/                  # Generated codebase maps (THIS DIRECTORY)
+│   └── phases/                    # Per-phase planning artifacts (01-07 + _archive/)
+├── .secrets/                      # SOPS-encrypted YAML, organized by env
+│   ├── dev/{mapbox,oauth,shared}.yaml
+│   ├── staging/
+│   ├── prod/{mapbox,oauth,sentry,shared,mobile-signing}.yaml
+│   └── README.md
+├── .github/
+│   └── workflows/                 # backend-ci, backend-cd (cosign + SLSA L2), android-release, secret-scan-full
+├── .sops.yaml                     # age recipients (DEV_A, CI key, future DEV_B)
+├── .gitleaks.toml                 # Secret-scan baseline
+├── .trufflehog/                   # trufflehog config
+├── .golangci.yml                  # Go linter config (15 enabled linters)
+├── .pre-commit-config.yaml        # gitleaks + trufflehog hooks
+├── .gitignore .gitattributes .editorconfig .trivyignore.yaml
+├── .vscode/                       # Workspace settings
+├── .claude/                       # Claude Code worktrees + skills
+├── CLAUDE.md                      # AI agent project rules (READ FIRST)
+├── STATUS.md                      # Current phase + task statuses (in repo root)
+├── DECISION.md README.md CHANGELOG.md CODEOWNERS
+├── Makefile                       # Top-level: rollback target + drill harness
+├── tests/                         # Field-test protocols + run outputs (not unit tests)
+└── scripts/                       # Ops scripts (deploy_observability_stack, smoke_*, pii_audit, …)
 ```
 
 ## Directory Purposes
 
 **`apps/mobile-rn/`:**
-- Purpose: Expo RN client (the only mobile codebase)
-- Contains: TypeScript source, Jest tests, Android native project, EAS config
-- Key files: `App.tsx`, `package.json`, `app.json`, `src/`
+- Purpose: The active mobile client (Expo RN, ADR-0001 chose RN over Flutter)
+- Contains: Root TS app + native `android/` project + EAS build config
+- Key files: `App.tsx`, `index.ts`, `eas.json`, `app.json`, `eslint.config.js`
 
 **`apps/mobile-rn/src/domain/`:**
-- Purpose: Pure-TS domain layer (no React, no Expo, no Mapbox)
-- Contains: Entities, value objects, training/area math
-- Key files: `AreaCalculator.ts`, `ClosureDetector.ts`, `session/SessionManager.ts`, `training/*.ts`
+- Purpose: Pure business logic — value objects, calculations, entities (no React / no SDKs)
+- Contains: `SessionManager` (subdir), area / closure / records / calories / streak / currency / splits / training / GPX
+- Key files: `domain/session/SessionManager.ts`, `domain/types.ts`, `domain/AreaCalculator.ts`
 
 **`apps/mobile-rn/src/map/`:**
-- Purpose: SOLE Mapbox SDK import site
-- Contains: MapboxView facade + Layer components (TrackLayer, CorridorLayer, ZoneLayer, etc.)
-- Key files: `MapboxView.tsx`, `components/TrackLayer.tsx`, `offline.ts`
+- Purpose: Mapbox abstraction wall — sole permitted location for `@rnmapbox/maps` imports
+- Contains: `MapboxView.tsx`, layer components (`TrackLayer`, `LocationPuckLayer`, `CorridorLayer`, `HistoryTerritoryLayer`, `ZoneLayer`, `RegionPickerOverlay`), `offline.ts` (offline pack management), `util/`
+- Key files: `map/index.ts` (public API), `map/MapboxView.tsx`
 
-**`apps/mobile-rn/src/{location,sensors,realtime,notifications,health}/`:**
-- Purpose: Hexagonal adapter ports
-- Pattern: Interface file at root + `adapters/` subdir with concrete implementations
+**`apps/mobile-rn/src/location/`:**
+- Purpose: GPS abstraction (sensor-agnostic principle)
+- Contains: `LocationAdapter.ts` interface, `adapters/ExpoLocationAdapter.ts` (registers TaskManager task at module load)
+- Key files: `location/LocationAdapter.ts`, `location/adapters/ExpoLocationAdapter.ts`
 
-**`apps/mobile-rn/src/modules/`:**
-- Purpose: Vertical feature slices (gamification, moderation, permissions)
-- Contains: Each module has `domain/`, `state/`, `sync/`, `index.ts`
+**`apps/mobile-rn/src/pipeline/`:**
+- Purpose: GPS data refinement (filters composed in order)
+- Contains: `Pipeline.ts`, `Filter.ts`, `filters/{AccuracyFilter, KalmanFilter, JumpFilter, MinSegmentFilter, PauseDetector}.ts`
+- Key files: `pipeline/Pipeline.ts`, `pipeline/filters/KalmanFilter.ts`
+
+**`apps/mobile-rn/src/state/`:**
+- Purpose: Zustand stores, persist via MMKV where needed
+- Contains: `activity`, `auth`, `sync`, `settings`, `featureflags(.defaults)`, `forceUpdate`, `history`, `map`, `sensors`, `training`, `wallet`, `workoutPlayer`, `social/` (chat/users/notifications/realtime sub-stores)
+- Key files: `state/activity.ts` (the central session store), `state/auth.ts`, `state/settings.ts` (MMKV-persisted)
+
+**`apps/mobile-rn/src/storage/`:**
+- Purpose: SQLite persistence — repository per aggregate
+- Contains: `database.ts` (singleton + migrations v1-v19), `sessionRepository`, `pointRepository`, `lapRepository`, `sensorRepository`, `recordsRepository`, `relationsRepository`, `walletRepository`, `socialRepository`
+- Key files: `storage/database.ts`, `storage/sessionRepository.ts`
+
+**`apps/mobile-rn/src/ui/` + `src/navigation/` + `src/design/`:**
+- Purpose: Presentation layer
+- Contains: `ui/` — modals + Toast + ad-hoc screens; `navigation/` — RootNavigator + tab stacks + per-tab screen folders (`auth/`, `chats/`, `journal/`, `me/`, `record/`); `design/` — ThemeProvider, tokens, reusable components, DevPreviewScreen
+- Key files: `navigation/RootNavigator.tsx`, `design/ThemeProvider.tsx`, `design/tokens.ts`
+
+**`apps/mobile-rn/android/`:**
+- Purpose: Native Android project (prebuild output, customized: R8/ProGuard rules, release.keystore)
+- Generated: Mostly yes (`expo prebuild`), but `proguard-rules.pro` and signing config are hand-edited and tracked
+- Key files: `android/app/build.gradle`, `android/app/proguard-rules.pro`, `android/app/src/main/AndroidManifest.xml`
 
 **`services/backend/`:**
-- Purpose: Go monorepo (workspace, no root `go.mod`)
-- Contains: 9 modules (8 services + `pkg`), gateway config, migrations, api specs, scripts
+- Purpose: Go microservice monorepo (multi-module — each service its own `go.mod`)
+- Contains: One directory per service (identity/activity-sync/feed/social-graph/messaging/notifications/realtime-gw/media), `pkg/` shared, `migrations/`, `deploy/helm/`, `observability/`, `api/` OpenAPI specs
+- Key files: `services/backend/<svc>/cmd/server/main.go` (entry), `services/backend/pkg/go.mod`
+
+**`services/backend/<svc>/`:**
+- Purpose: One microservice
+- Contains: `cmd/server/main.go` (entry + env config + middleware chain), `internal/{handler,service,repository,domain}/`, `go.mod`
+- Key files: `<svc>/cmd/server/main.go`, `<svc>/internal/handler/router.go`, `<svc>/internal/repository/repository.go`
 
 **`services/backend/pkg/`:**
-- Purpose: Cross-service Go libraries
-- Contains: One subdir per concern (auth, audit, clientversion, featureflags, permissions, ratelimit, gamification)
-- Import path: `github.com/runningecosystem/backend/pkg/<name>`
-
-**`services/backend/<service>/`:**
-- Purpose: One HTTP microservice per concern (8 total)
-- Layout: `Dockerfile + go.mod + go.sum + cmd/server/main.go + internal/{domain,handler,service,repository}/`
-- Variations: `messaging/internal/outbox/`, `messaging/internal/permissions/`, `feed/internal/cleanup/`, `realtime-gw/internal/gw/`
+- Purpose: Shared Go packages across all services
+- Contains: `auth/` (JWT), `observability/` (slog, otel, sentry, prom, debug-session middleware, PII deny list), `audit/`, `clientversion/` (force-update middleware), `featureflags/`, `gamification/`, `permissions/`, `ratelimit/`
+- Key files: `pkg/observability/slog_handler.go`, `pkg/observability/debug_session_middleware.go`, `pkg/auth/jwt.go`, `pkg/clientversion/`
 
 **`services/backend/migrations/`:**
-- Purpose: golang-migrate sequential SQL migrations
-- Naming: `NNNN_<name>.{up,down}.sql` (NNNN is 4-digit, monotonically increasing)
-- Range: 0000–0021 production, 9990–9991 reserved for CICD-04 rollback drill
-
-**`services/backend/scripts/`:**
-- Purpose: Smoke tests + operator scripts
-- Contains: Python smoke scripts (smoke_*.py) + bash drill assertions
-
-**`services/backend/api/`:**
-- Purpose: OpenAPI 3 specs (one YAML per service)
-- Contains: `_shared/` schemas + service specs + `redocly.yaml`
-
-**`services/backend/gateway/`:**
-- Purpose: Caddy 2 configuration
-- Contains: `Caddyfile` (dev), `Caddyfile.prod`, `admin/` static dashboard
+- Purpose: golang-migrate SQL files (paired up/down)
+- Generated: No, hand-written
+- Key files: `0000_extensions`, `0001_users`, `0002_activities`, `0010_social_graph`, `0011_messaging`, `0012_notifications`, `0013_reactions`, `0014_media`
 
 **`infra/ansible/`:**
-- Purpose: VPS provisioning + application deployment
-- Contains: `site.yml`, `group_vars/`, `inventory/`, `roles/`
+- Purpose: VPS provisioning + app deploy automation (D-24: replaces Hetzner Cloud Firewall with ufw)
+- Contains: `site.yml` (3 plays: bootstrap, sport-stack, alloy-shipper), `roles/{common,docker,ufw,sport-stack,alloy-shipper}/`, `inventory/{dev,prod}/`
+- Key files: `infra/ansible/site.yml`, `infra/ansible/ansible.cfg`
 
-**`infra/ansible/roles/sport-stack/`:**
-- Purpose: Application deployment role (the heart of CD)
-- Contains: tasks (orchestrator + decrypt + migrations + smoke), templates (systemd + env)
+**`infra/observability-stack/`:**
+- Purpose: Observability VPS (`srv1561293`) — colocated with niko-prod per D-34
+- Contains: `docker-compose.yml` (Loki + Prometheus + Grafana, all 127.0.0.1-bound), Caddy as sole `:8443` ingress, `systemd/` units, Grafana provisioning + dashboards
+- Key files: `infra/observability-stack/docker-compose.yml`, `infra/observability-stack/caddy/`
 
-**`.github/workflows/`:**
-- Purpose: GitHub Actions definitions
-- Contains: `backend-ci.yml`, `backend-cd.yml`, `secret-scan-full.yml`
+**`.secrets/`:**
+- Purpose: SOPS+age-encrypted secrets organized by environment
+- Contains: `dev/`, `staging/`, `prod/` each holding `{mapbox,oauth,shared}.yaml`; prod additionally has `sentry.yaml` + `mobile-signing.yaml` (PKCS12 keystore base64 + passwords)
+- Key files: `.secrets/prod/mobile-signing.yaml`, `.secrets/prod/shared.yaml`, `.sops.yaml` (recipient config)
 
 **`.planning/`:**
-- Purpose: GSD command artifacts (codebase maps, phase docs, state, roadmap)
-- Generated: Partially (codebase/ is regenerated; phases/ accrue per phase)
+- Purpose: GSD planning artifacts (orchestrator workspace)
+- Contains: `STATE.md`, `MILESTONES.md`, `ROADMAP.md`, `REQUIREMENTS.md`, `PROJECT.md`, `config.json`, `phases/` (one folder per phase), `codebase/` (generated maps)
+- Key files: `.planning/STATE.md`, `.planning/phases/<NN>-<slug>/<NN>-RESEARCH.md` and `<NN>-PLAN.md`
+
+**`docs/`:**
+- Purpose: Authoritative project docs + ADRs + runbooks
+- Contains: `RUNNING_ECOSYSTEM_TZ.md`, `DEVELOPMENT_PLAN.md`, `API-CONTRACT-v1.0.md`, `SECRETS.md`, `INTEGRATIONS.md`, `DECISIONS/` (ADRs 0001-0012), `RUNBOOKS/`
+- Key files: `docs/RUNNING_ECOSYSTEM_TZ.md`, `docs/DEVELOPMENT_PLAN.md`, `docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md`
+
+**`.github/workflows/`:**
+- Purpose: CI/CD definitions
+- Contains: `backend-ci.yml`, `backend-cd.yml` (cosign keyless + SLSA L2 @v2 attestation, no `:latest`), `android-release.yml` (tag-triggered, SOPS-restored keystore, EAS production), `secret-scan-full.yml`
+- Key files: `.github/workflows/backend-cd.yml`, `.github/workflows/android-release.yml`
+
+**`scripts/`:**
+- Purpose: Ad-hoc ops + observability smoke scripts (Python + shell)
+- Contains: `deploy_observability_stack.sh`, `smoke_observability_stack.py`, `smoke_metrics.py`, `smoke_grafana_alerts.py`, `cardinality_probe.py`, `pii_audit.sh`, `pii_live_probe.py`, `setup-branch-protection.sh`, `debug-tail.sh`
+- Generated: No
+
+**`tests/`:**
+- Purpose: Field-test protocols and run outputs (NOT unit tests — those live next to code in `src/__tests__/`)
+- Contains: `FIELD_PROTOCOL.md`, `runs/`
+- Key files: `tests/FIELD_PROTOCOL.md`
+
+**`apps/mobile_flutter.archived/`:**
+- Purpose: Archived Flutter prototype (ADR-0001 closed)
+- Generated: No, archived as-is
+- Committed: Yes
+- Do not modify
+
+## Key File Locations
+
+**Mobile entry points:**
+- `apps/mobile-rn/index.ts` — `registerRootComponent`
+- `apps/mobile-rn/App.tsx` — slim root component
+- `apps/mobile-rn/src/navigation/RootNavigator.tsx` — auth gate + lifecycle wiring
+
+**Backend entry points:**
+- `services/backend/identity/cmd/server/main.go` (:8081)
+- `services/backend/activity-sync/cmd/server/main.go`
+- `services/backend/feed/cmd/server/main.go`
+- `services/backend/social-graph/cmd/server/main.go`
+- `services/backend/messaging/cmd/server/main.go`
+- `services/backend/notifications/cmd/server/main.go` (:8087)
+- `services/backend/realtime-gw/cmd/server/main.go`
+- `services/backend/media/cmd/server/main.go`
+
+**Configuration:**
+- `apps/mobile-rn/app.json` — Expo permissions, bundleId, scheme
+- `apps/mobile-rn/eas.json` — EAS build profiles (development/preview/production with R8 minify on prod)
+- `apps/mobile-rn/eslint.config.js` — flat config + Mapbox import wall + token-secret literal guard
+- `apps/mobile-rn/tsconfig.json` — strict TS
+- `apps/mobile-rn/jest.config.js` — jest-expo preset
+- `.golangci.yml` — Go linter (15 linters enabled)
+- `.sops.yaml` — age recipient list (DEV_A, CI)
+- `.gitleaks.toml`, `.trufflehog/`, `.pre-commit-config.yaml` — secret-scan stack
+- `.editorconfig`, `.gitattributes`, `.trivyignore.yaml`
+- `infra/ansible/ansible.cfg`
+- `Makefile` — `make rollback v=<tag>` target
+
+**Mapbox abstraction (where Mapbox lives):**
+- `apps/mobile-rn/src/map/MapboxView.tsx` — the only `@rnmapbox/maps` importer
+- `apps/mobile-rn/src/map/components/{TrackLayer,LocationPuckLayer,CorridorLayer,HistoryTerritoryLayer,ZoneLayer,RegionPickerOverlay}.tsx`
+- `apps/mobile-rn/src/map/offline.ts` — Mapbox offline pack management
+- `apps/mobile-rn/src/map/index.ts` — public API (other modules import only from here)
+- ESLint guard: `apps/mobile-rn/eslint.config.js` (`no-restricted-imports` for `@rnmapbox/maps`)
+
+**Signing config (where Android signing lives):**
+- `apps/mobile-rn/android/app/release.keystore` — PKCS12 keystore (generated; password is in SOPS)
+- `apps/mobile-rn/android/app/build.gradle` — signingConfigs reads from gradle properties
+- `apps/mobile-rn/eas.json` `production.android.env` — passes `RUNNING_ECO_RELEASE_STORE_FILE` + `RUNNING_ECO_RELEASE_KEY_ALIAS`
+- `.secrets/prod/mobile-signing.yaml` — SOPS-encrypted base64 keystore + passwords
+- `.github/workflows/android-release.yml` — restores keystore in CI (with `::add-mask::` for password leak mitigation per ADR-0012)
+- `docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md` — incident response context
+
+**Observability stack config:**
+- `infra/observability-stack/docker-compose.yml` — Loki+Prom+Grafana containers
+- `infra/observability-stack/loki/loki-config.yaml`
+- `infra/observability-stack/prometheus/prometheus.yml.template`
+- `infra/observability-stack/grafana/provisioning/{alerting,dashboards,datasources,plugins}/`
+- `infra/observability-stack/grafana/dashboards-src/`
+- `infra/observability-stack/grafana/secrets/`
+- `infra/observability-stack/caddy/` — TLS-terminating reverse proxy on :8443
+- `infra/observability-stack/systemd/` — host systemd units (alloy etc.)
+- `infra/ansible/roles/alloy-shipper/` — installs Grafana Alloy via apt on app VPS
+- `services/backend/observability/` — backend-side dashboards + scrape configs
+
+**Backend shared observability code (mobile-relevant Go pkg):**
+- `services/backend/pkg/observability/slog_handler.go` — slog JSON
+- `services/backend/pkg/observability/promhttp_middleware.go` — Prom metrics middleware
+- `services/backend/pkg/observability/debug_session_middleware.go` — per-user DEBUG slog gate
+- `services/backend/pkg/observability/sentry_init.go` — Sentry init
+- `services/backend/pkg/observability/otel_init.go` — OTel init
+- `services/backend/pkg/observability/pii_deny_list.go` — log scrubbing
+
+**Domain core (mobile):**
+- `apps/mobile-rn/src/domain/session/SessionManager.ts` — session lifecycle
+- `apps/mobile-rn/src/domain/types.ts` — Point, RawPoint, Session, ActivityType, etc.
+- `apps/mobile-rn/src/domain/AreaCalculator.ts` — projected-plane area
+- `apps/mobile-rn/src/domain/calories.ts` — MET-based estimate
+- `apps/mobile-rn/src/domain/records.ts` — personal records
+- `apps/mobile-rn/src/domain/currency.ts` — internal coin economy (see `docs/CURRENCY.md`)
+
+**Testing:**
+- `apps/mobile-rn/src/__tests__/*.test.ts(x)` — top-level unit tests
+- `apps/mobile-rn/src/<area>/__tests__/` — co-located unit tests (`src/util/__tests__`, `src/auth/__tests__`, `src/state/__tests__`, `src/domain/session/__tests__`, `src/ui/screens/__tests__`)
+- `apps/mobile-rn/__mocks__/expo-sqlite.ts` — jest manual mock
+- Go: `*_test.go` next to source (e.g., `services/backend/identity/internal/service/auth_test.go`)
+- `tests/FIELD_PROTOCOL.md` — manual field-test protocol (not Jest/Go)
+
+## Naming Conventions
+
+**Files (TypeScript):**
+- React components: PascalCase — `MapboxView.tsx`, `RootNavigator.tsx`, `TrackLayer.tsx`, `ForceUpdateScreen.tsx`
+- Adapter interfaces: PascalCase + `Adapter` suffix — `LocationAdapter.ts`, `SensorAdapter.ts`, `RealtimeAdapter.ts`, `MediaAdapter.ts`, `HealthAdapter.ts`
+- Concrete adapter impls: PascalCase, name encodes platform — `ExpoLocationAdapter.ts`, `BleSensorAdapter.ts`, `WebSocketRealtimeAdapter.ts`, `HealthKitAdapter.ts`
+- Zustand stores: camelCase, no prefix — `activity.ts`, `auth.ts`, `settings.ts`, `featureflags.ts`. Inside the file, export const is `useXStore` (e.g., `useActivityStore`)
+- Repositories: camelCase + `Repository` suffix — `sessionRepository.ts`, `pointRepository.ts`, `walletRepository.ts`
+- Pure domain modules: camelCase — `calories.ts`, `currency.ts`, `records.ts`, `streak.ts`, `splits.ts`
+- Utilities: camelCase — `geo.ts`, `geojson.ts`, `douglasPeucker.ts`, `selfIntersection.ts`
+- Tests: same basename + `.test.ts(x)` — `pipeline.test.ts`, `AreaCalculator.test.ts`, `Toast.test.tsx`
+
+**Files (Go):**
+- snake_case for multi-word — `slog_handler.go`, `debug_session_middleware.go`, `pii_deny_list.go`, `featureflag_adapter.go`
+- Single-word lowercase — `jwt.go`, `metrics.go`, `auth.go`, `repository.go`, `user.go`, `http.go`, `otp.go`
+- Tests: same basename + `_test.go` — `jwt_test.go`, `auth_test.go`
+- Migrations: zero-padded sequence + name + direction — `0001_users.up.sql` / `0001_users.down.sql`
+
+**Files (other):**
+- Workflows: kebab-case — `backend-cd.yml`, `android-release.yml`, `secret-scan-full.yml`
+- Markdown docs (root + docs/): SHOUTY-KEBAB or UPPERCASE — `STATUS.md`, `README.md`, `CLAUDE.md`, `RUNNING_ECOSYSTEM_TZ.md`, `API-CONTRACT-v1.0.md`
+- ADRs: `NNNN-kebab-case.md` — `0011-scope-reset-to-closed-beta-lean.md`
+- Phase folders: `NN-kebab-name/` — `04-ci-cd-pipeline/`, `06-release-signing/`
+- SOPS YAML: kebab-case in `.secrets/<env>/` — `mobile-signing.yaml`, `shared.yaml`
+- Shell / Python scripts in `scripts/`: snake_case — `deploy_observability_stack.sh`, `smoke_metrics.py`
+
+**Directories:**
+- Mobile `src/`: lowercase one-word — `auth/`, `state/`, `storage/`, `domain/`, `pipeline/`, `map/`, etc.
+- Backend services: kebab-case — `activity-sync/`, `realtime-gw/`, `social-graph/`
+- Ansible roles: kebab-case — `alloy-shipper/`, `sport-stack/`
+- Adapter subdir is always literal `adapters/`
+- Test colocation: `__tests__/`, `__mocks__/`, `__fixtures__/`
+
+**Functions / Symbols (TypeScript):**
+- Functions / variables: camelCase
+- Types / interfaces / React components: PascalCase
+- Constants: SCREAMING_SNAKE_CASE — `TASK_NAME`, `FLUSH_THRESHOLD`, `AREA_RECOMPUTE_INTERVAL_MS`, `STYLE_URLS`, `FOREGROUND_SERVICE`, `MODE_OPTIONS`
+
+**Functions / Symbols (Go):**
+- Exported identifiers: PascalCase — `NewSigner`, `UserRepo`, `Middleware`
+- Unexported: camelCase — `serviceName`, `envOr`, `envRequire`
+- Packages: lowercase one-word — `auth`, `observability`, `clientversion`, `featureflags`
+
+## Where to Add New Code
+
+**New screen / modal:**
+- Primary: `apps/mobile-rn/src/ui/<Name>Modal.tsx` (modals) OR `apps/mobile-rn/src/navigation/screens/<tab>/<Name>Screen.tsx` (full screens)
+- Wire into navigation in `apps/mobile-rn/src/navigation/AppTabs.tsx` or `RootNavigator.tsx`
+- Tests: `apps/mobile-rn/src/__tests__/<Name>.test.tsx` or co-located `__tests__/`
+
+**New design-system component:**
+- Primary: `apps/mobile-rn/src/design/components/<Name>.tsx`
+- Export from `apps/mobile-rn/src/design/index.ts`
+- Theme tokens: extend `apps/mobile-rn/src/design/tokens.ts`
+
+**New Zustand store:**
+- Primary: `apps/mobile-rn/src/state/<area>.ts`
+- Export `useXStore` from `create<...>()(...)`
+- If persisted, use the MMKV pattern from `state/settings.ts` (createMMKV + createJSONStorage)
+- Tests: `apps/mobile-rn/src/state/__tests__/`
+
+**New adapter (port + impl):**
+- Interface: `apps/mobile-rn/src/<area>/<Area>Adapter.ts`
+- Concrete impl: `apps/mobile-rn/src/<area>/adapters/<Provider><Area>Adapter.ts`
+- Public re-export: `apps/mobile-rn/src/<area>/index.ts`
+- Never import the SDK outside `adapters/`
+
+**New Mapbox feature:**
+- Add a Layer component in `apps/mobile-rn/src/map/components/<Name>Layer.tsx`
+- Re-export from `apps/mobile-rn/src/map/index.ts`
+- Consumers import only from `src/map`, never from `@rnmapbox/maps`
+
+**New SQLite table / migration:**
+- Bump `TARGET_VERSION` in `apps/mobile-rn/src/storage/database.ts`
+- Append a case in `runMigrationsOn(db)`
+- Document the new version with a one-liner in the JSDoc comment block above `getDatabase`
+- Create the matching repository file `apps/mobile-rn/src/storage/<aggregate>Repository.ts`
+- Integration test: `apps/mobile-rn/src/__tests__/<aggregate>Repository.integration.test.ts` (use `_setDatabase` test hook)
+
+**New pure domain logic:**
+- Primary: `apps/mobile-rn/src/domain/<name>.ts` (or sub-folder if it has sub-modules)
+- Zero platform imports allowed; use stdlib + other domain modules only
+- Tests: `apps/mobile-rn/src/__tests__/<name>.test.ts`
+
+**New pipeline filter:**
+- Primary: `apps/mobile-rn/src/pipeline/filters/<Name>Filter.ts`
+- Implement the `Filter` interface from `pipeline/Filter.ts`
+- Wire into `createDefaultPipeline()` in `apps/mobile-rn/src/pipeline/index.ts`
+- Tests cover ≥90% per CLAUDE.md target
+
+**New backend microservice:**
+- Primary: `services/backend/<name>/` mirroring existing layout (`cmd/server/main.go`, `internal/{handler,service,repository,domain}/`, own `go.mod`)
+- OpenAPI spec: `services/backend/api/<name>.yaml`
+- Migrations: append to `services/backend/migrations/`
+- Add to docker-compose + Ansible role `sport-stack` deployment
+
+**New shared Go package:**
+- Primary: `services/backend/pkg/<name>/`
+- Package belongs to module `github.com/runningecosystem/backend/pkg`
+- Add to `services/backend/pkg/go.mod` if new external deps
+- Imported by services through their own `go.mod` (each service module references `pkg` by path)
+
+**New ADR (architectural decision):**
+- Primary: `docs/DECISIONS/NNNN-kebab-title.md` (use next sequence number after 0012)
+- Reference from `CLAUDE.md` or `STATUS.md` when the decision is consumed
+
+**New phase planning artifact:**
+- Primary: `.planning/phases/NN-kebab-name/<NN>-RESEARCH.md`, `<NN>-PLAN.md`, `<NN>-CONTEXT.md`
+- Update `.planning/STATE.md` to point at the active phase
+
+**New secret:**
+- Primary: `.secrets/<env>/<area>.yaml` (encrypted with `sops -e --in-place`)
+- Recipient list lives in `.sops.yaml`
+- Update `docs/SECRETS.md` with recovery procedure (per D-15 / SIGN-01 pattern)
+- For mobile signing specifically: `.secrets/prod/mobile-signing.yaml`
+
+**New CI workflow:**
+- Primary: `.github/workflows/<name>.yml`
+- Pin actions by SHA or `@vN` (no floating `@main`)
+- Never tag `:latest` in image flows
+
+**New ops script:**
+- Primary: `scripts/<verb_object>.{sh,py}` — snake_case
+- Smoke scripts follow `smoke_*` prefix
+
+## Special Directories
+
+**`apps/mobile_flutter.archived/`:**
+- Purpose: Archived Flutter prototype (decision per ADR-0001)
+- Generated: No
+- Committed: Yes
+- Do NOT modify or take patterns from it; the active client is `apps/mobile-rn/`
+
+**`.claude/worktrees/`:**
+- Purpose: Claude Code's working copies for parallel agent runs
+- Generated: Yes (by Claude Code)
+- Committed: No (gitignored)
+
+**`apps/mobile-rn/src/__fixtures__/`:**
+- Purpose: Intentional lint-failure fixtures to validate the ESLint token-secret guard
+- Generated: No, hand-written
+- Lint-ignored by `eslint.config.js`; verified explicitly via `npx eslint --no-ignore`
+
+**`apps/mobile-rn/node_modules/`, `apps/mobile-rn/.expo/`, `apps/mobile-rn/coverage/`, `apps/mobile-rn/android/build/`:**
+- Purpose: Tool outputs
+- Generated: Yes
+- Committed: No
+
+**`.planning/phases/_archive/`:**
+- Purpose: Completed / superseded phase planning
+- Generated: No
 - Committed: Yes
 
 **`.secrets/`:**
 - Purpose: SOPS-encrypted secrets
-- Contains: `prod/shared.yaml` (age-encrypted)
-- Generated: No (hand-edited via `docs/RUNBOOKS/sops-edit.md`)
-- Committed: Yes (encrypted)
-
-**`docs/`:**
-- Purpose: Project documentation
-- Contains: TZ (technical spec), DEVELOPMENT_PLAN, ADRs, runbooks, scope docs
-- Key files: `RUNNING_ECOSYSTEM_TZ.md`, `DEVELOPMENT_PLAN.md`, `RUNBOOKS/deploy.md`
-
-**`docs/DECISIONS/`:**
-- Purpose: Architecture Decision Records (ADRs)
-- Naming: `NNNN-<slug>.md`
-
-**`tests/`:**
-- Purpose: Cross-cutting / field-test artifacts (NOT unit tests — those live next to code)
-- Contains: `FIELD_PROTOCOL.md`, `runs/` (captured GPS traces from field tests)
-
-## Key File Locations
-
-**Entry Points:**
-- `apps/mobile-rn/index.ts` — Expo entry: registers `App`
-- `apps/mobile-rn/App.tsx` — Mobile root component
-- `services/backend/<svc>/cmd/server/main.go` — One Go server per service (8 total)
-- `infra/ansible/site.yml` — Ansible orchestration entry
-- `Makefile` — Top-level operator commands (rollback)
-
-**Configuration:**
-- `apps/mobile-rn/app.json` — Expo app config
-- `apps/mobile-rn/.env.example` — Public env var template (`EXPO_PUBLIC_*`)
-- `services/backend/docker-compose.prod.yml` — Prod stack (13 containers)
-- `services/backend/go.work` — Go workspace manifest
-- `services/backend/gateway/Caddyfile.prod` — HTTPS + reverse proxy routes
-- `infra/ansible/group_vars/all.yml` — Cross-env vars
-- `infra/ansible/inventory/prod/hosts.yml` — Prod hosts
-- `.sops.yaml` — SOPS recipient (age public key)
-- `.golangci.yml` — Go linter config
-- `.gitleaks.toml` — Gitleaks rules
-- `.trivyignore.yaml` — Trivy ignored CVEs
-
-**Core Logic:**
-- `apps/mobile-rn/src/pipeline/Pipeline.ts` — GPS filter chain composer
-- `apps/mobile-rn/src/domain/session/SessionManager.ts` — Run-session FSM
-- `apps/mobile-rn/src/domain/AreaCalculator.ts` — Local-plane area math
-- `apps/mobile-rn/src/auth/apiClient.ts` — HTTP client with 401-refresh + 426 force-update
-- `apps/mobile-rn/src/sync/syncEngine.ts` — Offline-first reconciliation
-- `services/backend/identity/internal/service/auth.go` — Auth business logic
-- `services/backend/pkg/auth/jwt.go` — JWT signer/verifier (≥32 byte secret)
-- `services/backend/messaging/internal/outbox/publisher.go` — Transactional outbox pattern
-
-**Testing:**
-- `apps/mobile-rn/jest.config.js` — Jest config
-- `apps/mobile-rn/src/__tests__/` — 48 cross-module test files
-- `apps/mobile-rn/__mocks__/` — Jest manual mocks
-- `services/backend/<svc>/internal/<layer>/*_test.go` — Per-service Go tests (co-located)
-- `services/backend/scripts/smoke_*.py` — Smoke probes (operator-run)
-
-**CI/CD:**
-- `.github/workflows/backend-ci.yml` — Test + lint + SAST + scan
-- `.github/workflows/backend-cd.yml` — Build + cosign + SLSA + push GHCR
-- `.github/workflows/secret-scan-full.yml` — Cron full-history secret scan
-- `Makefile` — `make rollback`, `make rollback-drill`
-
-**Infrastructure:**
-- `infra/ansible/site.yml` — Orchestration
-- `infra/ansible/roles/sport-stack/tasks/main.yml` — Deploy logic
-- `infra/ansible/roles/sport-stack/templates/sport-stack.service.j2` — systemd unit
-
-## Naming Conventions
-
-**Files (mobile, TypeScript):**
-- Components: `PascalCase.tsx` (e.g. `MapboxView.tsx`, `TrackLayer.tsx`, `RootNavigator.tsx`)
-- Hooks/stores: `camelCase.ts` for stores (e.g. `activity.ts`, `auth.ts`); `useXxxStore` for the exported hook
-- Domain/utility modules: `camelCase.ts` (e.g. `calories.ts`, `geo.ts`)
-- Interface ports: `PascalCaseAdapter.ts` (e.g. `LocationAdapter.ts`, `MapAdapter` lives implicit in `MapboxView.tsx`)
-- Tests: co-located in `__tests__/` directories, `<name>.test.ts(x)` or `<name>.spec.ts(x)`
-
-**Files (backend, Go):**
-- Packages: `lowercase` (no underscores, no hyphens) — `domain`, `handler`, `repository`, `service`
-- Source files: `lowercase_with_underscores.go` (Go standard); single-word preferred (`auth.go`, `otp.go`, `user.go`)
-- Tests: `<name>_test.go` co-located
-- Service directories: `kebab-case` (`activity-sync`, `realtime-gw`, `social-graph`) — these are NOT Go package names, they map to directory names + import path `github.com/runningecosystem/backend/<service>/internal/...`
-
-**Directories:**
-- Mobile feature dirs: `camelCase` or single word (`auth`, `sync`, `pipeline`, `location`)
-- Backend service dirs: `kebab-case` (`activity-sync`, `realtime-gw`, `social-graph`)
-- Backend internal layers: single lowercase word (`domain`, `service`, `handler`, `repository`, `outbox`, `cleanup`, `permissions`, `gw`)
-- Ansible roles: `kebab-case` (`sport-stack`)
-
-**Migrations:**
-- `NNNN_<slug>.{up,down}.sql` — 4-digit zero-padded sequential, both up and down required
-
-**Docker images:**
-- `ghcr.io/ismaill01/<service>:<tag>` where `<tag>` is `sha-<short>` or `vX.Y.Z` or `vX.Y` — NEVER `:latest`
-
-**Git branches:**
-- `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>` (observed in commit log)
-
-**Environment variables:**
-- Mobile: `EXPO_PUBLIC_*` for client-visible vars (`EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`, `EXPO_PUBLIC_IDENTITY_URL`, `EXPO_PUBLIC_SYNC_URL`, `EXPO_PUBLIC_API_URL`)
-- Backend per-service: `<SERVICE>_HTTP_ADDR`, `<SERVICE>_DB_URL` (e.g. `IDENTITY_HTTP_ADDR`, `ACTIVITY_SYNC_DB_URL`)
-- Cross-service: `IDENTITY_JWT_SECRET`, `NATS_URL`, `REDIS_URL`, `POSTGRES_PASSWORD`, `CADDY_ACME_EMAIL`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `EXPO_ACCESS_TOKEN`, `SPORT_STACK_TAG`
-- ENV vars marked `${VAR:?need VAR}` in compose are mandatory — startup fails without them
-
-## Where to Add New Code
-
-**New Mobile Feature:**
-- If self-contained vertical slice: create `apps/mobile-rn/src/modules/<feature>/{domain,state,sync,index.ts}/`
-- If new domain concept: add file to `apps/mobile-rn/src/domain/`
-- If new screen: add component to `apps/mobile-rn/src/navigation/screens/<tab>/` and wire into the relevant stack
-- If new modal/widget: add to `apps/mobile-rn/src/ui/`
-- Tests: co-located `__tests__/` next to the code OR top-level `apps/mobile-rn/src/__tests__/` for cross-module integration
-
-**New External Sensor / Source:**
-- Define port in `apps/mobile-rn/src/<area>/<Name>Adapter.ts`
-- Implement in `apps/mobile-rn/src/<area>/adapters/<Concrete>Adapter.ts`
-- Register/inject at app boot (`App.tsx`) or in the consuming store
-- Pattern reference: `src/location/LocationAdapter.ts` + `src/location/adapters/ExpoLocationAdapter.ts`
-
-**New Map Layer:**
-- Add component to `apps/mobile-rn/src/map/components/<Name>Layer.tsx`
-- Use only `LineLayer + GeoJsonSource` for tracks (NEVER `PolylineAnnotation`)
-- Re-export from `apps/mobile-rn/src/map/index.ts` if needed by other layers
-
-**New Go Microservice:**
-- Create `services/backend/<service-kebab>/` with `go.mod`, `Dockerfile`, `cmd/server/main.go`, `internal/{domain,handler,service,repository}/`
-- Add `./<service-kebab>` line to `services/backend/go.work`
-- Add `service: <name>` to the CI matrix in `.github/workflows/backend-ci.yml` (jobs: test, lint, gosec, govulncheck, docker-build) AND CD matrix in `.github/workflows/backend-cd.yml`
-- Add service block to `services/backend/docker-compose.prod.yml` using `${SPORT_STACK_TAG:?need SPORT_STACK_TAG}` image tag
-- Add `handle /path/*` block to `services/backend/gateway/Caddyfile.prod`
-- Add OpenAPI spec to `services/backend/api/<service>.yaml`
-
-**New HTTP Route in Existing Service:**
-- Add `mux.HandleFunc("METHOD /path", h.handler)` in `internal/handler/http.go` (Go 1.22+ method-routed mux)
-- Add handler method on the handler struct
-- Push business logic into `internal/service/`
-- Push DB ops into `internal/repository/postgres/`
-- Update `services/backend/api/<service>.yaml` (OpenAPI spec)
-- Add Caddy route to `services/backend/gateway/Caddyfile.prod` if exposed externally
-
-**New Database Migration:**
-- Create `services/backend/migrations/NNNN_<slug>.up.sql` AND `NNNN_<slug>.down.sql` (both required, NNNN = next sequential)
-- Run locally: `cd services/backend && docker compose run --rm migrations -path migrations -database $DB_URL up`
-- Down must be tested — it's invoked by `make rollback v=<tag>` (which runs `migrate down 1`)
-
-**New Shared Go Library:**
-- Add subdir to `services/backend/pkg/<name>/`
-- Update `services/backend/pkg/go.mod` if new external deps
-- Import as `github.com/runningecosystem/backend/pkg/<name>`
-- Add `<name>` to the `services` matrix in `.github/workflows/backend-ci.yml` (pkg is already there)
-
-**New Cross-Service Async Event:**
-- Producer: write outbox row in same DB tx (pattern in `services/backend/messaging/internal/outbox/publisher.go`)
-- Subscriber: add NATS subscription in target service `cmd/server/main.go`
-- Subject naming: `<source>.<event>` (e.g. `messaging.message.created`)
-
-**New Ansible Role:**
-- Create `infra/ansible/roles/<name>/{tasks,handlers,defaults,templates}/`
-- Add role to `infra/ansible/site.yml` under the appropriate play
-
-**New ADR:**
-- Create `docs/DECISIONS/NNNN-<slug>.md` (next sequential number after 0007)
-
-**Utilities:**
-- Mobile pure helpers: `apps/mobile-rn/src/util/` (geo, geojson, douglasPeucker, etc.)
-- Go shared helpers: `services/backend/pkg/<topic>/`
-
-## Special Directories
-
-**`apps/mobile-rn/android/`:**
-- Purpose: Native Android project (managed by Expo prebuild but committed)
-- Generated: Partially (initially generated by `expo prebuild`; hand-edits committed)
-- Committed: Yes
-
-**`apps/mobile-rn/node_modules/`:**
-- Purpose: npm dependencies
-- Generated: Yes
-- Committed: No (`.gitignore`)
-
-**`apps/mobile-rn/coverage/`:**
-- Purpose: Jest coverage output
-- Generated: Yes
-- Committed: No
-
-**`apps/mobile-rn/.expo/`:**
-- Purpose: Expo CLI cache
-- Generated: Yes
-- Committed: No
-
-**`.secrets/prod/`:**
-- Purpose: SOPS-encrypted production secrets
-- Generated: No (edited via `sops` per `docs/RUNBOOKS/sops-edit.md`)
-- Committed: Yes (encrypted)
-
-**`.planning/phases/_archive/`:**
-- Purpose: Closed-phase documents preserved for history
-- Generated: No (moved by orchestrator on phase close)
-- Committed: Yes
+- Generated: No
+- Committed: Yes (ciphertext only — never decrypt and commit plaintext)
 
 **`tests/runs/`:**
-- Purpose: Captured GPS traces from field testing
-- Generated: Yes (by mobile app's export feature)
-- Committed: Yes (small CSV/JSON files)
+- Purpose: Field-test session outputs (GPX, logs)
+- Generated: Yes (manual field tests)
+- Committed: Selectively
 
-**`services/backend/deploy/`:**
-- Purpose: Reserved for future Helm charts; currently unused — production deployment is Ansible-based per Phase 3 pivot
-- Generated: No
-- Committed: Yes (stub)
-
-**`services/backend/scripts/__pycache__/`:**
-- Purpose: Python bytecode cache from smoke scripts
+**`services/backend/scripts/__pycache__/` + `scripts/__pycache__/`:**
+- Purpose: Python bytecode caches
 - Generated: Yes
-- Committed: No (should be in `.gitignore` — verify)
+- Committed: No (gitignored)
 
 ---
 
-*Structure analysis: 2026-05-18*
+*Structure analysis: 2026-05-23*

@@ -1,164 +1,179 @@
 # Technology Stack
 
-**Analysis Date:** 2026-05-18
+**Analysis Date:** 2026-05-23
 
 ## Languages
 
 **Primary:**
-- **Go 1.25.0** — All 8 backend microservices + shared `pkg/` module. Declared in every `services/backend/*/go.mod` and pinned in `services/backend/go.work:1`.
-- **TypeScript 5.9** (strict) — Mobile client (`apps/mobile-rn/`). Pinned via `apps/mobile-rn/package.json:63` (`typescript: ~5.9.2`) and `apps/mobile-rn/tsconfig.json` extends `expo/tsconfig.base` with `"strict": true`.
+- TypeScript ~5.9.2 — mobile app (`apps/mobile-rn/`), strict mode (`apps/mobile-rn/tsconfig.json`)
+- Go 1.25.0 — backend monorepo (`services/backend/`), 9 modules tied via `go.work`
 
 **Secondary:**
-- **YAML** — Ansible roles (`infra/ansible/roles/`), OpenAPI specs (`services/backend/api/*.yaml`), GitHub Actions workflows, SOPS-encrypted secrets (`.secrets/<env>/*.yaml`).
-- **SQL** — Postgres migrations (`services/backend/migrations/00*.up.sql` / `*.down.sql`, 22 numbered pairs + 2 drill).
-- **Bash** — Smoke probes (`services/backend/scripts/smoke_*.py`-adjacent shells, `services/backend/scripts/drill_assert_schema.sh`), SOPS verify (`services/backend/scripts/secrets/verify_sops_roundtrip.sh`), top-level rollback (`Makefile:46-63`).
-- **Python 3** — Smoke test scripts (`services/backend/scripts/smoke_otp.py`, `smoke_ratelimit.py`, `smoke_realtime_*.py`, `smoke_stories.py`, `smoke_posts.py`, `smoke_xp.py`, `smoke_moderation.py`, `smoke_abac_muted.py`, `smoke_permissions.py`). Ansible host interpreter pinned to `/usr/bin/python3` in `infra/ansible/inventory/prod/hosts.yml:21`.
-- **Caddyfile** (DSL) — Edge reverse proxy (`services/backend/gateway/Caddyfile.prod`, `services/backend/gateway/Caddyfile`).
-- **Jinja2** — Ansible templates (`infra/ansible/roles/sport-stack/templates/sport-stack.service.j2`).
-- **Dart** — Archived only (`apps/mobile_flutter.archived/`, not developed; framework choice landed RN per `framework_choice.md` Phase 0).
+- Kotlin (Android native shell, `apps/mobile-rn/android/`) — JVM 17 per CI matrix
+- Python — operational smoke/probe scripts only (`scripts/cardinality_probe.py`, `scripts/pii_audit.sh`, `services/backend/scripts/smoke_*.py`); no Python application code
+- Shell (bash) — release pipeline glue (`.github/workflows/android-release.yml`, `scripts/`)
+- HCL/YAML — Ansible playbooks (`infra/ansible/`), GitHub Actions workflows (`.github/workflows/`)
 
 ## Runtime
 
-**Environment:**
+**Mobile:**
+- Node.js 20.x — pinned in CI (`.github/workflows/android-release.yml:49`); local Node via system install (no `.nvmrc` present)
+- Hermes JS engine enabled (`apps/mobile-rn/android/gradle.properties:42` → `hermesEnabled=true`); JSC fallback wired via `io.github.react-native-community:jsc-android:2026004.+` (`apps/mobile-rn/android/app/build.gradle:82`)
+- React Native New Architecture (Fabric + TurboModules) enabled — `newArchEnabled: true` in `apps/mobile-rn/app.json:10` + `newArchEnabled=true` in `apps/mobile-rn/android/gradle.properties:38`
 
-| Component | Runtime | Where pinned |
-|-----------|---------|--------------|
-| Mobile JS | Hermes (RN 0.81.5) on iOS 13+/Android 7+ | `apps/mobile-rn/package.json:41` |
-| Mobile native | Expo SDK 54 (newArchEnabled) | `apps/mobile-rn/package.json:25`, `apps/mobile-rn/app.json:10` |
-| Backend services | Distroless `gcr.io/distroless/static-debian12:nonroot` (statically linked CGO_ENABLED=0) | `services/backend/identity/Dockerfile:37` and identical pattern in each other `<svc>/Dockerfile` |
-| Build images | `golang:1.25-alpine` | `services/backend/identity/Dockerfile:7` |
-| VPS host | Debian 12 / Ubuntu (provider-agnostic) — currently `148.253.214.156` | `infra/ansible/inventory/prod/hosts.yml:17` |
-| Container orchestrator | Docker Compose v2 under `sport-stack.service` (systemd umbrella) | `services/backend/docker-compose.prod.yml`, `infra/ansible/roles/sport-stack/templates/sport-stack.service.j2` |
+**Backend:**
+- Go 1.25 distroless runtime — services compiled `CGO_ENABLED=0 GOOS=linux GOARCH=amd64`, packaged via `gcr.io/distroless/static-debian12:nonroot` (`services/backend/identity/Dockerfile:37`)
+- Containerized — no host-Go runtime; production deploy is `docker compose -f services/backend/docker-compose.prod.yml`
 
-**Package Managers:**
-- **npm** for mobile — lockfile at `apps/mobile-rn/package-lock.json`. No `private` workspaces config.
-- **Go modules** (workspace) — `services/backend/go.work` lists 9 modules (`pkg`, `identity`, `activity-sync`, `feed`, `media`, `messaging`, `notifications`, `realtime-gw`, `social-graph`). Each module has its own `go.mod` + `go.sum`. Inter-module dependency to `pkg/` uses `replace github.com/runningecosystem/backend/pkg => ../pkg` in each service's `go.mod`.
-- **Ansible Galaxy** — collections under `~/.ansible/collections` per `infra/ansible/ansible.cfg:4`.
+**Android toolchain:**
+- JDK 17 (Temurin) — CI pinned (`.github/workflows/android-release.yml:55-57`)
+- Gradle (wrapper, version per `apps/mobile-rn/android/gradle/wrapper/gradle-wrapper.properties`)
+- AGP via `com.android.tools.build:gradle` (`apps/mobile-rn/android/build.gradle:9`)
+- NDK — version inherited from `rootProject.ext.ndkVersion` (Expo-managed)
+- `arm64-v8a` only ABI filter (`apps/mobile-rn/android/app/build.gradle:111-113`, `apps/mobile-rn/android/gradle.properties:31`) — Phase 7 Plan 07-01 Task 4 (cuts `.aab` size ~140MB → ~50-60MB)
+
+**Package Manager (mobile):**
+- npm — lockfile present (`apps/mobile-rn/package-lock.json`, 834KB)
+- Engine constraints not pinned; CI installs via `npm ci` (`.github/workflows/android-release.yml:98`)
+
+**Package Manager (backend):**
+- Go modules — 9 individual `go.mod` files under `services/backend/<service>/`, unified by `services/backend/go.work:3-13`
+- All non-`pkg` services use `replace github.com/runningecosystem/backend/pkg => ../pkg` for shared library
 
 ## Frameworks
 
-**Mobile core:**
-- **Expo SDK 54** (`expo: ~54.0.33`) — dev-client distribution via EAS Build (`apps/mobile-rn/eas.json`).
-- **React Native 0.81.5 + React 19.1.0** (`apps/mobile-rn/package.json:40-41`).
-- **@react-navigation/{native,native-stack,bottom-tabs} v7** — 4-tab shell (Запись / Журнал / Чаты / Я).
-- **zustand 5** — state stores (`apps/mobile-rn/src/state/*.ts`).
-- **expo-sqlite 16** — local DB at `running_ecosystem.db`, 19 schema versions (`apps/mobile-rn/src/storage/database.ts:1-43`).
-- **react-native-mmkv 4.3** — fast key-value store (settings, phone E.164).
-- **@rnmapbox/maps 10.3** — Mapbox SDK, quarantined to `apps/mobile-rn/src/map/` only (ESLint guard in `apps/mobile-rn/eslint.config.js:36-46`).
-- **@turf/{turf,simplify,buffer,helpers} 7.3** — geometry calc + track simplification.
+**Core (mobile):**
+- React Native 0.81.5 (`apps/mobile-rn/package.json:41`)
+- React 19.1.0 (`apps/mobile-rn/package.json:40`)
+- Expo SDK 54 — `expo: ~54.0.33` (`apps/mobile-rn/package.json:25`)
+- React Navigation v7 — `@react-navigation/native@^7.2.4` + `bottom-tabs@^7.15.13` + `native-stack@^7.14.14` (`apps/mobile-rn/package.json:17-19`)
+- Zustand 5.0.13 — state stores (`apps/mobile-rn/package.json:49`)
 
-**Backend core (each Go service):**
-- **net/http** stdlib for HTTP servers (no web framework) — see `services/backend/identity/internal/handler/http.go` etc.
-- **pgx/v5 5.9.2** (`github.com/jackc/pgx/v5` + `pgxpool`) — Postgres driver.
-- **NATS client `nats.go` v1.39.1** (`v1.52.0` in activity-sync) — JetStream events bus.
-- **`coder/websocket` v1.8.13** — WebSocket (only in `realtime-gw`).
-- **`golang-jwt/jwt/v5` v5.3.1** — JWT signing/verification (HS256, shared in `services/backend/pkg/auth/`).
-- **`redis/go-redis/v9` v9.19.0** — used by `services/backend/pkg/ratelimit/` for sliding-window limiter (consumed by `messaging`, `feed`, `social-graph`).
-- **`minio-go/v7` v7.0.78** — S3 client (media service only) at `services/backend/media/internal/s3/client.go`.
-- **`golang.org/x/crypto`** — bcrypt for password hashing (`services/backend/identity/internal/service/auth.go:15`).
-- **`log/slog`** (stdlib) — structured JSON logging in every service `cmd/server/main.go`.
+**Core (backend):**
+- net/http + std `log/slog` — no web framework; routes hand-wired per service
+- `github.com/jackc/pgx/v5@v5.9.2` — Postgres driver (all DB-touching services)
+- `github.com/nats-io/nats.go@v1.39.1` — event bus client (feed, messaging, notifications, realtime-gw, activity-sync)
+- `github.com/redis/go-redis/v9@v9.19.0` — used in `services/backend/pkg/ratelimit/ratelimit.go:45` + feed/messaging/social-graph
+- `github.com/golang-jwt/jwt/v5@v5.3.1` — JWT auth
+- `github.com/coder/websocket@v1.8.13` — WebSocket terminus (realtime-gw)
+- `github.com/minio/minio-go/v7@v7.0.78` — S3 client (media service only)
+- `github.com/google/uuid@v1.6.0` — UUID generation
 
-**Edge:**
-- **Caddy 2.8-alpine** — HTTPS reverse proxy with Let's Encrypt ACME automation (`services/backend/docker-compose.prod.yml:291`).
+**Observability (backend):**
+- OpenTelemetry v1.32.0 — `go.opentelemetry.io/otel` + SDK + OTLP HTTP exporter (`services/backend/pkg/go.mod:12-14`)
+- `github.com/getsentry/sentry-go@v0.46.2` — SDK wired but **dormant by design** per ADR-0010/D-38 (empty DSN → no-op); see `services/backend/pkg/observability/sentry_init.go:78-84`
+- `github.com/prometheus/client_golang@v1.20.5` — metrics
+- `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.57.0` — HTTP middleware
 
-**Testing:**
-- **Jest 29.7 + jest-expo 54** — mobile unit/integration tests (`apps/mobile-rn/jest.config.js`). 536+ tests reported per `STATUS.md:43`.
-- **@testing-library/react-native 13** (`apps/mobile-rn/package.json:52`).
-- **better-sqlite3 12.10** — Node shim used as test substitute for `expo-sqlite` in `apps/mobile-rn/__tests__/` integration tests.
-- **`go test` + race detector** — backend CI uses `go test -race -coverprofile=coverage.out ./...` per `.github/workflows/backend-ci.yml:54`.
+**Testing (mobile):**
+- Jest ^29.7.0 + `jest-expo ~54.0.0` + `@testing-library/react-native@^13.3.3` (`apps/mobile-rn/package.json:52-61`)
+- Config: `apps/mobile-rn/jest.config.js` — `preset: 'jest-expo'`, `testMatch: ['**/__tests__/**/*.test.{ts,tsx}']`
+- `better-sqlite3@12.10.0` + `@types/better-sqlite3` — dev-only, used in unit tests that exercise SQLite adapters
 
-**Build/Dev tooling:**
-- **EAS CLI ≥12.0** (Expo Application Services) — `apps/mobile-rn/eas.json:2`. Build profiles: `development`, `preview`, `production`.
-- **golang-migrate v4.18.1** (`migrate/migrate:v4.18.1` container) — DB migration runner, invoked one-shot via `services/backend/docker-compose.prod.yml:102`.
-- **docker/buildx** — multi-stage Docker builds, GHA cache via `cache-from/to: type=gha` (`.github/workflows/backend-ci.yml:205-207`).
+**Testing (backend):**
+- Standard `go test -race -coverprofile=…` per service (`.github/workflows/backend-ci.yml:54`)
+- Python smoke harness — `services/backend/scripts/smoke_*.py` (stdlib only, no `pip` deps; per `.github/workflows/backend-ci.yml:291`)
+
+**Build/Dev:**
+- Expo CLI (via `@expo/cli`, transitively from `expo` package)
+- EAS CLI — installed explicitly in CI via `npm install -g eas-cli` (`.github/workflows/android-release.yml:101`); local dev version: **19.0.6** per project context. Build profiles in `apps/mobile-rn/eas.json` (`development` | `preview` | `production`)
+- Metro bundler — Expo default; entry `apps/mobile-rn/index.ts` → `registerRootComponent(App)`
+- ESLint v9 flat-config — `apps/mobile-rn/eslint.config.js` (`eslint-config-expo/flat` base + custom `no-restricted-imports` for `@rnmapbox/maps` + `no-restricted-syntax` for `process.env.EXPO_PUBLIC_*_SECRET` and inline `sk.…` literals)
+- Prettier 3.8.3 — `apps/mobile-rn/.prettierrc.json` (`singleQuote`, `trailingComma: all`, `printWidth: 90`)
+- TypeScript ~5.9.2 — `tsc --noEmit` typecheck script
+- `golangci-lint v2.5.0` — pinned in `.github/workflows/backend-ci.yml:72`, config at `.golangci.yml`
+- `gosec` (latest) — `.github/workflows/backend-ci.yml:106`
+- `govulncheck` (latest) — `.github/workflows/backend-ci.yml:131`
+- `semgrep` (container `returntocorp/semgrep`) with `p/golang` + `p/owasp-top-ten` (`.github/workflows/backend-ci.yml:149-163`)
+- Trivy (`aquasecurity/trivy-action@master`) — image scanning, fail on HIGH/CRITICAL
 
 ## Key Dependencies
 
-**Critical (production blast radius):**
-- `@rnmapbox/maps@^10.3.0` (mobile) — Map rendering. Token quarantined to native keystore via `~/.netrc` + `~/.gradle/gradle.properties` (NOT `EXPO_PUBLIC_*` per `apps/mobile-rn/eslint.config.js:47-60`).
-- `expo-location@~19.0.8` (mobile) — GPS source + background tracking (`app.json:51-60`).
-- `expo-secure-store@~15.0.8` (mobile) — Token storage (`apps/mobile-rn/src/auth/tokenStorage.ts`).
-- `expo-notifications@~0.32.17` (mobile) — push token retrieval for Expo Push.
-- `expo-task-manager@~14.0.9` (mobile) — background tasks for sync engine.
-- `expo-haptics@~14.1.4` (mobile) — closure haptic feedback (`STATUS.md:14`).
-- `expo-image-picker@~17.0.11` + `expo-image-manipulator@~14.0.8` (mobile) — media upload pipeline.
-- `pgx/v5@5.9.2` (backend) — all services.
-- `nats.go@1.39.1` (backend) — bus client; mixed `1.52.0` in `activity-sync/go.mod` (skew tolerated).
-- `golang-jwt/jwt/v5@5.3.1` (backend) — JWT for all services.
-- `redis/go-redis/v9@9.19.0` (backend) — only consumed via `services/backend/pkg/ratelimit/ratelimit.go`.
-- `minio-go/v7@7.0.78` (backend) — only `services/backend/media/internal/s3/client.go`.
+**Critical (mobile — pinned/load-bearing):**
+- `@rnmapbox/maps@^10.3.0` — Mapbox SDK wrapper (`apps/mobile-rn/package.json:20`). Pinned at `^10.3` per ADR-0011 (Phase 13 SDK 11 migration explicitly dropped from v1.0 scope). Native impl flagged `RNMapboxMapsImpl: mapbox` (`apps/mobile-rn/app.json:67`, `apps/mobile-rn/android/gradle.properties:67`). Native package: `com.rnmapbox.rnmbx` (verified in `apps/mobile-rn/android/app/proguard-rules.pro:20-31`). Direct imports outside `src/map/adapters/` blocked by ESLint rule per CLAUDE.md MapAdapter principle
+- `react-native-mmkv@^4.3.1` — Nitro-Modules-based KV store (`apps/mobile-rn/package.json:43`). v4 API uses `createMMKV()`, NOT `new MMKV()`. Native namespace: `com.margelo.nitro.mmkv` (NOT `com.mrousavy.mmkv`) — verified by grep documented in `apps/mobile-rn/android/app/proguard-rules.pro:20`
+- `react-native-nitro-modules@^0.35.6` — MMKV v4 runtime dependency (`apps/mobile-rn/package.json:44`)
+- `expo-location ~19.0.8` — GPS source via `LocationAdapter`; native package `expo.modules.location` (`apps/mobile-rn/package.json:33`, `apps/mobile-rn/android/app/proguard-rules.pro:48-49`)
+- `expo-task-manager ~14.0.9` — background location task host; native package `expo.modules.taskManager` (camelCase `M`) (`apps/mobile-rn/package.json:39`, `apps/mobile-rn/android/app/proguard-rules.pro:42-46`)
+- `expo-sqlite ~16.0.10` — local data store (`apps/mobile-rn/package.json:37`)
+- `expo-secure-store ~15.0.8` — token storage (`apps/mobile-rn/package.json:35`)
+- `expo-notifications ~0.32.17` — Expo Push receiver SDK (`apps/mobile-rn/package.json:34`)
+- `@turf/turf@^7.3.5` + `@turf/buffer` + `@turf/helpers` + `@turf/simplify` — geometry/area calc (`apps/mobile-rn/package.json:21-24`)
+- `react-native-get-random-values@^2.0.0` — required polyfill for `uuid@^14.0.0` (imported first in `apps/mobile-rn/App.tsx:15`)
 
-**Infrastructure containers (pinned tags, ROADMAP forbids `:latest`):**
-- `timescale/timescaledb:2.17.2-pg16` — Postgres 16 + TimescaleDB (`services/backend/docker-compose.prod.yml:25`).
-- `nats:2.11-alpine` with JetStream (`-js`), persistent file storage, 7d retention.
-- `minio/minio:RELEASE.2025-01-20T14-49-07Z` — S3-compatible object storage.
-- `redis:7-alpine` — `--maxmemory 256mb`, `allkeys-lru`, `--appendonly yes`.
-- `caddy:2.8-alpine` — edge HTTPS.
-- `migrate/migrate:v4.18.1` — migration runner.
-- `prom/prometheus:v2.55.0`, `grafana/loki:3.2.0`, `grafana/grafana:11.3.0` — observability stack (`services/backend/docker-compose.observability.yml`).
+**Critical (backend):**
+- `github.com/jackc/pgx/v5` — Postgres + TimescaleDB driver
+- `github.com/nats-io/nats.go` — NATS JetStream client
+- `github.com/redis/go-redis/v9` — rate-limit/cache/presence
+- `github.com/minio/minio-go/v7` — S3-compatible media uploads
+- `github.com/getsentry/sentry-go` — wired, dormant (ADR-0010 D-38)
+
+**Infrastructure (runtime images, `services/backend/docker-compose.prod.yml`):**
+- `timescale/timescaledb:2.17.2-pg16` — Postgres 16 + TimescaleDB extension
+- `nats:2.11-alpine` — JetStream broker with persistent file storage
+- `redis:7-alpine` — `maxmemory 256mb`, `allkeys-lru`, AOF on
+- `minio/minio:RELEASE.2025-01-20T14-49-07Z` — S3-compatible object storage
+- `caddy:2.8-alpine` — gateway/reverse proxy + Let's Encrypt TLS
+- `migrate/migrate:v4.18.1` — schema migration runner
+- `prom/prometheus:v2.55.0`, `grafana/loki:3.2.0`, `grafana/grafana:11.3.0` — observability stack (`infra/observability-stack/docker-compose.yml`, `services/backend/docker-compose.observability.yml`)
 
 ## Configuration
 
 **Mobile environment:**
-- `EXPO_PUBLIC_IDENTITY_URL` — backend identity base URL (default `http://10.0.2.2:8081` for Android emulator) (`apps/mobile-rn/src/auth/apiClient.ts:21`).
-- `EXPO_PUBLIC_SYNC_URL` — activity-sync base URL (default `http://10.0.2.2:8082`).
-- `EXPO_PUBLIC_API_URL` — generic API base override.
-- `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` — Mapbox **public** token only (build-time, via `eas.json:18`).
-- `EXPO_PUBLIC_STRAVA_CLIENT_ID` — Strava public OAuth client ID (per `CHANGELOG.md:10`).
-- `EXPO_PUBLIC_API_BASE` — backend base for Strava token exchange.
-- **Forbidden:** `EXPO_PUBLIC_*_SECRET` — ESLint blocks via `no-restricted-syntax` in `apps/mobile-rn/eslint.config.js:50-60`.
-- Native Mapbox `sk.*` token — `~/.netrc` (iOS) + `~/.gradle/gradle.properties` (Android), never in repo.
+- `.env` (gitignored, `apps/mobile-rn/.env`) — local-only overrides; template in `apps/mobile-rn/.env.example`
+- `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` (pk.… public token, bundle-safe with Mapbox URL restrictions per ADR-0006)
+- `EXPO_PUBLIC_IDENTITY_URL`, `EXPO_PUBLIC_SYNC_URL`, `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_API_BASE` — backend endpoints (`apps/mobile-rn/src/auth/apiClient.ts:21-27`)
+- `EXPO_PUBLIC_EXPO_PROJECT_ID` — optional override for Expo Push registration (`apps/mobile-rn/src/notifications/adapters/ExpoNotificationsAdapter.ts:42`)
+- `EXPO_PUBLIC_GOOGLE_CLIENT_ID` (stub, ADR-0003) — OAuth, not active in v1.0
+- `EXPO_PUBLIC_STRAVA_CLIENT_ID` (stub) — `apps/mobile-rn/src/health/StravaAdapter.ts:41`
+- `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` (sk.…) — build-time only, lives in `~/.netrc` (iOS Pods) and `~/.gradle/gradle.properties` (Android Gradle). NEVER bundled. ESLint guard catches any `EXPO_PUBLIC_*_SECRET` access pattern (`apps/mobile-rn/eslint.config.js:47-60`)
+- `RUNNING_ECO_RELEASE_STORE_FILE`, `RUNNING_ECO_RELEASE_STORE_PASSWORD`, `RUNNING_ECO_RELEASE_KEY_ALIAS`, `RUNNING_ECO_RELEASE_KEY_PASSWORD` — Android signing creds; live in `~/.gradle/gradle.properties` locally, injected via `$GITHUB_ENV` + `::add-mask::` in CI (`.github/workflows/android-release.yml:88-93`, see ADR-0012)
 
-**Backend environment (per service, summary):**
+**Backend environment (via `services/backend/docker-compose.prod.yml`):**
+- `POSTGRES_PASSWORD`, `JWT_SECRET` (`≥32 chars`) — mandatory, no defaults
+- `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` — S3 credentials
+- `CADDY_ACME_EMAIL` — Let's Encrypt registration
+- `EXPO_ACCESS_TOKEN` — optional; empty → push fanout no-ops (notifications service, `services/backend/notifications/cmd/server/main.go:71-73`)
+- `SPORT_STACK_TAG` — image tag selector for GHCR pulls (Ansible-injected)
+- Per-service: `IDENTITY_HTTP_ADDR`, `IDENTITY_DB_URL`, `<SVC>_DB_URL`, `NATS_URL`, `REDIS_URL`, `S3_*`
 
-| Variable | Used by | Notes |
-|----------|---------|-------|
-| `<SVC>_HTTP_ADDR` | each service | default `:8081-:8090`; service-specific (e.g. `IDENTITY_HTTP_ADDR`) |
-| `<SVC>_DB_URL` | identity, activity-sync, social-graph, messaging, feed, media, notifications | REQUIRED; pgx DSN (contains password) |
-| `IDENTITY_JWT_SECRET` | all services | REQUIRED, ≥32 bytes (enforced `services/backend/pkg/auth/jwt.go:43-46`) |
-| `IDENTITY_DEV_MODE` | identity | default false; refuses non-local DB if true (SEC-05 in `identity/cmd/server/main.go:67-75`) |
-| `NATS_URL` | activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph | default `nats://nats:4222` |
-| `REDIS_URL` | messaging, feed, social-graph | default `redis://redis:6379/0` |
-| `EXPO_ACCESS_TOKEN` | notifications | optional; empty disables push fanout (`notifications/cmd/server/main.go:57-59`) |
-| `S3_ENDPOINT`, `S3_ENDPOINT_INTERNAL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_REGION` | media | dual-endpoint pattern for presigned URLs vs internal puts |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | postgres container | `re`, `${POSTGRES_PASSWORD:?…}`, `running_ecosystem` |
-| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | minio | required |
-| `CADDY_ACME_EMAIL` | gateway | required for Let's Encrypt registration |
-| `CLIENT_MIN_VERSION`, `FORCE_UPDATE_URL_*` | identity | optional; HTTP 426 response payload |
-| `SPORT_STACK_TAG` | docker-compose.prod.yml | REQUIRED; passed via `ansible-playbook -e sport_stack_tag=<tag>` |
+**Build configuration:**
+- `apps/mobile-rn/app.json` — Expo app config (slug `running-ecosystem-mobile`, bundleId `com.runningecosystem.mobile`, permissions, plugins list)
+- `apps/mobile-rn/eas.json` — EAS build profiles (`development`/`preview` = APK, `production` = `app-bundle`)
+- `apps/mobile-rn/android/app/build.gradle` — release signing config (lines 115-141) reads `RUNNING_ECO_RELEASE_*` gradle properties with debug-keystore fallback
+- `apps/mobile-rn/android/app/proguard-rules.pro` — R8 keep rules for Mapbox / MMKV / expo-task-manager / Hermes (see "Build Toggles" below)
+- `apps/mobile-rn/android/gradle.properties` — Hermes on, New Arch on, R8 minify + shrinkResources on (lines 73-74: `android.enableMinifyInReleaseBuilds=true`, `android.enableShrinkResourcesInReleaseBuilds=true`)
+- `apps/mobile-rn/android/build.gradle` — Mapbox Maven repo auth (lines 27-44) reading `MAPBOX_DOWNLOADS_TOKEN`/`RNMAPBOX_MAPS_DOWNLOAD_TOKEN`
+- `.sops.yaml` — SOPS encryption rules; recipients `DEV_A` + `CI` age public keys
+- `services/backend/observability/prometheus.yml`, `loki.yml`, `grafana-datasources.yml` — observability config
+- `infra/ansible/site.yml` + roles (`alloy-shipper`, `ufw`, `caddy`, …) — Ansible deploy
 
-**Secret storage (Phase 2 / SEC-02):**
-- **SOPS + age (X25519 + ChaCha20-Poly1305)** — `.sops.yaml` defines a single rule encrypting `.secrets/**/*.yaml`.
-- Encrypted slot files per environment: `.secrets/{dev,staging,prod}/{shared,mapbox,oauth}.yaml`.
-- Single recipient currently: `age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my` (DEV_A); bus factor 1 acknowledged in `.sops.yaml:18-22`.
-- Production deploy decrypts on Ansible controller, templates to `/run/sport.env` on remote (tmpfs, mode `0600`, owner `deploy:deploy`) per `infra/ansible/roles/sport-stack/tasks/decrypt_sops.yml` and `defaults/main.yml:6-9`.
-- `.env*` files git-ignored at `.gitignore:6-13`; plaintext secrets never enter version control.
-
-**Build/CI configuration files:**
-- `.golangci.yml` — golangci-lint v2 config (15 enabled linters, explicit-enable mode).
-- `apps/mobile-rn/eslint.config.js` — ESLint v9 flat-config with Mapbox SDK quarantine + secret token regex guards.
-- `.trivyignore.yaml` — Trivy CVE allowlist.
-- `.gitleaks.toml` — gitleaks tuning (custom allow rules).
-- `.trufflehog/config.yaml` — TruffleHog config.
-- `.pre-commit-config.yaml` — pinned `gitleaks v8.30.1` (staged-files-only).
-- `.editorconfig` — repo-wide formatting.
+**Build Toggles (release):**
+- R8 minify: **ON** (`android.enableMinifyInReleaseBuilds=true` in `apps/mobile-rn/android/gradle.properties:73`)
+- Resource shrinker: **ON** (`android.enableShrinkResourcesInReleaseBuilds=true` in `apps/mobile-rn/android/gradle.properties:74`)
+- ProGuard keep rules: defined in `apps/mobile-rn/android/app/proguard-rules.pro` — covers `com.mapbox.**`, `com.rnmapbox.rnmbx.**`, `com.margelo.nitro.mmkv.**` (+ defensive `com.mrousavy.mmkv.**` + `com.tencent.mmkv.**`), `expo.modules.taskManager.**`, broad `expo.modules.**`, `expo.modules.location.**`, `com.facebook.hermes.**`, `com.facebook.jni.**`, `com.facebook.react.bridge.**`, `com.facebook.react.turbomodule.core.**`
+- PNG crunch: ON (`android.enablePngCrunchInReleaseBuilds=true`)
+- ABI: `arm64-v8a` only
 
 ## Platform Requirements
 
 **Development:**
-- Node 18+ for Expo (implied by Expo SDK 54). No `.nvmrc` present.
-- Go 1.25.0 (workspace pin).
-- Docker + docker-compose v2 (top-level `name:` requires Compose spec ≥v2).
-- macOS or Linux dev machine (Xcode for iOS builds, Android Studio for Android).
-- `sops`, `age`, `ansible`, `gh`, `gitleaks`, `golang-migrate`, `golangci-lint`, `cosign` — required tools per `Makefile` + `services/backend/Makefile` guards.
+- macOS / Linux dev workstation
+- Node.js 20.x
+- JDK 17 (Temurin recommended — matches CI)
+- Android Studio + SDK (`apps/mobile-rn/android/local.properties:1` → `sdk.dir=/Users/ismail/Library/Android/sdk` on this workstation)
+- SOPS ≥3.11 (3.13.1 used in CI per `.github/workflows/android-release.yml:61`)
+- age (X25519 key pair, public half in `.sops.yaml`)
+- `yq` (mikefarah, latest) — for SOPS YAML extraction in CI
+- Docker + Docker Compose v2 — for backend stack + observability
 
 **Production:**
-- Single VPS `148.253.214.156` (provider-agnostic, Phase 3 D-25 pivoted away from Hetzner-specific tooling).
-- Debian/Ubuntu with systemd (`sport-stack.service` umbrella).
-- UFW firewall (managed by `infra/ansible/roles/ufw/`).
-- Ports 80/443 public; SSH 22 allow-listed to `91.92.33.145/32` (single dev admin IP, `infra/ansible/group_vars/all.yml:22-23`).
-- Mobile target: iOS 13+ (newArch + `supportsTablet: false`), Android API 24+ (`com.runningecosystem.mobile`, edge-to-edge, foreground service for background location).
+- Single VPS: `148.253.214.156` (`148-253-214-156.sslip.io`) — application stack via `services/backend/docker-compose.prod.yml`, deployed by Ansible (`infra/ansible/site.yml`)
+- Second VPS: `82.25.71.215` (`82-25-71-215.sslip.io`) — observability stack (Loki + Grafana + Prometheus) colocated with unrelated `niko-prod` project, per ADR-0010
+- Container registry: `ghcr.io/ismaill01/<service>` — pushed by `backend-cd.yml`, signed via cosign keyless (Sigstore/Fulcio) + SLSA L2 provenance attestation (`actions/attest-build-provenance@v2`)
+- TLS: Let's Encrypt via Caddy on prod VPS (`gateway` service in compose); self-signed (`tls internal`) on observability VPS for `:8443`
+- Mobile distribution: EAS Cloud Build — Expo project ID currently `TODO-eas-project-id-after-eas-init` per `apps/mobile-rn/app.json:73-75` (Phase 8 follow-up)
 
 ---
 
-*Stack analysis: 2026-05-18*
+*Stack analysis: 2026-05-23*
