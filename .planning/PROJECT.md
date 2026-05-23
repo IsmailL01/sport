@@ -26,7 +26,7 @@
 | [x] **4** CI/CD pipeline | backend | CICD-01..06 — DONE 2026-05-18 (cosign/SLSA best-effort per ADR-0011) |
 | [x] **5** Observability backend | backend | OBS-01/03..07 — DONE 2026-05-20 (Sentry SaaS dormant per D-38; mobile OBS-08 UX dropped per ADR-0011) |
 | [x] **6** Release signing | shared | SIGN-01 — Android keystore + SOPS encryption + recovery RUNBOOK + SHA-256 evidence — **DONE 2026-05-20** (Plan 06-01 Tasks 0-4 shipped). _Tasks 5-6 (cloud backup) DEFERRED per ADR-0011 Amendment 4 to v1.0.1 `KEYSTORE-CLOUD-BACKUP`. SIGN-02 (iOS) DEFERRED per Amendment 3._ |
-| [ ] **7** Release builds + mobile stability | mobile-shared | BUILD-01 + STAB-01 (Android) — EAS Android production + foreground service + MIUI + One UI mitigations. _BUILD-02 + iOS SLC portion DEFERRED per ADR-0011 Amendment 3._ |
+| [⏳] **7** Release builds + mobile stability | mobile-shared | BUILD-01 + STAB-01 (Android) — **MID-FLIGHT 2026-05-23.** Plan 07-01 Tasks 0-5 shipped (Android release pipeline + `::add-mask::` per ADR-0012); Task 6 blocked on `eas init`. Plan 07-03 not started. _BUILD-02 + iOS SLC portion DEFERRED per ADR-0011 Amendment 3._ |
 | [ ] **8** Closed-beta distribution | shared | DIST-01 — Android signed-JSON manifest via Caddy. _DIST-02 (iOS TestFlight) DEFERRED per ADR-0011 Amendment 3._ |
 | [ ] **9** Closed-beta launch | shared | LAUNCH-01..02 (Android-only) — Android smoke test + invite 5-10 Android testers + 72h watchlist via `scripts/debug-tail.sh`. _iOS tester arm DEFERRED per ADR-0011 Amendment 3._ |
 
@@ -94,10 +94,10 @@
 
 <!-- Closed-beta scope per ADR-0011 — 4 remaining phases. Detailed REQ-IDs in .planning/REQUIREMENTS.md §Active New-Scope Requirements (Phases 6-9). -->
 
-- [ ] **Phase 6: Release signing** — Android keystore (offline, 2 physical backups, recovery RUNBOOK in `docs/SECRETS.md`); iOS Apple Dev certs + distribution provisioning + ASC API key in SOPS (SIGN-01..02)
-- [ ] **Phase 7: Release builds + mobile stability** — EAS production profile Android (R8+ProGuard for Mapbox/MMKV/health JNI/Hermes/expo-task-manager, arm64-v8a only); EAS production iOS (Hermes, bitcode off, staging↔prod, iOS 16+); background reliability — foreground service + iOS SLC + MIUI + One UI mitigations only, rest = monitor in beta (BUILD-01..02 + STAB-01)
-- [ ] **Phase 8: Closed-beta distribution** — Android signed-JSON manifest via Caddy + APKs on Hetzner Storage Box behind signed URLs; iOS TestFlight internal group + automated upload on `v1.0-*` tag (DIST-01..02)
-- [ ] **Phase 9: Closed-beta launch** — smoke test on own + 1 friend's device (1 full GPS session per platform); invite 5-10 testers; 72h watchlist via `scripts/debug-tail.sh <user-id>` Loki wrapper; ship-when-stable (LAUNCH-01..02)
+- [x] **Phase 6: Release signing** — Android keystore (SOPS-encrypted, single workstation copy per ADR-0011 Amendment 4); recovery RUNBOOK in `docs/SECRETS.md` (SIGN-01). **DONE 2026-05-20** (Plan 06-01 Tasks 0-4 shipped; Tasks 5-6 DEFERRED to v1.0.1 `KEYSTORE-CLOUD-BACKUP`; SIGN-02 iOS DEFERRED per Amendment 3).
+- [⏳] **Phase 7: Release builds + mobile stability** — EAS production profile Android (R8+ProGuard for Mapbox/MMKV/expo-task-manager/Hermes, arm64-v8a only); foreground service + MIUI + One UI mitigations (BUILD-01 + STAB-01 Android). **MID-FLIGHT 2026-05-23:** Plan 07-01 Tasks 0-5 shipped (gradle/ABI/proguard/eas.json/workflow + `::add-mask::` per ADR-0012); Task 6 blocked on user-action `eas init`. Plan 07-03 not started — device-blocked. _BUILD-02 + iOS portion of STAB-01 DEFERRED per Amendment 3._
+- [ ] **Phase 8: Closed-beta distribution** — Android signed-JSON manifest via Caddy + APKs on Hetzner Storage Box behind signed URLs (DIST-01). _DIST-02 (iOS TestFlight) DEFERRED per ADR-0011 Amendment 3._
+- [ ] **Phase 9: Closed-beta launch** — Android smoke test on own + 1 friend's device + invite 5-10 Android testers + 72h watchlist via `scripts/debug-tail.sh <user-id>` Loki wrapper; ship-when-stable (LAUNCH-01..02 Android-only). _iOS tester arm DEFERRED per Amendment 3._
 
 <!-- Deferred to post-v1.0 (was in earlier scopes, now out per ADR-0011): -->
 - *Deferred to v1.0.x / v1.1+* — Phase 1 closure field-testing on Chinese Android (was BG-03..05); Phase 7 real health adapters (HealthKit WRITE, HealthConnect, Strava OAuth, Garmin/FIT/Sensor Sync) — HEALTH-04 dropped per ADR-0011 from v1.0
@@ -188,7 +188,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-20 — Milestone v1.0 REDEFINED to "closed-beta release in 4 lean phases" per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md). Solo dev. Phases 1-5 shipped; 6-9 remaining. Replaces 2026-05-15 21-phase enterprise-hardening scope (archive: `.planning/phases/_archive/superseded-21-phase-v1.0/`).*
+*Last updated: 2026-05-23 — Phase 6 marked [x] DONE; Phase 7 marked [⏳] mid-flight (Plan 07-01 Tasks 0-5 shipped, Task 6 blocked on `eas init`). ADR-0012 P0 incident response (keystore password leak in CI) closed; documented in `docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md` + amendment.*
+*Previous: 2026-05-20 — Milestone v1.0 REDEFINED to "closed-beta release in 4 lean phases" per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md). Solo dev. Phases 1-5 shipped; 6-9 remaining. Replaces 2026-05-15 21-phase enterprise-hardening scope (archive: `.planning/phases/_archive/superseded-21-phase-v1.0/`).*
 *Previous: 2026-05-15 — Milestone v1.0 REDEFINED as 21-phase hardening scope (interstitial, retired 2026-05-20 per ADR-0011).*
 *Previous: 2026-05-15 — formalized initial v1.0 scope (8-phase feature-focused, since superseded).*
 *Previous: 2026-05-14 — GSD brownfield initialization on `feat/cursona-redesign` (post Phase 8 / M10).*

@@ -20,36 +20,36 @@ Total: **96 REQ-IDs originally enumerated; ~64 IDs across the dropped phases are
 
 ### Phase 2 — Secrets & Config Hardening (SEC)
 
-- [ ] **SEC-01**: `gitleaks` + `trufflehog` run on full clone (`--no-shallow`) report zero findings — configs + one-time scan DONE 2026-05-16 (Plan 02-03, 0 findings across 160 commits); CI invocation deferred to Phase 4 / CICD-01
-- [ ] **SEC-02**: SOPS-encrypted secrets in `.secrets/` for all 10 secret types (Mapbox public, Mapbox secret, Postgres, NATS, MinIO, Expo Push, Google OAuth, Apple OAuth, Strava OAuth, Caddy ACME)
-- [ ] **SEC-03**: Mapbox token **incident reset** — rotate BOTH deferred `pk.→sk.` CI token AND production runtime `pk.*` token; old tokens REVOKED in dashboard
-- [ ] **SEC-04**: `docs/DECISIONS/0006-mapbox-token-incident.md` documents the rotation as treated-as-compromise incident
-- [ ] **SEC-05**: `IDENTITY_DEV_MODE=true` default removed from identity service (CONCERNS.md P0)
-- [ ] **SEC-06**: 12-factor config split — no hardcoded URLs/keys/tokens in code; all via env vars sourced from SOPS
-- [ ] **SEC-07**: Rotation playbooks in `docs/SECRETS.md` for all 10 secret types
-- [x] **SEC-08**: Pre-commit hook scanning for AWS/AKIA/GitHub PAT/Mapbox `sk.` patterns — DONE 2026-05-16 (Plan 02-03, commits 28acb2d..9c101a4)
-- [ ] **SEC-09**: Secret loading audit: every Go service starts with SOPS-decrypt-on-boot, never with inline values
+- [x] **SEC-01**: `gitleaks` + `trufflehog` run on full clone (`--no-shallow`) report zero findings — DONE 2026-05-16 (Plan 02-03, 0 findings across 160 commits; configs + one-time scan); CI invocation closed via Phase 4 CICD-01 + branch protection 8 required checks.
+- [x] **SEC-02**: SOPS-encrypted secrets in `.secrets/` for all 10 secret types — DONE 2026-05-15 (Plan 02-01, age recipient list in `.sops.yaml`; per-env yaml slots in `.secrets/{dev,staging,prod}/`).
+- [x] **SEC-03**: Mapbox token **incident reset** — DONE 2026-05-16 (Plan 02-04). All 3 leaked tokens (`dev-public`/`prod-public`/`server-secret`) deleted in Mapbox dashboard; new `sk.` (build/CI) + `pk.` (runtime) issued with restrictions per ADR-0006 verdict A.
+- [x] **SEC-04**: `docs/DECISIONS/0006-mapbox-token-incident.md` DONE 2026-05-16 (commits a67beb0..58b15eb).
+- [x] **SEC-05**: `IDENTITY_DEV_MODE=true` default removed — DONE 2026-05-15 (Plan 02-02, commit `27ad27f`).
+- [x] **SEC-06**: 12-factor config split — DONE 2026-05-15 (Plan 02-02, `envRequire` migration across 8 services; 10 new test cases).
+- [x] **SEC-07**: Rotation playbooks in `docs/SECRETS.md` for all 10 secret types — DONE 2026-05-16 (Plan 02-04 Task 2 docs extension; 10 playbooks landed across commits a67beb0..ccc39c1). Extended 2026-05-20 with Mobile signing recovery section (Plan 06-01 Task 4, commit `27d4954`).
+- [x] **SEC-08**: Pre-commit hook scanning for AWS/AKIA/GitHub PAT/Mapbox `sk.` patterns — DONE 2026-05-16 (Plan 02-03, commits 28acb2d..9c101a4). Additionally extended with full repo gitleaks + trufflehog config + ESLint v9 token-secret guard.
+- [x] **SEC-09**: Secret loading audit — DONE 2026-05-15 (Plan 02-02). All 8 Go services start via `envRequire`-validated env vars sourced from SOPS-decrypted dotenv; no inline values.
 
 ### Phase 3 — Infrastructure as Code (INFRA)
 
 > **Scope pivot 2026-05-17:** User clarified that no Hetzner Cloud account exists — only an SSH-accessible Linux VPS at the prod address. INFRA-02 and INFRA-04 (Terraform / cloud-API + TF state backend) deferred to v1.1; INFRA-06 (Sentry VPS provisioning) moved to Phase 5. INFRA-01/03/05/07 reworded for provider-agnostic Ansible-only scope.
 
-- [ ] **INFRA-01**: `infra/ansible/` playbooks idempotently install Caddy + Postgres+TimescaleDB + Redis + NATS + MinIO + 8 Go service containers (identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph) under a single `sport-stack.service` systemd umbrella on the prod VPS
-- [ ] **INFRA-02**: **DEFERRED to v1.1** — Pivoted 2026-05-17 to provider-agnostic VPS scope; no cloud-API provisioning in v1.0. Will revisit if migrating to a cloud-API provider in v1.1.
-- [ ] **INFRA-03**: Environments `dev` (localhost docker-compose, no Ansible) + `prod` (existing VPS) with inventory in `infra/ansible/inventory/{dev,prod}/`. Staging deferred to v1.1.
-- [ ] **INFRA-04**: **DEFERRED to v1.1** — No Terraform in v1.0 post-pivot (2026-05-17). Will revisit alongside INFRA-02.
-- [ ] **INFRA-05**: UFW (OS-level) firewall rules explicit; no `0.0.0.0/0` except documented (443 Caddy + 22 from dev IPs). NATS 4222 / Postgres 5432 / Redis 6379 / MinIO 9000 closed to public (internal-only via docker network — defense in depth with UFW).
-- [ ] **INFRA-06**: **MOVED to Phase 5** — Sentry self-hosted requires additional VPS; provisioning decision (colocate on prod VPS vs separate VPS) belongs in Phase 5 alongside Sentry install. Phase 5 owner decides.
-- [ ] **INFRA-07**: Fresh deploy from `git clone` to all services running in <60 minutes (measured on existing prod VPS first-clean-Ansible-deploy, documented in `docs/RUNBOOKS/deploy.md` §9)
+- [x] **INFRA-01**: `infra/ansible/` playbooks DONE 2026-05-17 (Plans 03-01..03). Single `sport-stack.service` systemd umbrella + containerized stack + provider-agnostic RUNBOOK.
+- [ ] ~~**INFRA-02**~~: **DEFERRED to v1.1** — Pivoted 2026-05-17 to provider-agnostic VPS scope; no cloud-API provisioning in v1.0. Will revisit if migrating to a cloud-API provider in v1.1.
+- [x] **INFRA-03**: Environments DONE 2026-05-17 (Plan 03-01 — inventory in `infra/ansible/inventory/{dev,prod}/`). Staging deferred to v1.1.
+- [ ] ~~**INFRA-04**~~: **DEFERRED to v1.1** — No Terraform in v1.0 post-pivot (2026-05-17). Will revisit alongside INFRA-02.
+- [x] **INFRA-05**: UFW firewall rules DONE 2026-05-17 (Plan 03-01). All ports per spec; internal services behind docker network.
+- [ ] ~~**INFRA-06**~~: **MOVED to Phase 5** — Resolved via Sentry SaaS adoption per ADR-0010 (no separate VPS needed); SDK code paths wired-and-dormant per D-38.
+- [x] **INFRA-07**: Fresh deploy <60 minutes — DONE 2026-05-17. Baseline 66.5s on 148.253.214.156 (Plan 03-03 INFRA-07 timing measurement). Documented in `docs/RUNBOOKS/deploy.md` §9.
 
 ### Phase 4 — CI/CD Pipeline (CICD)
 
-- [ ] **CICD-01**: GitHub Actions matrix on every PR — Go `test -race`, `golangci-lint`, `gosec`, `semgrep`, `govulncheck`, Docker multi-stage build, Trivy image scan
-- [ ] **CICD-02**: Container images signed with `cosign` and pinned to SHA256 digests in production manifests (no `latest` ever)
-- [ ] **CICD-03**: SLSA-style build provenance attestation attached to each release tag
-- [ ] **CICD-04**: **Rollback drill validated with real DB migration in path** — deploy N+1 with migration → `make rollback v=N` reverts service AND runs down-migration → integration test confirms restored state (no-op rollback doesn't count, per user redline)
-- [ ] **CICD-05**: Deployment freeze toggle runbook step pauses CD on incident declaration
-- [ ] **CICD-06**: Branch protection requires all matrix checks passing
+- [x] **CICD-01**: GitHub Actions matrix DONE 2026-05-18 (Plan 04-02). 8-service matrix + 5 scanners (gosec / semgrep / govulncheck / trivy / cosign) + Trivy.
+- [x] **CICD-02**: Cosign + SHA256 digest pinning — DONE 2026-05-18 (Plan 04-03). Kept wired as **best-effort, not gated** per ADR-0011 (if cosign breaks CI for a deploy-blocking reason: comment out, don't spend a day fixing).
+- [x] **CICD-03**: SLSA L2 build provenance attestation — DONE 2026-05-18 (Plan 04-03). Best-effort per ADR-0011.
+- [x] **CICD-04**: **Rollback drill** — DONE 2026-05-18 (Plan 04-04, commit `fb3bfe4`). Drill PASSED on prod with real DB migration in path + save/scp/load pivot for GHCR private packages. `pg_dump` snapshot policy in `docs/RUNBOOKS/deploy.md §6.4`.
+- [x] **CICD-05**: Deployment freeze toggle — DONE 2026-05-18 (Plan 04-06 + `docs/RUNBOOKS/deploy.md §11`).
+- [x] **CICD-06**: Branch protection 8 required checks — DONE 2026-05-18 (Plan 04-05, commit `d972bcc`). `main` locked.
 
 ### Phase 5 — Observability Backend (OBS)
 
@@ -73,9 +73,9 @@ Total: **96 REQ-IDs originally enumerated; ~64 IDs across the dropped phases are
 
 ### Phase 7 — Release Builds + Mobile Stability (BUILD + STAB)
 
-- [ ] **BUILD-01**: EAS `production` profile (Android) — points at production backend; R8 + ProGuard verified (no strip Mapbox JNI / MMKV / react-native-health JNI / Hermes / expo-task-manager); `arm64-v8a` only (drop `armeabi-v7a` per ADR-0011)
+- [⏳] **BUILD-01**: EAS `production` profile (Android) — **PARTIAL 2026-05-23.** Plan 07-01 Tasks 0-5 shipped: `apps/mobile-rn/eas.json` `production.android` env block ✓; R8 + ProGuard rules in `apps/mobile-rn/android/app/proguard-rules.pro` (Mapbox / MMKV via `com.margelo.nitro.mmkv` / expo-task-manager via `expo.modules.taskManager` / Hermes / `@DoNotStrip` annotations) ✓; `arm64-v8a` only via `android.app.build.gradle:112` `abiFilters 'arm64-v8a'` + `gradle.properties:reactNativeArchitectures=arm64-v8a` ✓; `.github/workflows/android-release.yml` tag-triggered + ::add-mask:: + explicit eas-cli install per ADR-0012 ✓. Task 6 (Stage A' R8 device smoke = final EAS Cloud build) BLOCKED on user-action `eas init` (literal `extra.eas.projectId: "TODO-eas-project-id-after-eas-init"` placeholder in `apps/mobile-rn/app.json`).
 - [ ] ~~**BUILD-02**~~ **DEFERRED per ADR-0011 Amendment 3 (Android-first launch).** Was: EAS `production` profile (iOS) — Hermes enabled, bitcode disabled, staging↔prod flavor switching, iOS 16+ baseline. Re-trigger: same as SIGN-02 above.
-- [ ] **STAB-01** (Android-only per ADR-0011 Amendment 3): Background reliability — Android foreground service notification visible; MIUI + One UI mitigations only (in-app auto-start dialog + battery-saver-kill recovery via `recoverLast`); 4-vendor matrix from old Phase 16 deferred — monitor remaining vendors during beta. 1-hour pocket-walk session on Pixel records ≥95% of expected GPS points. _iOS SLC portion DEFERRED per ADR-0011 Amendment 3._
+- [ ] **STAB-01** (Android-only per ADR-0011 Amendment 3): Background reliability — Android foreground service notification visible; MIUI + One UI mitigations only (in-app auto-start dialog + battery-saver-kill recovery via `recoverLast`); 4-vendor matrix from old Phase 16 deferred — monitor remaining vendors during beta. 1-hour pocket-walk session on Pixel records ≥95% of expected GPS points. _iOS SLC portion DEFERRED per ADR-0011 Amendment 3._ **NOT STARTED:** Plan 07-03 not yet executed; device-blocked (no physical Pixel currently available).
 
 ### Phase 8 — Closed-Beta Distribution (DIST)
 
@@ -84,7 +84,7 @@ Total: **96 REQ-IDs originally enumerated; ~64 IDs across the dropped phases are
 
 ### Phase 9 — Closed-Beta Launch (LAUNCH)
 
-- [ ] **LAUNCH-01**: Solo-dev smoke — tag `v1.0.0-beta.1` → CI publishes Android APK to Caddy manifest + iOS build to TestFlight internal group; install on own Android + own/friend iPhone; complete 1 full GPS-track session per platform; no crashes; no data loss
+- [ ] **LAUNCH-01** (Android-only per ADR-0011 Amendment 3): Solo-dev smoke — tag `v1.0.0-beta.X` → CI publishes Android APK to Caddy manifest; install on own Android device + 1 friend's Android device; complete 1 full GPS-track session per device; no crashes; no data loss. _iOS smoke arm (TestFlight + own/friend iPhone) DEFERRED per Amendment 3._
 - [ ] **LAUNCH-02** (Android-only per ADR-0011 Amendment 3): Closed-beta watchlist — invite 5-10 Android testers (Caddy manifest URL); 72h triage via `scripts/debug-tail.sh <user-id>` (Loki on `srv1561293`); feedback intake decided in plan (GitHub Issues template OR Telegram channel); P0 surfaces → hotfix → re-tag → re-distribute; ship-when-stable (no formal soak gate). _iOS TestFlight tester arm DEFERRED per ADR-0011 Amendment 3._
 
 ---
@@ -256,6 +256,7 @@ Per user redline: "Old REQ-IDs (except HEALTH-04) move to v1.1+ in REQUIREMENTS.
 
 ---
 
-*Requirements rewritten: 2026-05-20 per ADR-0011 (was 21-phase enterprise-hardening scope from 2026-05-15)*
-*Replaces earlier feature-focused v1.0 scope (2026-05-14) — the 2026-05-15 21-phase scope was an interstitial overshoot*
+*Last updated: 2026-05-23 — tick-pass: SEC-01..09 + INFRA-01/03/05/07 + CICD-01..06 marked complete with commit/plan references. SIGN-01 already ticked (Phase 6 closed). BUILD-01 marked ⏳ partial (Plan 07-01 Tasks 0-5 shipped; Task 6 blocked on `eas init`). LAUNCH-01 narrowed to Android-only per ADR-0011 Amendment 3.*
+*Previous: 2026-05-20 — Requirements rewritten per ADR-0011 (was 21-phase enterprise-hardening scope from 2026-05-15).*
+*Previous: 2026-05-14 — feature-focused v1.0 scope (8 phases) — the 2026-05-15 21-phase scope was an interstitial overshoot, retired 2026-05-20.*
 *Old `docs/DEVELOPMENT_PLAN.md` task IDs (`P<phase>-<section>-<number>`) remain canonical implementation breakdown where applicable; new REQ-IDs above provide GSD-side traceability for the closed-beta scope.*
