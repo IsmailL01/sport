@@ -1,6 +1,6 @@
 module github.com/runningecosystem/backend/identity
 
-go 1.25.0
+go 1.25.10
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
