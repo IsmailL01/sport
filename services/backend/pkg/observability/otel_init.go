@@ -225,7 +225,12 @@ func MustInitTracer(ctx context.Context, cfg TracerConfig) func() {
 
 	otel.SetTracerProvider(tp)
 
-	return func() {
+	// Shutdown closure intentionally uses its own context.Background() —
+	// the parent ctx passed to MustInitTracer is typically the caller's
+	// request/startup context, often already cancelled by the time
+	// shutdown runs. A fresh background ctx + 5s deadline is the standard
+	// pattern for OTel/Sentry SDK Shutdown calls.
+	return func() { //nolint:contextcheck // shutdown deliberately decoupled from startup ctx
 		ctxStop, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := tp.Shutdown(ctxStop); err != nil {

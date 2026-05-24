@@ -42,7 +42,7 @@ func (m *mockTransport) SendEvents(events []*sentry.Event) {
 	m.events = append(m.events, events...)
 }
 
-func (m *mockTransport) Flush(_ time.Duration) bool             { return true }
+func (m *mockTransport) Flush(_ time.Duration) bool              { return true }
 func (m *mockTransport) Close()                                  {}
 func (m *mockTransport) FlushWithContext(_ context.Context) bool { return true }
 

@@ -5,7 +5,7 @@
 //   - MustInitSentry(SentryConfig) → func() shutdown closure (sentry.Flush(2s)).
 //   - **D-38 empty-DSN guard at the top** (ADR-0010 amendment 2026-05-19 PM):
 //     если DSN пустой → slog.Info "observability.sentry: disabled — empty DSN"
-//     + return func(){}. Это **dormant-by-design path** для v1.0 — Sentry SaaS
+//     plus return func(){}. Это **dormant-by-design path** для v1.0 — Sentry SaaS
 //     activation deferred to post-v1.0. SDK code paths preserved; activation =
 //     SOPS edit к populate DSN + redeploy (no code change).
 //   - **Single shared prod-backend project** (RESEARCH §1.9):

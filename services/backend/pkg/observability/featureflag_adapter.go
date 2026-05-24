@@ -1,8 +1,8 @@
 // featureflag_adapter.go — Phase 5 / Plan 05-06 / OBS-08.
 //
 // Адаптер между:
-//   • DebugSessionMiddleware.FeatureFlagChecker (UUID string userID)
-//   • featureflags.Store.IsEnabled(ctx, int64 userID, name) (Phase 1 schema)
+//   - DebugSessionMiddleware.FeatureFlagChecker (UUID string userID)
+//   - featureflags.Store.IsEnabled(ctx, int64 userID, name) (Phase 1 schema)
 //
 // featureflags.Store был спроектирован под int64 user IDs (legacy Phase 1
 // schema decision), но Claims.UserID — UUID string (users.id UUID PRIMARY

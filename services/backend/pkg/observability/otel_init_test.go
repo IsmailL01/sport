@@ -22,12 +22,12 @@ import (
 
 func TestParseSentryDSN(t *testing.T) {
 	tests := []struct {
-		name        string
-		dsn         string
-		wantHost    string
-		wantKey     string
-		wantProj    string
-		wantErr     bool
+		name     string
+		dsn      string
+		wantHost string
+		wantKey  string
+		wantProj string
+		wantErr  bool
 	}{
 		{
 			name:     "self-hosted sslip DSN",
@@ -114,10 +114,9 @@ func TestOtelSpanProcessor_DropsPII(t *testing.T) {
 
 	tracer := tp.Tracer("test")
 	ctx := context.Background()
-	_, span := tracer.Start(ctx, "test-span",
-		// Set attributes ВО ВРЕМЯ Start — scrubProcessor.OnStart обрабатывает
-		// именно эти attrs (initial set).
-	)
+	// Set attributes ВО ВРЕМЯ Start — scrubProcessor.OnStart обрабатывает
+	// именно эти attrs (initial set).
+	_, span := tracer.Start(ctx, "test-span")
 	span.SetAttributes(
 		attribute.String("phone", "+15551234"),
 		attribute.String("http.method", "GET"),
@@ -134,9 +133,8 @@ func TestOtelSpanProcessor_DropsPII(t *testing.T) {
 
 	// Spawn another span с attrs В START (через WithAttributes) — это покрывает
 	// OnStart-time scrub path.
-	_, span2 := tracer.Start(ctx, "scrubbed-at-start",
-		// Imports trace для StartSpanOption; используем .WithAttributes.
-	)
+	// Imports trace для StartSpanOption; используем .WithAttributes.
+	_, span2 := tracer.Start(ctx, "scrubbed-at-start")
 	// Реально WithAttributes идёт через trace.WithAttributes — но эквивалент:
 	// SetAttributes сразу после Start — OnStart уже отработал. Заменим через
 	// re-create span с attrs.

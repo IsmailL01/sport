@@ -1,9 +1,10 @@
 // debug_session_middleware_test.go — Phase 5 / Plan 05-06 / OBS-08 / D-22 / D-23.
 //
 // Тесты для D-22 three-gate rule:
-//   1. X-Debug-Session: 1 header
-//   2. JWT claim IsTester = true (extracted via auth.Signer)
-//   3. featureflag tester_debug_logging = ON for that user
+//  1. X-Debug-Session: 1 header
+//  2. JWT claim IsTester = true (extracted via auth.Signer)
+//  3. featureflag tester_debug_logging = ON for that user
+//
 // Все три → ctx carries slog.LevelDebug; иначе LevelInfo (default).
 //
 // RESEARCH §1.8: header-only is a debug-DoS vector. Middleware MUST be silent
@@ -59,7 +60,7 @@ func runDebugRequest(
 	ff := &stubFFStore{enabled: ffEnabled}
 
 	// Capture the level observed inside next.
-	var capturedLevel slog.Level = slog.LevelInfo
+	var capturedLevel = slog.LevelInfo
 	var capturedOverride bool
 	called := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,10 +102,10 @@ func runDebugRequest(
 func TestDebugSessionMiddleware_AllThreeTrue(t *testing.T) {
 	t.Parallel()
 	lvl, overridden, called, ffCalls := runDebugRequest(t,
-		true,  // headerSet
-		true,  // jwtIssued
-		true,  // jwtIsTester
-		true,  // ffEnabled
+		true, // headerSet
+		true, // jwtIssued
+		true, // jwtIsTester
+		true, // ffEnabled
 	)
 	if !called {
 		t.Fatal("next.ServeHTTP not called")
@@ -217,7 +218,7 @@ func TestDebugSessionMiddleware_InvalidJWT(t *testing.T) {
 	}
 	ff := &stubFFStore{enabled: true}
 
-	var capturedLevel slog.Level = slog.LevelInfo
+	var capturedLevel = slog.LevelInfo
 	var capturedOverride bool
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if lvl, ok := observability.LogLevelFromContext(r.Context()); ok {
