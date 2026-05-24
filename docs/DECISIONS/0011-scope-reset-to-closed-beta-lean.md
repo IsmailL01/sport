@@ -278,3 +278,60 @@ Promotion path: re-run the lean cloud-backup variant of Tasks 5+6 (preserved in 
 
 **Re-expansion trigger for THIS amendment:** any of the 3 `KEYSTORE-CLOUD-BACKUP` v1.0.1 backlog triggers (Play Store submission / >50 users / explicit production-asset decision). At that point, re-execute Plan 06-01 Tasks 5+6 (their bodies are preserved in `06-01-PLAN.md` from Amendment 2 PM).
 
+---
+
+## Amendment 5 2026-05-24 — Phase 8 distribution-pipeline parked behind feature gate (closed-beta scope reduced to manual sideload)
+
+**Trigger:** Plan 08-01 code shipped end-to-end (commits `44c033f` → `a271f63` + codebase-map refresh `ac76df0`): Ed25519 manifest signing, `release-distribute.sh` + Go signer/verifier, `android-release.yml` extension with bundletool + MinIO + manifest publish, mobile `src/update/*` module with verifier + force-update + banner UI + `useUpdateCheckOnForeground` hook + Settings "Проверить обновления" button. The pipeline is operational on the workflow + mobile sides but requires a self-hosted MinIO endpoint to actually distribute — and standing up that backend has been re-scoped out of the closed-beta phase. The dev's day-to-day install path is now: `./gradlew assembleDebug` on BlueStacks for dev-loop + manual `adb install` of EAS-signed universal APK on Pixel for pocket-walk validation. No manifest, no signed-URL flow.
+
+Re-evaluating against the closed-beta blast radius the same way Amendments 2 + 4 did:
+
+> **Distribution-pipeline for 5-10 friend testers = manual sideload via DM-with-APK-link. The signed-manifest + signed-URL + Ed25519 verifier + auto-update-banner flow is over-engineered for that audience. It is load-bearing only when (a) tester base outgrows DM-with-link, OR (b) "force minimum version" enforcement becomes operationally necessary (e.g., backend breaking change requires forced upgrade), OR (c) the project transitions to public distribution outside Play Store.**
+
+**New principle (governs Phase 8 onwards; extends Amendments 2 + 4):**
+
+> **Distribution mode for closed beta = manual sideload by solo dev. The Phase 8 code stays in the repo (exercised by jest, type-checked, lint-clean) but is gated off at runtime via feature flags. Re-enabling is a configuration change — set `EXPO_PUBLIC_UPDATE_MANIFEST_URL` in mobile env + `MINIO_RELEASES_ACCESS_KEY` secret in repo settings — not a re-implementation.**
+
+**Concrete scope cut (was Plan 08-01 production-ready, now Plan 08-01 code-complete + runtime-gated):**
+
+| Was (Plan 08-01 as-shipped) | Now (Amendment 5 — gated) |
+|---|---|
+| Mobile `manifestCheck.ts` fetches from hardcoded `https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json` | Reads `process.env.EXPO_PUBLIC_UPDATE_MANIFEST_URL`; empty/unset → early return `{state:'disabled'}` without network fetch (no `manifestUrl` not set → silent skip + `__DEV__` warn) |
+| Settings "Проверить обновления" silently fails fetch on tap | Surfaces toast «Проверка обновлений отключена» on `disabled` state so the button doesn't feel broken |
+| `android-release.yml` distribute steps (bundletool + .aab download + SOPS decrypt manifest-signing + `release-distribute.sh`) run unconditionally on tag push | All 4 distribute steps gated by job-level `DISTRIBUTE_ENABLED` env, derived from `secrets.MINIO_RELEASES_ACCESS_KEY != ''`. Without the secret, EAS build still produces signed .aab + prints artifact URL in step output for manual sideload |
+| Plan 08-01 status: code-shipped, awaiting SUMMARY | Plan 08-01 status: **code-complete, runtime-disabled (gated)**; no SUMMARY yet — the deferred-aware closure pattern (Plan 06-01 Amendment 4 style) is appropriate. Promote to fully closed once the v1.0.1 promotion trigger fires. |
+
+**Why this is acceptable (extending Amendments 2 + 4 reasoning):**
+
+1. **Real blast radius is bounded.** 5-10 testers + DM-with-link reinstall workflow = 5-minute recovery from any "they need to update". The Ed25519-signed manifest pipeline buys us nothing at this scale that DM-link doesn't already buy us.
+2. **Code stays upgradable.** jest exercises `manifestCheck.ts`, `manifestSchema.ts`, `manifestSigning.ts`, `useUpdateCheckOnForeground`, `forceUpdate` store, `updateBannerStore`, `updateCheckStore`, `semverLite`, `UpdateBanner` — 638/638 tests green at this commit. Dependency drift (e.g., `@noble/ed25519` v3 API churn already fixed once in `721210f`) will be caught by jest in CI long before re-enabling, not at the worst possible moment when standing up the backend under pressure.
+3. **Re-enabling is a config flip, not a rewrite.** Mobile: set `EXPO_PUBLIC_UPDATE_MANIFEST_URL=https://...` in `apps/mobile-rn/.env` (gitignored) or `app.json` `extra` before `eas build`. CI: populate `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRET_KEY` repo secrets. The `DISTRIBUTE_ENABLED` env auto-evaluates `true`, distribution steps fire, mobile clients fetch + verify + dispatch normally.
+4. **The .aab is still built on tag push.** Gate covers only post-build distribution steps (bundletool extract + manifest sign + MinIO upload). The signed .aab artifact URL still prints in the EAS step output and is downloadable via `curl` for manual sideload — exactly the loop already documented in `.planning/STATE.md` §Pending user-actions (Plan 07-03 Tasks 5+6).
+5. **ADR + STATE discipline is preserved.** Phase 8 didn't get reverted, archived, or hidden behind "we'll figure it out later". It's documented as parked, with explicit promotion triggers and a 1-step re-enable recipe. Future-me reading this in 6 months has a clear picture.
+
+**v1.0.1 backlog entry:** `DISTRIBUTION-PIPELINE-RE-ENABLE` — promote Phase 8 distribution pipeline from gated to active when ANY of:
+1. **Tester base passes ~20 active users.** DM-with-link starts hitting "did everyone update" overhead; signed-manifest auto-update becomes worth the operational complexity.
+2. **Forced upgrade becomes operationally needed.** E.g., backend breaking change requires `min_supported_version` enforcement; the `useForceUpdateStore` + `min_supported_version` field exists in code but is inert while gated.
+3. **MinIO (or equivalent S3-compatible object store) provisioned on the user's own infra.** Until then, there's no public endpoint to host `manifest.json`. Setting `EXPO_PUBLIC_UPDATE_MANIFEST_URL` to a non-existent URL would result in silent fetch failures + `__DEV__` warns — strictly worse than the current `state:'disabled'` short-circuit.
+4. **Transition to broader distribution OUTSIDE Play Store.** E.g., open public beta with a landing page. Play Store has its own update mechanism; this pipeline is for self-hosted distribution.
+
+Promotion path: (a) populate `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRET_KEY` repo secrets (CI side automatically flips `DISTRIBUTE_ENABLED` to `true` on next tag push), (b) configure mobile env `EXPO_PUBLIC_UPDATE_MANIFEST_URL` to match MinIO public-read bucket URL, (c) cut a new beta tag — distribution + auto-update fire end-to-end. No code changes required.
+
+**Files affected by Amendment 5:**
+
+- `apps/mobile-rn/src/update/manifestCheck.ts` — `MANIFEST_URL` const → `getManifestUrl()` reading `process.env.EXPO_PUBLIC_UPDATE_MANIFEST_URL ?? ''`; new `{state:'disabled'}` early return at top of `checkForUpdate`.
+- `apps/mobile-rn/src/update/__tests__/manifestCheck.test.ts` — `beforeEach` injects test URL to keep existing 11 dispatch tests passing; new `gated (ADR-0011 Amendment 5)` describe-block with 2 new tests for empty/unset env. 638/638 green.
+- `apps/mobile-rn/src/navigation/screens/me/SettingsScreen.tsx` — `handleCheckUpdate` surfaces toast «Проверка обновлений отключена» on `disabled` state.
+- `.github/workflows/android-release.yml` — job-level `env.DISTRIBUTE_ENABLED` derived from `secrets.MINIO_RELEASES_ACCESS_KEY != ''`; 4 step-level `if: env.DISTRIBUTE_ENABLED == 'true'` gates (bundletool install + .aab download + manifest-signing decrypt + release distribute).
+- `.planning/STATE.md` — Plan 08-01 status row updated to `code-complete, runtime-disabled (gated)`; Performance Metrics timeline gains 2026-05-24 PM entry recording the gate landing.
+- `.planning/ROADMAP.md` — v1.0.1 backlog gains `DISTRIBUTION-PIPELINE-RE-ENABLE` entry. (Done as part of this amendment landing commit.)
+
+**Files NOT touched by Amendment 5:**
+
+- `apps/mobile-rn/src/update/manifestSigning.ts`, `manifestSchema.ts`, `updateBannerStore.ts`, `updateCheckStore.ts`, `useUpdateCheckOnForeground.ts`, `UpdateBanner.tsx`, `semverLite.ts` — all stay live + jest-exercised + tsc-clean. No gating at these layers; the single gate at `manifestCheck.ts` entry is enough.
+- `scripts/release-distribute.sh`, `scripts/sign-manifest.go`, `scripts/verify-manifest.go` — stay in the repo. They only execute when `release-distribute.sh` is invoked, which only happens inside the gated workflow step. No need to gate or move.
+- `.secrets/prod/manifest-signing.yaml` — stays SOPS-encrypted in repo. Ed25519 keypair already generated (commit `af6cb5f`); decrypt step is gated, no risk of accidental decrypt on tag push with gate off.
+- `.planning/phases/08-closed-beta-distribution/*` — all planning artifacts (CONTEXT, RESEARCH, PLAN, PLAN-CHECK) stay as-written. Preserves audit trail + makes promotion trivial.
+
+**Re-expansion trigger for THIS amendment:** any of the 4 `DISTRIBUTION-PIPELINE-RE-ENABLE` v1.0.1 backlog triggers above. At that point, re-enable is a 3-step config change (no code rewrite); Plan 08-01 promotes from "code-complete, gated" to "fully closed" via a 08-01-SUMMARY.md write + STATE.md status flip.
+
