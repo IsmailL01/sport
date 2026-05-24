@@ -70,6 +70,25 @@ jobs:
         working-directory: apps/mobile-rn
         run: npm ci
 
+      - name: Generate debug keystore
+        # build.gradle signingConfigs.debug references app/debug.keystore at a
+        # gitignored path (apps/mobile-rn/.gitignore:57). Recreate with standard
+        # Android defaults so :app:validateSigningDebug passes. The resulting
+        # cert SHA-256 differs from local-dev keystores — that's fine for
+        # BlueStacks/internal testers; Mapbox `pk.*` runtime tiles may show
+        # blank since the dev token is cert-restricted (per ADR-0006), but the
+        # APK installs + launches.
+        working-directory: apps/mobile-rn/android
+        run: |
+          keytool -genkeypair -v \
+            -keystore app/debug.keystore \
+            -storepass android \
+            -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
       - name: Build debug APK (universal ABI + JS bundle embedded)
         working-directory: apps/mobile-rn/android
         run: |
