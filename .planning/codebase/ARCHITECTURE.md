@@ -1,330 +1,430 @@
-<!-- refreshed: 2026-05-23 -->
+<!-- refreshed: 2026-05-24 -->
 # Architecture
 
-**Analysis Date:** 2026-05-23
+**Analysis Date:** 2026-05-24
 
 ## System Overview
 
+Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`apps/mobile-rn/`) plus a Go backend split into eight services (`services/backend/`) fronted by Caddy. Infrastructure-as-code (`infra/`), CI workflows (`.github/workflows/`), release tooling (`scripts/`), and SOPS-encrypted secrets (`.secrets/`) live at the repo root. Mobile follows domain-driven layering with adapter abstractions for every platform integration (map, location, sensors, notifications, media, realtime, health); backend follows the standard Go `cmd/` + `internal/{handler,service,repository,domain}` per-service layout.
+
 ```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│                        Mobile Client (Expo RN)                            │
-│                        `apps/mobile-rn/App.tsx`                           │
-├───────────────────┬────────────────────┬─────────────────────────────────┤
-│  UI / Navigation  │    State Stores    │  Domain (pure, no platform)     │
-│  React Navigation │  Zustand + MMKV    │  SessionManager, AreaCalculator │
-│  `src/ui/`        │  `src/state/`      │  `src/domain/`                  │
-│  `src/navigation/`│                    │                                 │
-└────────┬──────────┴──────────┬─────────┴──────────────────┬──────────────┘
-         │                     │                            │
-         ▼                     ▼                            ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                       Adapter Layer (interfaces)                          │
-│  LocationAdapter `src/location/`   MapAdapter (MapboxView) `src/map/`    │
-│  SensorAdapter   `src/sensors/`    HealthAdapter `src/health/`           │
-│  RealtimeAdapter `src/realtime/`   NotificationsAdapter `src/notifications/`│
-│  MediaAdapter    `src/media/`                                            │
-└────────┬──────────────────────┬──────────────────────────┬───────────────┘
-         │                      │                          │
-         ▼                      ▼                          ▼
-┌────────────────────┐  ┌────────────────────┐   ┌────────────────────────┐
-│ Native / Platform  │  │  Local Persistence  │   │  HTTP / WebSocket API  │
-│ expo-location,     │  │  expo-sqlite (WAL), │   │  apiClient → Go        │
-│ expo-task-manager, │  │  MMKV (settings),   │   │  backend (services/)   │
-│ @rnmapbox/maps,    │  │  expo-secure-store  │   │                        │
-│ expo-notifications │  │  (tokens)           │   │                        │
-└────────────────────┘  └─────────────────────┘   └────────┬───────────────┘
-                                                            │
-                                                            ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                  Backend (Go monorepo, services/backend/)                 │
-│                                                                            │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐    │
-│  │ identity │ │activity- │ │messaging │ │  feed    │ │ notifications│    │
-│  │ :8081    │ │ sync     │ │ :8084    │ │ :8086    │ │ :8087        │    │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └──────┬───────┘    │
-│       │            │            │            │              │              │
-│  ┌────┴────┐ ┌─────┴────┐ ┌─────┴────┐ ┌────┴─────┐ ┌──────┴───────┐    │
-│  │  media  │ │realtime- │ │  social- │ │ gateway  │ │   pkg/       │    │
-│  │         │ │ gw       │ │  graph   │ │ (admin)  │ │  (shared)    │    │
-│  └─────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────────┘    │
-│                                                                            │
-│  Each service: cmd/server/main.go → internal/{handler,service,             │
-│  repository,domain} (clean architecture per Go DDD conventions)            │
-└──────────────────────────────────────────────────────────────────────────┘
-         │                                                  │
-         ▼                                                  ▼
-┌──────────────────────┐                  ┌──────────────────────────────┐
-│ Postgres (per-service │                  │ Observability VPS            │
-│ migrations in         │                  │ Loki + Prometheus + Grafana  │
-│ services/backend/     │                  │ `infra/observability-stack/` │
-│ migrations/)          │                  │ + Grafana Alloy log shipper  │
-│ NATS (events)         │                  │ + DebugSessionMiddleware     │
-└──────────────────────┘                  └──────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          Mobile (Expo RN)                                │
+│                       `apps/mobile-rn/App.tsx`                           │
+│                                  │                                       │
+│   ┌──────────────────────────────┴──────────────────────────────────┐   │
+│   │  UI / screens / design system                                    │   │
+│   │  `src/ui/`, `src/navigation/screens/`, `src/design/`             │   │
+│   └──────────────────────────────┬──────────────────────────────────┘   │
+│                                  │ (Zustand selectors)                   │
+│   ┌──────────────────────────────┴──────────────────────────────────┐   │
+│   │  State (Zustand + MMKV persist)                                  │   │
+│   │  `src/state/`                                                    │   │
+│   └────────────┬──────────────────┬───────────────────────┬─────────┘   │
+│                │                  │                       │              │
+│                ▼                  ▼                       ▼              │
+│   ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐ │
+│   │ Domain (pure TS)   │ │ Pipeline (filters) │ │ Adapters           │ │
+│   │ `src/domain/`      │ │ `src/pipeline/`    │ │ map/, location/,   │ │
+│   │                    │ │                    │ │ sensors/, etc.     │ │
+│   └─────────┬──────────┘ └─────────┬──────────┘ └─────────┬──────────┘ │
+│             └────────────┬─────────┴────────────┬─────────┘            │
+│                          ▼                      ▼                       │
+│              ┌─────────────────────┐  ┌─────────────────────┐          │
+│              │ Storage (SQLite)    │  │ Sync / Realtime     │          │
+│              │ `src/storage/`      │  │ `src/sync/`, WS     │          │
+│              └──────────┬──────────┘  └──────────┬──────────┘          │
+└─────────────────────────┼─────────────────────────┼─────────────────────┘
+                          │                         │
+                          ▼                         ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│             Backend (Go) — `services/backend/`                           │
+│             Caddy reverse proxy `services/backend/gateway/`              │
+│  identity │ activity-sync │ feed │ social-graph │ messaging │            │
+│  realtime-gw │ notifications │ media  (each: cmd/server/main.go +        │
+│                                              internal/{handler,service,  │
+│                                              repository,domain})          │
+└──────┬──────────────┬──────────────┬──────────────┬──────────────┬──────┘
+       ▼              ▼              ▼              ▼              ▼
+  PostgreSQL+    Redis        NATS          MinIO          Sentry SaaS
+  TimescaleDB                JetStream      (S3-compatible
+                                             object storage)
 ```
 
 ## Component Responsibilities
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| App root | Polyfills, Mapbox token init, ThemeProvider, ErrorBoundary, RootNavigator | `apps/mobile-rn/App.tsx` |
-| RootNavigator | Auth gate, push deep-link routing, realtime/push/sync lifecycle | `apps/mobile-rn/src/navigation/RootNavigator.tsx` |
-| SessionManager | Pure imperative session lifecycle (start/pause/resume/ingest/markLap/stop) | `apps/mobile-rn/src/domain/session/SessionManager.ts` |
-| useActivityStore | Zustand wrapper over SessionManager; cross-cutting wallet/records/calories orchestration | `apps/mobile-rn/src/state/activity.ts` |
-| LocationAdapter | Interface for GPS sensor (start/stop/sampling mode); only expo-location-impl | `apps/mobile-rn/src/location/LocationAdapter.ts` |
-| ExpoLocationAdapter | TaskManager-based background GPS task; calls `ingestRawPoint` from activity store | `apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts` |
-| Pipeline | Composes filters (Accuracy → Kalman → Jump → MinSegment); first null prunes point | `apps/mobile-rn/src/pipeline/Pipeline.ts` |
-| MapboxView | Sole entry-point to @rnmapbox/maps; nothing else may import the SDK | `apps/mobile-rn/src/map/MapboxView.tsx` |
-| SQLite database | Singleton, migration runner with `PRAGMA user_version` (v19 current) | `apps/mobile-rn/src/storage/database.ts` |
-| Repositories | Per-aggregate persistence (session, point, lap, sensor, records, wallet, social) | `apps/mobile-rn/src/storage/*Repository.ts` |
-| Backend pkg | Shared Go packages (auth/JWT, observability, audit, ratelimit, featureflags, clientversion) | `services/backend/pkg/` |
-| Identity service | OAuth + JWT issuance, OTP, feature flags endpoint | `services/backend/identity/` |
-| Realtime-gw | WebSocket fanout subscribed to NATS for chat/XP events | `services/backend/realtime-gw/` |
-| Observability stack | Loki + Prometheus + Grafana colocated on `srv1561293`, Caddy ingress | `infra/observability-stack/docker-compose.yml` |
-| Ansible deploy | Bootstraps app VPS (docker, ufw, sport-stack) + alloy-shipper to obs VPS | `infra/ansible/site.yml` |
+| Mobile root | Bootstrap polyfills, side-effects, ErrorBoundary, providers; mount Plan 07-03 + Plan 08-01 hooks | `apps/mobile-rn/App.tsx` |
+| Expo registration | Single `registerRootComponent(App)` call | `apps/mobile-rn/index.ts` |
+| Root navigator | Auth gate, push deep-link, realtime/push/wallet bootstrap on auth | `apps/mobile-rn/src/navigation/RootNavigator.tsx` |
+| Session manager | Pure state machine for an active recording session | `apps/mobile-rn/src/domain/session/SessionManager.ts` |
+| Activity store | Zustand wrapper over SessionManager + cross-cutting orchestration | `apps/mobile-rn/src/state/activity.ts` |
+| GPS pipeline | Composable filter chain (Accuracy/Jump/Kalman/MinSegment/PauseDetector) | `apps/mobile-rn/src/pipeline/Pipeline.ts` + `src/pipeline/filters/*` |
+| Map adapter | Single Mapbox boundary; never imported outside `src/map/` | `apps/mobile-rn/src/map/index.ts`, `MapboxView.tsx` |
+| Location adapter | Sensor-agnostic location source (Expo impl in `adapters/`) | `apps/mobile-rn/src/location/LocationAdapter.ts` |
+| Sensor adapter | BLE HR/Power/Cadence + mock | `apps/mobile-rn/src/sensors/SensorAdapter.ts` |
+| Foreground notification | Sticky Android notification subscribed to activity store | `apps/mobile-rn/src/foreground/notification.ts` |
+| Vendor (OEM) | Detect Xiaomi/Samsung/Huawei + deep-link to autostart settings | `apps/mobile-rn/src/vendor/oem.ts`, `openOEMSettings.ts`, `AutostartDialog.tsx` |
+| Update flow | Manifest fetch + Ed25519 verify + 3-state dispatch | `apps/mobile-rn/src/update/manifestCheck.ts` and siblings |
+| Storage layer | Per-aggregate repositories over expo-sqlite | `apps/mobile-rn/src/storage/*Repository.ts` |
+| API client | Fetch wrapper with 426 force-update interception | `apps/mobile-rn/src/auth/apiClient.ts` |
+| Backend gateway | Caddy reverse proxy + admin static UI | `services/backend/gateway/Caddyfile`, `Caddyfile.prod` |
+| Backend services | 8 independent Go binaries under `services/backend/<svc>/cmd/server/main.go` | identity, activity-sync, feed, social-graph, messaging, realtime-gw, notifications, media |
+| Shared Go packages | Cross-service helpers (auth, ratelimit, observability, audit, …) | `services/backend/pkg/*` |
+| OpenAPI contracts | Per-service YAML + `_shared/{parameters,schemas,responses}.yaml` | `services/backend/api/*.yaml` |
+| DB migrations | Numbered `000N_*.up/down.sql` for Postgres + TimescaleDB | `services/backend/migrations/` |
+| Release pipeline | Tag-triggered EAS build + MinIO distribute + Ed25519 manifest sign | `.github/workflows/android-release.yml`, `scripts/release-distribute.sh` |
 
 ## Pattern Overview
 
-**Overall:** Hexagonal / Ports-and-Adapters layered on top of Domain-Driven Design. Mobile is a single Expo RN app with strict adapter pattern around every platform/SDK boundary. Backend is a Go microservice monorepo where each service follows the same handler → service → repository → domain layering.
+**Overall:** Domain-driven design with a strict adapter boundary for every platform/external dependency. Mobile is offline-first; multi-tenant from day 1 (every persisted row carries `user_id`). Backend is a service-per-bounded-context Go monorepo behind a single Caddy reverse proxy.
 
 **Key Characteristics:**
-- **Adapter discipline:** Mapbox, expo-location, BLE, push, media, WebSocket each sit behind a TypeScript interface; concrete SDKs may only be imported inside `src/<name>/adapters/` (enforced by ESLint `no-restricted-imports` for `@rnmapbox/maps`).
-- **Domain purity:** `src/domain/` has zero React / Mapbox / SQLite imports. `SessionManager` receives its dependencies (`SessionRepo`, `LocationAdapter`, filters) by constructor injection.
-- **Offline-first:** SQLite is the source of truth; sync engine (`src/sync/syncEngine.ts`) push/pulls via outbox pattern. Token storage in `expo-secure-store`; settings/feature flags in MMKV with TTL guards.
-- **Multi-tenant from day 1:** `user_id` is a column in every backend Postgres table and in every social/wallet/messages table in the SQLite schema (see migrations `services/backend/migrations/` + `src/storage/database.ts` schema notes v8-v19).
-- **Sensor-agnostic GPS:** `LocationAdapter` exposes `SamplingMode` (`active` | `paused` | `background-slc`); the pipeline does not know which sensor produced the point.
+- Sensor-agnostic GPS — all location input flows through `LocationAdapter`; no direct Expo/Mapbox calls in domain or pipeline code.
+- Single point of Mapbox import (`src/map/`); enforced by repo convention (see `CLAUDE.md`).
+- Pure domain layer (`src/domain/`) — no React, no Expo, no storage imports; only TypeScript + math.
+- State stores wrap domain — Zustand stores hold snapshots derived from domain objects (e.g., `useActivityStore` wraps `SessionManager`); UI selects from stores.
+- Per-service Go layout — `cmd/server/main.go` boots; `internal/handler` exposes HTTP; `internal/service` orchestrates; `internal/repository` persists; `internal/domain` holds entities.
+- Tag-driven distribution — git tag `v1.0.0-beta.*` / `v1.0.0-rc.*` is the only release trigger; manifest signed in CI; mobile verifies on every foreground.
 
 ## Layers
 
-**Domain layer:**
-- Purpose: Pure business logic — value objects, entities, calculations, session lifecycle
-- Location: `apps/mobile-rn/src/domain/` (mobile), `services/backend/<svc>/internal/domain/` (Go services)
-- Contains: `SessionManager`, `AreaCalculator`, `ClosureDetector`, `calories`, `records`, `currency`, `streak`, `types`, athlete, lap, splits
-- Depends on: nothing platform-specific; only stdlib + other domain modules
-- Used by: state stores (mobile), service-layer code (backend)
+**Mobile — UI Layer (`apps/mobile-rn/src/ui/` + `src/navigation/screens/` + `src/design/`):**
+- Purpose: Render screens, components, design-system primitives.
+- Depends on: state stores, design tokens, navigation types.
+- Used by: `RootNavigator`.
 
-**Pipeline layer (mobile):**
-- Purpose: GPS data refinement (filters composed in order)
-- Location: `apps/mobile-rn/src/pipeline/`
-- Contains: `Pipeline.ts`, `Filter.ts`, `filters/AccuracyFilter.ts`, `filters/KalmanFilter.ts`, `filters/JumpFilter.ts`, `filters/MinSegmentFilter.ts`, `filters/PauseDetector.ts`
-- Depends on: `domain/types` (RawPoint, Point) only
-- Used by: `SessionManager` and `state/activity.ts`
+**Mobile — Design system (`apps/mobile-rn/src/design/`):**
+- Purpose: Cursona tokens, ThemeProvider, atomic components (Card, Button, FAB, TopBar, Avatar, …).
+- Used by: every UI + screen file.
 
-**Adapter layer (mobile):**
-- Purpose: Platform abstraction (port = interface, adapter = concrete impl)
-- Location: `apps/mobile-rn/src/{location,map,sensors,realtime,notifications,media,health}/`
-- Contains: One `*Adapter.ts` interface file per area + `adapters/` subdir with concrete classes
-- Depends on: domain types + Expo/RN SDKs (only inside `adapters/`)
-- Used by: state stores and screens; SDK imports are walled off from the rest of `src/`
+**Mobile — State Layer (`apps/mobile-rn/src/state/`):**
+- Purpose: Zustand stores; some MMKV-persisted (`featureflags`, `settings`, `updateBannerStore`, `updateCheckStore`), some in-memory (`forceUpdate`, `activity`, `sync`).
+- Convention: One MMKV instance per persistent store (`createMMKV({ id: '...' })`); JSON storage adapter via `createJSONStorage`.
+- Depends on: domain, adapters, storage.
 
-**State layer (mobile):**
-- Purpose: Zustand stores hold UI snapshots, coordinate side effects, persist via MMKV where needed
-- Location: `apps/mobile-rn/src/state/`
-- Contains: `activity`, `auth`, `sync`, `settings`, `featureflags`, `history`, `training`, `wallet`, `workoutPlayer`, `sensors`, `social/`, `map`, `forceUpdate`
-- Depends on: domain + storage + adapters
-- Used by: UI components and navigation
+**Mobile — Domain Layer (`apps/mobile-rn/src/domain/`):**
+- Purpose: Pure entities + value objects: `Point`, `Lap`, `PersonalRecord`, `WorkoutSession`, `AreaCalculator`, `ClosureDetector`, `splits`, `tss`, `vo2max`, `banister`, `racePredictor`, `lthr`, `hrZoneBreakdown`, `streak`, `calories`, `metrics`, `currency`, `walletDomain`, `social`, `gpx`, `records`, `recordsFormat`, `stats`, `athlete`, `sensorAssociation`. Subfolders: `session/SessionManager.ts` (state machine), `training/` (planner + analytics).
+- Depends on: nothing platform-specific.
+- Used by: state, pipeline, sometimes UI for formatting.
 
-**Storage layer (mobile):**
-- Purpose: SQLite persistence, one repository per aggregate
-- Location: `apps/mobile-rn/src/storage/`
-- Contains: `database.ts` (singleton + migrations v1-v19), `sessionRepository`, `pointRepository`, `lapRepository`, `sensorRepository`, `recordsRepository`, `relationsRepository`, `walletRepository`, `socialRepository`
-- Depends on: `expo-sqlite` + domain types
-- Used by: state stores; never by UI directly
+**Mobile — Pipeline Layer (`apps/mobile-rn/src/pipeline/`):**
+- Purpose: Composable GPS filters. `Pipeline.ts` chains `Filter[]`; concrete filters in `filters/`: `AccuracyFilter`, `JumpFilter`, `KalmanFilter`, `MinSegmentFilter`, `PauseDetector`.
+- Depends on: domain types.
+- Used by: `useActivityStore` via `createDefaultPipeline()`.
 
-**UI layer:**
-- Purpose: React Native components and screens
-- Location: `apps/mobile-rn/src/ui/`, `apps/mobile-rn/src/navigation/`, `apps/mobile-rn/src/design/`
-- Contains: Modals (HistoryModal, ProfileModal, …), screens (`navigation/screens/` per tab: auth/chats/journal/me/record), design system in `src/design/` (ThemeProvider + tokens + reusable components)
-- Depends on: state stores + design tokens
-- Used by: App.tsx root
+**Mobile — Adapter Layer (`apps/mobile-rn/src/{map,location,sensors,notifications,media,realtime,health}/`):**
+- Purpose: Boundary between platform/SDK code and the rest of the app. Each module exposes an interface and one or more `adapters/` implementations.
+- Pattern: `<Domain>Adapter.ts` interface + `adapters/<Concrete>Adapter.ts` impls + `index.ts` factory/setter.
+- Examples:
+  - `src/map/index.ts` exports `setMapboxAccessToken`; only `MapboxView.tsx` imports Mapbox SDK.
+  - `src/location/LocationAdapter.ts` interface + `adapters/ExpoLocationAdapter.ts`.
+  - `src/realtime/RealtimeAdapter.ts` + `adapters/WebSocketRealtimeAdapter.ts` + `adapters/MockRealtimeAdapter.ts`.
+  - `src/health/` — five concrete adapters: `HealthConnectAdapter`, `HealthKitAdapter`, `StravaAdapter`, `MockHealthAdapter`.
 
-**Backend per-service layering (Go):**
-- `cmd/server/main.go` — wires env config, opens pgx pool, builds middleware chain (DebugSession → Promhttp → SentryRecovery → OtelHTTP → clientversion → mux), serves HTTP
-- `internal/handler/` — HTTP handlers + router
-- `internal/service/` — business logic, transactions
-- `internal/repository/` — interface + `postgres/` impl + `memory/` impl for tests
-- `internal/domain/` — pure entities (User, RefreshToken, …)
+**Mobile — Storage Layer (`apps/mobile-rn/src/storage/`):**
+- Purpose: Per-aggregate repositories over expo-sqlite (`database.ts` initialises connection). Files: `sessionRepository`, `pointRepository`, `lapRepository`, `sensorRepository`, `recordsRepository`, `relationsRepository`, `walletRepository`, `socialRepository`.
+- Multi-tenant: every table has `user_id` column.
+
+**Mobile — Foreground / Vendor / Update (`apps/mobile-rn/src/foreground/`, `src/vendor/`, `src/update/`):**
+- Purpose: Three small, focused subsystems wired into the app root (`foreground`, `update`) or surfaced from screens (`vendor`).
+- See dedicated sections below.
+
+**Mobile — Auth (`apps/mobile-rn/src/auth/`):**
+- Purpose: `apiClient.ts` (fetch wrapper, 426 interception), `authProviders.ts` (Google/Apple/Email), `tokenStorage.ts` (secure-store).
+
+**Mobile — Sync (`apps/mobile-rn/src/sync/`):**
+- Purpose: `syncEngine.ts` orchestrates upload of pending sessions; `mediaUpload.ts` chunks media; `messageSync.ts` reconciles chat backlog.
+
+**Mobile — Modules (`apps/mobile-rn/src/modules/`):**
+- Purpose: Cross-cutting feature bundles that own their own state/domain/sync/ui: `gamification/`, `moderation/`, `permissions/`. Mini-DDD inside each module.
+
+**Backend — Service Layer (`services/backend/<svc>/`):**
+- Purpose: Each of the 8 services is an independent binary. Layout per service: `cmd/server/main.go` (boot), `internal/handler/` (HTTP), `internal/service/` (business), `internal/repository/` (Postgres + in-memory test impls), `internal/domain/` (entities).
+- Services: `identity`, `activity-sync`, `feed`, `social-graph`, `messaging`, `realtime-gw`, `notifications`, `media`.
+
+**Backend — Shared (`services/backend/pkg/`):**
+- Purpose: Cross-cutting utilities: `auth`, `ratelimit`, `observability`, `audit`, `clientversion`, `gamification`, `permissions`, `featureflags`.
+
+**Backend — Gateway (`services/backend/gateway/`):**
+- Purpose: `Caddyfile` + `Caddyfile.prod` reverse-proxy routes; `admin/index.html` static admin UI.
+
+**Backend — API contracts (`services/backend/api/`):**
+- Purpose: OpenAPI specs (one YAML per service) + `_shared/` reusable parameters/schemas/responses + `redocly.yaml` bundling config. Drift gate script: `services/backend/scripts/openapi-routes-check/`.
+
+**Backend — Deploy (`services/backend/deploy/helm/`):**
+- Purpose: Helm chart skeleton (currently only `identity/` chart materialised; others pending).
+
+**Backend — Observability (`services/backend/observability/`):**
+- Purpose: Prometheus scrape config (`prometheus.yml` + `.j2` template), Loki, Grafana datasources, dashboards.
 
 ## Data Flow
 
-### Primary GPS Recording Path
+### Primary recording session path
 
-1. User taps "Start" → `useActivityStore.start()` invokes `SessionManager.start()` (`apps/mobile-rn/src/state/activity.ts`, `apps/mobile-rn/src/domain/session/SessionManager.ts`)
-2. SessionManager calls `locationAdapter.start()` → `ExpoLocationAdapter` registers/updates the `BACKGROUND_LOCATION_TASK` via `expo-task-manager` (`apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts:80-92`)
-3. expo-location pushes `LocationObject` to the headless task callback; adapter converts to `RawPoint` and calls `ingestRawPoint(...)` exported from `state/activity.ts`
-4. `ingestRawPoint` runs the raw point through `Pipeline.process(raw)` (Accuracy → Kalman → Jump → MinSegment) (`apps/mobile-rn/src/pipeline/Pipeline.ts:35-46`)
-5. If accepted, `PauseDetector` is consulted as a sidecar; on event, `setSamplingMode('paused' | 'active')` toggles GPS profile without stop/start gap
-6. Accepted point appended to `manager.points` buffer; every 10 points it flushes to SQLite via `pointRepository.appendPoints()` (`apps/mobile-rn/src/storage/pointRepository.ts`)
-7. UI selectors (`useActivityStore(s => s.points)`) re-render `TrackLayer` (`src/map/components/TrackLayer.tsx`) which uses a Mapbox `LineLayer + GeoJsonSource` — never `PolylineAnnotation` (CLAUDE.md constraint)
+1. User opens TrackerStartScreen (`apps/mobile-rn/src/navigation/screens/record/TrackerStartScreen.tsx`).
+2. `useActivityStore.startSession()` boots `SessionManager` (`src/domain/session/SessionManager.ts`); pipeline (`createDefaultPipeline()` in `src/pipeline/`) is constructed.
+3. `LocationAdapter` (`src/location/adapters/ExpoLocationAdapter.ts`) emits raw `Point` → pipeline filters → `Point` accepted into `useActivityStore.state.points`.
+4. `subscribeToRecordingTick()` (mounted in `App.tsx`) detects `state === 'recording'` transition and starts a 5s `setInterval` posting the sticky Android notification with duration + distance (`src/foreground/notification.ts`).
+5. Map renders track via `LineLayer + GeoJsonSource` only (no `PolylineAnnotation`); components in `src/map/components/{TrackLayer,CorridorLayer,ZoneLayer,HistoryTerritoryLayer,LocationPuckLayer}.tsx`.
+6. User stops: `useActivityStore.stopSession()` calls `manager.stop()`, then orchestrates wallet/records/calories follow-ups, persists laps + points via `src/storage/{lapRepository,pointRepository,sessionRepository}.ts`.
+7. `useSyncStore.pullDown()` (and matching push) pushes the session to backend `activity-sync` service via `apiClient`.
 
-### Session Finalization Path
+### Update-check path (Plan 08-01)
 
-1. `SessionManager.stop()` computes total distance, area (via `AreaCalculator` with local-plane projection), HR aggregates (`sensorRepository.aggregateHrForSession`)
-2. `finalizeSession()` writes the closed row to SQLite (`apps/mobile-rn/src/storage/sessionRepository.ts`)
-3. Wrapper in `state/activity.ts` reads snapshot and orchestrates cross-cutting concerns: calories estimate (`domain/calories.estimateCaloriesBest`), new personal records (`domain/records.detectNewRecords`), wallet credit (`useWalletStore`)
-4. `useSyncStore.trigger()` later picks up un-synced sessions through the outbox pattern and POSTs to backend `activity-sync` service via `apiClient`
+1. `App.tsx` mounts `useUpdateCheckOnForeground()` (`src/update/useUpdateCheckOnForeground.ts`) on first render — fires once immediately and subscribes to `AppState.addEventListener('change')` for every `'active'` transition.
+2. `checkForUpdate()` (`src/update/manifestCheck.ts`) enforces 6h throttle via `useUpdateCheckStore.lastCheckedAt`.
+3. `fetch('https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json')` → JSON parsed by `parseManifest()` (`manifestSchema.ts`).
+4. `verifyManifestSignature()` (`manifestSigning.ts`) re-canonicalises alphabetical struct + verifies Ed25519 with embedded `EXPO_PUBLIC_MANIFEST_PUBLIC_KEY`.
+5. Replay protection: reject if `released_at < installedReleasedAt` (persisted baseline in `useUpdateCheckStore`).
+6. Dispatch on version comparison (`semverLite.gt`):
+   - `min_supported_version > installed` → `useForceUpdateStore.set({ required: true, ... })` → REL-02 `ForceUpdateScreen` Modal renders (REUSE 1:1 from Phase 1).
+   - `version > installed` → `useUpdateBannerStore.setState({ available: true, manifest, ... })` → `UpdateBanner.tsx` shows non-blocking banner.
+   - Otherwise → silent no-op.
+7. On failure: silent (console.warn in `__DEV__` only); `useUpdateCheckStore.lastError` updated.
 
-### Auth + API Path
+### Vendor / autostart path (Plan 07-03)
 
-1. Login screen calls `apiClient.post('/auth/...')` → identity service `:8081`
-2. JWT pair returned; access stored in memory state, refresh stored in `expo-secure-store` via `src/auth/tokenStorage.ts`
-3. `apiClient` (`src/auth/apiClient.ts`) attaches `Authorization: Bearer <access>`, transparently refreshes on 401, surfaces 426 → `useForceUpdateStore.setState({ required: true })` so `ForceUpdateScreen` displays a blocking modal
-4. Backend `clientversion.Middleware` (`services/backend/pkg/clientversion/`) returns 426 when client version is below `CLIENT_MIN_VERSION` env
+1. TrackerStartScreen renders `<AutostartDialog />` (`src/vendor/AutostartDialog.tsx`).
+2. Dialog one-shot guarded by MMKV flag in `useSettingsStore` — only shown until user dismisses/acts.
+3. On accept → `openOEMAutoStartSettings()` (`src/vendor/openOEMSettings.ts`): detect vendor via `detectVendor()` (`src/vendor/oem.ts` → `Device.manufacturer`); fire vendor-specific intent (`miui.intent.action.APP_PERM_EDITOR`, `com.samsung.android.sm.ACTION_BATTERY`, etc.) via `expo-intent-launcher`; on failure fall back to `ActivityAction.APPLICATION_DETAILS_SETTINGS`.
 
-### Realtime / Push Path
+### Force-update path (Phase 1 REL-02; unchanged)
 
-1. After authenticated state, `RootNavigator` connects `useRealtimeStore.connect()` (`apps/mobile-rn/src/navigation/RootNavigator.tsx:59-95`)
-2. `WebSocketRealtimeAdapter` (`src/realtime/adapters/WebSocketRealtimeAdapter.ts`) opens WS to `realtime-gw` `:8085`
-3. realtime-gw subscribes to NATS topics; receives `message.new`, `user.xp.changed`, etc., fans out to authorized WS subscribers
-4. Push token registered via `expo-notifications` adapter; identity service stores token, `notifications` service uses Expo Push to fan out
+1. Backend response has HTTP `426 Upgrade Required` → `apiClient.ts` (`src/auth/apiClient.ts`) intercepts → `useForceUpdateStore.getState().set({ required: true, minVersion, forceUpdateUrl })`.
+2. `<ForceUpdateScreen />` mounted in `App.tsx` outside `RootNavigator` returns blocking full-screen Modal when `required === true`.
+3. Same store can also be set by `manifestCheck.ts` (manifest-driven path) — both code paths converge on identical UI.
+
+### Auth + realtime bootstrap path
+
+1. `RootNavigator` mounts → `useAuthStore.hydrate()` rehydrates tokens from secure storage.
+2. On `authState === 'authenticated'`: parallel kick-off — `useSyncStore.pullDown()` (sessions), `useModerationStore.fetchMyRole()`, `useWalletStore.hydrate(userId)`, `useRealtimeStore.connect(userId, accessToken, deviceID)` (WebSocket via `WebSocketRealtimeAdapter`), `useNotificationsStore.requestAndRegister()`.
+3. Push deep-link: `getNotificationsAdapter().onResponse((data) => navRef.navigate(...))`; routes `message.new` → Chats tab.
 
 **State Management:**
-- Zustand vanilla `create()` stores in `src/state/`
-- MMKV persist (`react-native-mmkv`) wraps settings + feature flags via `createJSONStorage`
-- Secure storage (`expo-secure-store`) for JWT refresh + OAuth tokens
-- SQLite (WAL mode, `running_ecosystem.db`) as authoritative store for sessions/points/laps/sensors/wallet/social-cache
-- Module-level singletons: `_db` in `src/storage/database.ts`, the single `SessionManager` in `src/state/activity.ts`, registered `TaskManager.defineTask` for background GPS
+- Zustand stores in `src/state/` (and per-module `src/modules/<m>/state/`).
+- Persistence: `react-native-mmkv` with `createJSONStorage` adapter; one MMKV id per persistent store.
+- In-memory only: `forceUpdate` (server re-issues 426 each request), `activity` (recovered via `SessionManager.recoverLast()`), `sync`.
 
 ## Key Abstractions
 
-**LocationAdapter:**
-- Purpose: Abstract GPS source (expo-location today, native module / mock later)
-- Examples: `apps/mobile-rn/src/location/LocationAdapter.ts`, `apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts`
-- Pattern: Port-and-Adapter with module-level singleton exported from `src/location/index.ts`
+**`MapAdapter` / `setMapboxAccessToken`:**
+- Purpose: Single Mapbox SDK boundary. Domain/pipeline code MUST NOT import `@rnmapbox/maps`.
+- Files: `apps/mobile-rn/src/map/index.ts`, `MapboxView.tsx`, `components/*Layer.tsx`, `offline.ts`.
+- Pattern: Boundary export — `setMapboxAccessToken(token: string): string | null`.
 
-**MapAdapter (de-facto: `MapboxView` boundary):**
-- Purpose: Single ingress to Mapbox SDK; SDK imports are physically confined to `src/map/`
-- Examples: `apps/mobile-rn/src/map/MapboxView.tsx`, `apps/mobile-rn/src/map/components/TrackLayer.tsx`, `apps/mobile-rn/src/map/index.ts`
-- Pattern: Façade + composed Layer components, all `@rnmapbox/maps` imports gated by ESLint rule
+**`LocationAdapter`:**
+- Purpose: Sensor-agnostic location source.
+- Files: `apps/mobile-rn/src/location/LocationAdapter.ts` (interface), `adapters/ExpoLocationAdapter.ts` (impl), `index.ts` (singleton accessor).
+- Pattern: Interface + concrete adapter + module-level `locationAdapter` singleton.
 
-**SensorAdapter:**
-- Purpose: BLE HR/cadence/power sensors
-- Examples: `apps/mobile-rn/src/sensors/SensorAdapter.ts`, `src/sensors/adapters/BleSensorAdapter.ts`, `src/sensors/adapters/MockSensorAdapter.ts`
-- Pattern: Listener-based async adapter (scan / connect / readings stream)
+**`SessionManager`:**
+- Purpose: Pure state machine for a recording session (idle → recording → paused → stopped).
+- Files: `apps/mobile-rn/src/domain/session/SessionManager.ts`.
+- Pattern: Owns mutable state; emits snapshots via `onChange` callback; `useActivityStore` wraps it and forwards snapshots into Zustand.
 
-**RealtimeAdapter:**
-- Purpose: WebSocket abstraction for chat + XP fanout
-- Examples: `apps/mobile-rn/src/realtime/RealtimeAdapter.ts`, `src/realtime/adapters/WebSocketRealtimeAdapter.ts`, `src/realtime/adapters/MockRealtimeAdapter.ts`
+**`Pipeline` + `Filter`:**
+- Purpose: Composable GPS filter chain.
+- Files: `apps/mobile-rn/src/pipeline/Pipeline.ts`, `Filter.ts`, `filters/*.ts`.
+- Pattern: Each filter implements `Filter` interface; `Pipeline` runs them sequentially; factory `createDefaultPipeline()`.
 
-**HealthAdapter:**
-- Purpose: External activity import from HealthKit / Health Connect / Strava
-- Examples: `apps/mobile-rn/src/health/HealthAdapter.ts`, `HealthKitAdapter.ts`, `HealthConnectAdapter.ts`, `StravaAdapter.ts`, `MockHealthAdapter.ts`
+**`SessionRepo` (storage):**
+- Purpose: Aggregated per-session persistence interface composed from per-aggregate repositories.
+- Files: built ad-hoc in `apps/mobile-rn/src/state/activity.ts` from `pointRepository` + `lapRepository` + `sessionRepository`.
 
-**SessionRepo (interface in domain layer):**
-- Purpose: Minimal storage contract that `SessionManager` needs — composed in state-layer wrapper from `sessionRepository + pointRepository + lapRepository + sensorRepository`
-- Examples: `apps/mobile-rn/src/domain/session/SessionManager.ts:39-60`
+**`useForceUpdateStore`:**
+- Purpose: Shared sink for both REL-02 (server 426) and Plan 08-01 (manifest-driven) force-update paths.
+- Files: `apps/mobile-rn/src/state/forceUpdate.ts` (39 lines; in-memory only).
 
-**Backend repository interfaces:**
-- Purpose: Postgres abstraction per service
-- Examples: `services/backend/identity/internal/repository/repository.go` (UserRepo, RefreshTokenRepo), with `postgres/` and `memory/` impls
+**`Manifest` (typed):**
+- Purpose: Validated, signed update manifest.
+- Files: `apps/mobile-rn/src/update/manifestSchema.ts` (parser + type), `manifestSigning.ts` (Ed25519 verify against canonical alphabetical JSON).
 
 ## Entry Points
 
-**Mobile:**
-- Location: `apps/mobile-rn/index.ts` → `registerRootComponent(App)` → `apps/mobile-rn/App.tsx`
-- Triggers: Expo runtime on app launch
-- Responsibilities: Polyfill `react-native-get-random-values`, set Mapbox token, set TTS adapter, kick feature-flag refresh, wrap tree in `ErrorBoundary` → `SafeAreaProvider` → `ThemeProvider` → `ToastProvider` → `RootNavigator` + `ForceUpdateScreen`
+**Mobile root — `apps/mobile-rn/App.tsx`:**
+- Triggered by: `registerRootComponent(App)` in `apps/mobile-rn/index.ts`.
+- Side-effects at module load:
+  - `import 'react-native-get-random-values'` polyfill (must precede `uuid`).
+  - `setMapboxAccessToken(process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN)`.
+  - `setSpeechAdapter(expoSpeechAdapter)`.
+  - `useFeatureFlagsStore.getState().refresh()` (fire-and-forget feature-flag pull).
+- Inside `App()`:
+  - `useEffect(() => subscribeToRecordingTick(), [])` — Plan 07-03 Task 2 foreground notification.
+  - `useUpdateCheckOnForeground()` — Plan 08-01 Task 5 manifest-driven update check.
+  - Renders `<ErrorBoundary><SafeAreaProvider><ThemeProvider><ToastProvider><StatusBar/><RootNavigator/><ForceUpdateScreen/></...></...></...></...></ErrorBoundary>`.
+- `<ForceUpdateScreen />` is mounted OUTSIDE `<RootNavigator />` so the blocking Modal renders over every navigation state.
 
-**Background GPS task:**
-- Location: `apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts` (`TaskManager.defineTask('BACKGROUND_LOCATION_TASK', ...)` at module top-level)
-- Triggers: expo-task-manager when `startLocationUpdatesAsync` is active and platform delivers updates (foreground service on Android, background mode on iOS)
-- Responsibilities: Convert each `LocationObject` → `RawPoint` → `ingestRawPoint()` (which runs pipeline + flushes to SQLite)
+**Mobile navigation root — `apps/mobile-rn/src/navigation/RootNavigator.tsx`:**
+- Triggered by: `App.tsx`.
+- Auth gate state machine: `idle | hydrating | authenticated | unauthenticated`.
+- On `authState === 'authenticated'`: hydrates wallet/role/sync, connects realtime, registers push.
 
-**Backend services (one entry per service):**
-- `services/backend/identity/cmd/server/main.go` — port `:8081`
-- `services/backend/activity-sync/cmd/server/main.go`
-- `services/backend/feed/cmd/server/main.go`
-- `services/backend/social-graph/cmd/server/main.go`
-- `services/backend/messaging/cmd/server/main.go`
-- `services/backend/notifications/cmd/server/main.go` (`:8087`)
-- `services/backend/realtime-gw/cmd/server/main.go`
-- `services/backend/media/cmd/server/main.go`
-- Each: reads env (`*_HTTP_ADDR`, `*_DB_URL`, `IDENTITY_JWT_SECRET`), opens `pgxpool`, builds middleware chain, registers `/metrics`, blocks until SIGINT/SIGTERM
+**Backend services — `services/backend/<svc>/cmd/server/main.go`:**
+- One `main.go` per service (8 total). Each boots HTTP server, wires handler→service→repository, registers Prometheus metrics from `services/backend/pkg/observability`.
+
+**Release pipeline — `.github/workflows/android-release.yml`:**
+- Triggered by: git tag push matching `v1.0.0-beta.*` or `v1.0.0-rc.*`.
+- 2-phase pipeline: (1) Plan 07-01 + ADR-0012 EAS build with SOPS-decrypted keystore; (2) Plan 08-01 distribution — bundletool extract universal APK → SOPS-decrypt `manifest-signing.yaml` → invoke `scripts/release-distribute.sh`.
+
+**Release distribute script — `scripts/release-distribute.sh`:**
+- Triggered by: workflow step in `android-release.yml`.
+- Orchestrates: `mc cp` APK to private `android-releases` bucket → presign 24h URL → `go run scripts/sign-manifest.go` (Ed25519 over alphabetical canonical JSON) → self-verify → `mc cp` manifest LAST to public-read `android-manifest` bucket → re-fetch + re-verify.
 
 ## Architectural Constraints
 
-- **Threading (mobile):** Single JS thread + native modules. The TaskManager GPS task runs headless (no React lifecycle) and must call store-level functions like `ingestRawPoint`, never React hooks.
-- **Threading (backend):** Goroutine-per-request via stdlib `net/http`; pgxpool is the only shared concurrency primitive; rate limiting in `pkg/ratelimit`.
-- **Global state (mobile):** `_db` singleton in `src/storage/database.ts:6`; module-level `SessionManager` in `src/state/activity.ts`; module-level Mapbox access-token side effect in `App.tsx`; one TaskManager task name (`BACKGROUND_LOCATION_TASK`).
-- **Mapbox isolation (hard rule):** ESLint `no-restricted-imports` forbids `@rnmapbox/maps` outside `src/map/` (`apps/mobile-rn/eslint.config.js`). The only allowed importer is `src/map/MapboxView.tsx` and `src/map/components/*`.
-- **No `:latest` Docker tag:** Backend CD pipeline enforces `flavor: latest=false` + a no-latest-tag-guard job (`.github/workflows/backend-cd.yml`).
-- **Area computation:** Never compute area on raw lat/lon — must project to local plane (CLAUDE.md + `src/domain/AreaCalculator.ts`).
-- **Track rendering:** Only `LineLayer + GeoJsonSource`, never `PolylineAnnotation` / `AnnotationManager` (CLAUDE.md, ТЗ §10.5).
-- **Multi-module Go monorepo:** Each backend service has its own `go.mod`; `services/backend/pkg/` is a separate module imported by replace-directive or path (see `services/backend/identity/go.mod`).
-- **Secrets:** SOPS+age-encrypted YAML in `.secrets/<env>/`; CI uses `SOPS_AGE_KEY_CI` secret; never commit plaintext (see `.sops.yaml`, ADR-0012).
+- **Threading (mobile):** Single JS thread (React Native bridge). Background work pushed to native modules: BLE sensors via `BleSensorAdapter`, location via Expo's native task, notifications via expo-notifications. Foreground service notification on Android keeps the JS thread alive during recording (`src/foreground/notification.ts`).
+- **Global state (mobile):** Module-level singletons — `locationAdapter` (`src/location/index.ts`), `mediaAdapter`, `realtimeAdapter`, `notificationsAdapter`, `manager` (the `SessionManager` instance in `src/state/activity.ts`), `tickIntervalHandle` (`src/foreground/notification.ts`). The activity SessionManager is the central single-source-of-truth for a recording.
+- **Mapbox boundary:** `@rnmapbox/maps` may ONLY be imported under `src/map/`. Enforced by convention (see `CLAUDE.md` "Что НЕ делать никогда").
+- **Domain purity:** `src/domain/` files may NOT import from `src/storage/`, `src/state/`, `src/ui/`, `src/map/`, `src/location/`, or any Expo/React-Native module.
+- **Multi-tenant from day 1:** Every persisted row in SQLite + every backend table has `user_id`. Solo-user dev does not skip this.
+- **Update manifest atomicity:** Manifest is uploaded LAST in `release-distribute.sh` (after APK + signing succeed). Mobile clients never see a manifest pointing to a missing APK (CONTEXT D-21).
+- **Force-update store is in-memory:** `useForceUpdateStore` is NOT MMKV-persisted — server re-issues 426 on every request after install, so an at-rest `required: true` would always be stale.
+- **Threading (backend):** Each Go service is a standard `net/http` server, GOMAXPROCS auto. NATS JetStream is the async messaging spine.
 
 ## Anti-Patterns
 
-### Importing `@rnmapbox/maps` outside `src/map/`
+### Direct Mapbox SDK import outside `src/map/`
 
-**What happens:** A screen or business module reaches into the Mapbox SDK directly to render or compute geometry.
-**Why it's wrong:** Defeats the MapAdapter boundary, blocks future migration (e.g., MapLibre), and breaks the ESLint guard, failing CI.
-**Do this instead:** Add a new Layer component in `src/map/components/`, re-export it from `src/map/index.ts`, and consume it from the screen. See `apps/mobile-rn/src/map/MapboxView.tsx:1-12` rationale.
+**What happens:** Importing `@rnmapbox/maps` from `src/ui/`, `src/domain/`, `src/state/`, or `src/navigation/screens/` directly.
+**Why it's wrong:** Breaks the `MapAdapter` abstraction — future map swap (or platform-specific map for offline regions) becomes impossible; couples business code to native module init order.
+**Do this instead:** Add a component to `src/map/components/` that wraps the Mapbox primitive and re-exports through `src/map/index.ts`. See `TrackLayer.tsx`, `CorridorLayer.tsx` for the pattern.
 
-### Computing area / distance directly on lat/lon
+### Direct `useForceUpdateStore.setState` from manifest path
 
-**What happens:** A function multiplies degrees to estimate meters or uses raw shoelace on geographic coordinates.
-**Why it's wrong:** Distorts area outside the equator and breaks ClosureDetector / record detection.
-**Do this instead:** Use `domain/AreaCalculator.ts` (projects to local plane); for distance use `util/geo.totalDistance` which uses the equirectangular approximation tuned per-segment.
+**What happens:** Building a parallel force-update UI in `src/update/`.
+**Why it's wrong:** REL-02 already owns the blocking Modal (`src/ui/screens/ForceUpdateScreen.tsx`). Duplicating UI means two divergent force-update experiences.
+**Do this instead:** Call `useForceUpdateStore.getState().set({ required: true, minVersion, forceUpdateUrl })` from `src/update/manifestCheck.ts`; Phase 1 Modal renders unchanged (current pattern, CONTEXT D-19).
 
-### Putting platform side effects inside `src/domain/`
+### Putting recording-tick logic inside the activity store
 
-**What happens:** A domain module imports `expo-sqlite`, `@rnmapbox/maps`, or Zustand.
-**Why it's wrong:** Breaks domain purity, makes unit tests require Expo runtime, breaks the SessionManager DI contract.
-**Do this instead:** Keep domain modules stdlib-only; inject any IO via constructor (see `SessionRepo` interface in `apps/mobile-rn/src/domain/session/SessionManager.ts:39-60`).
+**What happens:** Re-implementing 5s setInterval + notification rendering inside `useActivityStore.startSession()`.
+**Why it's wrong:** Couples a pure recording state machine to platform notification side-effects; makes unit tests need to mock expo-notifications.
+**Do this instead:** Keep `useActivityStore` pure; subscribe externally from `App.tsx` via `subscribeToRecordingTick()` in `src/foreground/notification.ts`. See `src/foreground/notification.ts:124` for the subscribe pattern.
 
-### Letting CD push `:latest` Docker tags
+### Calling `PolylineAnnotation` / `AnnotationManager` for tracks
 
-**What happens:** A workflow change starts tagging GHCR images as `:latest` for convenience.
-**Why it's wrong:** Breaks the deterministic-deploy contract; rollback target ambiguity; against ROADMAP hard rule + ADR-0011.
-**Do this instead:** Use `:<sha>`, `:<short-sha>`, and `:vX.Y.Z` only. See `.github/workflows/backend-cd.yml:6-20`.
+**What happens:** Rendering the live track with annotation primitives.
+**Why it's wrong:** Annotation managers cap out at a few hundred features and re-render on every map move. Tracks reach 10k+ points.
+**Do this instead:** Always render the track as `LineLayer + GeoJsonSource` — see `src/map/components/TrackLayer.tsx`.
 
-### Bare `echo "X=$value" >> $GITHUB_ENV` for secret materials
+### Computing area in lat/lon directly
 
-**What happens:** CI exposes a decrypted secret (e.g., keystore password) to subsequent steps without masking.
-**Why it's wrong:** GitHub Actions only auto-masks `${{ secrets.X }}` references; plain `echo` leaks the value in logs (see ADR-0012 incident 2026-05-22).
-**Do this instead:** Emit `::add-mask::$value` first, then write to `$GITHUB_ENV`. See `.github/workflows/android-release.yml` Step 4 commentary.
+**What happens:** Using lat/lon coordinates as a planar plane for area / closure calculations.
+**Why it's wrong:** Lat/lon is not equal-area; results are wrong away from the equator.
+**Do this instead:** Project to a local plane (UTM-like) first — see `src/domain/AreaCalculator.ts` and ТЗ §6.6.
 
 ## Error Handling
 
-**Strategy:** Layered.
+**Strategy:** Surface errors only when actionable; silently degrade for background flows that re-try.
 
-**Mobile patterns:**
-- Root `ErrorBoundary` in `apps/mobile-rn/App.tsx:48-74` shows a fallback screen and logs to `console.error`
-- `apiClient` translates HTTP errors → typed exceptions; 426 → `useForceUpdateStore`; 401 → silent refresh + retry; network → store-level `error` field
-- Sync engine swallows pull failures (best-effort), logs via `console.warn`
-- Domain functions return `null` for "not enough data" rather than throwing (see `Pipeline.process` returning null)
-
-**Backend patterns:**
-- `pkg/observability/sentry_init.go` captures panics via `SentryRecovery` middleware
-- Handlers return Go errors → mapped to JSON `{ code, message }` in `internal/handler/http.go`
-- `pkg/observability/debug_session_middleware.go` enables per-user DEBUG slog level when `X-Debug-Session` header + tester JWT + featureflag match
+**Patterns:**
+- React tree-level: `class ErrorBoundary` in `apps/mobile-rn/App.tsx` (top-level); per-screen `ScreenErrorBoundary` in `src/design/components/ScreenErrorBoundary.tsx`.
+- API errors: thrown from `src/auth/apiClient.ts`; consumers `try/catch`. HTTP 426 specifically intercepted before propagating — triggers `useForceUpdateStore`.
+- Background tasks fail silently with `console.warn` only in `__DEV__`: feature-flag refresh (`App.tsx:46`), update check (`src/update/manifestCheck.ts:141`), recording-tick notification (`src/foreground/notification.ts:93`), realtime connect (`RootNavigator.tsx:91`).
+- OEM intent fallbacks: nested `try/catch` chain — vendor-specific intent → generic `APPLICATION_DETAILS_SETTINGS` → return `{launched: false, vendor: 'launch-failed'}` (`src/vendor/openOEMSettings.ts:52-62`).
+- Manifest verification: throws `Error` from `manifestCheck.ts`; caught in same function; `lastError` recorded in `useUpdateCheckStore`; no user-facing toast (CONTEXT D-13).
 
 ## Cross-Cutting Concerns
 
 **Logging:**
-- Mobile: `console.warn` / `console.error` prefixed with subsystem (`[RootNavigator]`, `[App ErrorBoundary]`, `[location task]`)
-- Backend: `slog` JSON handler from `services/backend/pkg/observability/slog_handler.go`, default attrs include `service`, `env`, `version`
+- Dev: `console.warn` / `console.error` gated on `__DEV__` checks.
+- Prod: errors surfaced via Sentry SaaS (configured in mobile; see `.secrets/prod/sentry.yaml`).
+- Backend: structured logs via shared `services/backend/pkg/observability/`.
 
 **Validation:**
-- Mobile: TypeScript at compile time; runtime validation done inside domain functions (e.g., reject empty arrays)
-- Backend: per-handler manual validation; OpenAPI specs in `services/backend/api/*.yaml` checked via `scripts/openapi-routes-check/`
+- Schemas: hand-rolled type guards (`parseManifest` in `src/update/manifestSchema.ts` returns `{ ok: true, value } | { ok: false, error }`).
+- OpenAPI: backend services declare schemas in `services/backend/api/*.yaml`; drift check via `services/backend/scripts/openapi-routes-check/`.
 
 **Authentication:**
-- JWT (`services/backend/pkg/auth/jwt.go`, HS256, secret ≥32 bytes enforced)
-- Refresh tokens hashed at rest, ConstantTime compared
-- Mobile tokens in `expo-secure-store` keystore
-
-**Observability:**
-- Middleware chain (outermost first): DebugSession → Promhttp → SentryRecovery → OtelHTTP → clientversion → mux
-- Metrics scraped by Prometheus on `:9090`
-- Logs shipped to Loki by Grafana Alloy systemd service on the prod VPS
-- Grafana dashboards provisioned in `infra/observability-stack/grafana/provisioning/`
+- Mobile: tokens in secure storage (`src/auth/tokenStorage.ts`); access token attached by `apiClient`.
+- Backend: shared JWT helpers in `services/backend/pkg/auth/`.
 
 **Feature flags:**
-- Backend authoritative via identity service (`/feature-flags`)
-- Mobile cached in MMKV with TTL guard (`apps/mobile-rn/src/state/featureflags.ts`)
-- Used to gate tester-only debug logging, mobile rollout switches
+- Mobile: `useFeatureFlagsStore` (`src/state/featureflags.ts`), MMKV-persisted, refreshed from backend on app launch via `featureflagsApi.ts`.
+- Backend: `services/backend/pkg/featureflags/`.
+
+**Observability:**
+- Stack: Prometheus + Grafana + Loki + Alloy (shipper) — configured under `infra/observability-stack/` and `services/backend/observability/`.
+- See `docs/DECISIONS/0009-observability-architecture.md`, `docs/DECISIONS/0010-sentry-saas-and-colocation.md`.
+
+## Update distribution architecture
+
+This section consolidates the Plan 08-01 + REL-02 update story across CI and mobile.
+
+### CI side — `.github/workflows/android-release.yml`
+
+The workflow is a single GitHub Actions job, but split into two logical phases:
+
+**Phase A — Build (Plan 07-01 + ADR-0012):**
+1. Checkout, Node 20, JDK 17 install.
+2. Install SOPS 3.13.1 + `yq` pinned.
+3. Restore CI age key from `${{ secrets.SOPS_AGE_KEY_CI }}` → `~/.config/sops/age/keys.txt`.
+4. `sops -d .secrets/prod/mobile-signing.yaml`; extract base64 keystore + two passwords. `echo "::add-mask::$PWD"` BEFORE writing to `$GITHUB_ENV` (guards against ADR-0012 P0 incident — bare `echo X=$value >> $GITHUB_ENV` does NOT auto-mask).
+5. Write keystore to `apps/mobile-rn/android/app/release.keystore`, chmod 600.
+6. `npm ci` + `npm install -g eas-cli` (explicit pinned install).
+7. `eas build` blocking — emits JSON with `artifactUrl` + `versionCode`.
+
+**Phase B — Distribute (Plan 08-01):**
+1. Install bundletool 1.18.1 + `mc` (MinIO client).
+2. Download `.aab` from EAS; bundletool extracts universal APK.
+3. `sops -d .secrets/prod/manifest-signing.yaml`; `::add-mask::` Ed25519 private key BEFORE export to env.
+4. `scripts/release-distribute.sh <apk-path> <tag> <versionCode>`:
+   - `mc alias set sport-prod`.
+   - `mc cp APK → android-releases/<tag>.apk` (private bucket).
+   - `mc share download --expire 24h` for presigned URL (RESEARCH Pitfall 10 — regex parse, `mc share` output format drifts across versions).
+   - `go run scripts/sign-manifest.go` — inline Go signer; produces alphabetical-struct canonical JSON, Ed25519 signature appended.
+   - `go run scripts/verify-manifest.go` — local self-verify (catches signing bugs).
+   - `mc cp manifest.json → android-manifest/manifest.json` (public-read; LAST upload — atomicity per CONTEXT D-21).
+   - Re-fetch from MinIO + re-verify (catches MinIO-side corruption).
+
+### Mobile side — `apps/mobile-rn/src/update/`
+
+Three coexisting stores cover the full update surface:
+
+| Store | Persist? | Purpose | Set by |
+|-------|----------|---------|--------|
+| `useForceUpdateStore` (`src/state/forceUpdate.ts`, 39 lines, REL-02) | No (in-memory) | Triggers blocking `<ForceUpdateScreen />` Modal | (a) `apiClient.ts` on HTTP 426; (b) `manifestCheck.ts` on `min_supported_version > installed` |
+| `useUpdateBannerStore` (`src/update/updateBannerStore.ts`, NEW Plan 08-01) | MMKV (`id: 'update-banner'`) | Drives non-blocking `<UpdateBanner />` component | `manifestCheck.ts` on `version > installed` |
+| `useUpdateCheckStore` (`src/update/updateCheckStore.ts`, NEW Plan 08-01) | MMKV | Fetch timestamp, last error, replay-protection baseline (`installedReleasedAt`) | `manifestCheck.ts` on each fetch attempt |
+
+**Mobile dispatch order (manifestCheck.ts):**
+1. Throttle: skip if `Date.now() - lastCheckedAt < 6h` and not `force`.
+2. Fetch manifest from `https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json`.
+3. Parse schema (`parseManifest`).
+4. Verify Ed25519 (`verifyManifestSignature` against embedded `EXPO_PUBLIC_MANIFEST_PUBLIC_KEY`).
+5. Replay-protection: reject if `released_at < installedReleasedAt`.
+6. If `min_supported_version > installed` → force path (set `useForceUpdateStore`; clear banner).
+7. Else if `version > installed` → banner path (set `useUpdateBannerStore`); preserve `suppressedUntil` unless `manifest.version` changed since dismissal (RESEARCH §9 Q6).
+8. Else → silent no-op.
+
+### REL-02 reuse contract
+
+Plan 08-01 deliberately introduces NO new force-update UI code:
+- `manifestCheck.ts` writes to `useForceUpdateStore` (`forceUpdate.ts:35`).
+- `<ForceUpdateScreen />` in `apps/mobile-rn/src/ui/screens/ForceUpdateScreen.tsx` reads `useForceUpdateStore.required` and renders the Phase 1 blocking Modal exactly as written then.
+- Two entry paths (server 426 via `apiClient.ts`; manifest via `manifestCheck.ts`) converge on identical store shape.
+- Future regression risk: change `ForceUpdateState` shape → both producers must update; encode via the `set: (patch) => ...` accessor only.
+
+### Background tasks via `src/foreground/notification.ts`
+
+- One module-level `setInterval` handle (`tickIntervalHandle`), singleton.
+- Subscribes to `useActivityStore` via `useActivityStore.subscribe((next, prev) => ...)`.
+- On `state` transition into `'recording'` → `startTicking()` (5s interval posting sticky notification).
+- On any other transition → `stopTicking()` + `dismissRecordingNotification()`.
+- iOS = no-op (foreground-service-notification pattern is Android-only; iOS SLC + `UIBackgroundModes` path deferred per ADR-0011 Amendment 3).
+
+### Vendor (autostart) flow — `src/vendor/`
+
+- `detectVendor()` → `'xiaomi' | 'samsung' | 'huawei' | 'generic'` from `Device.manufacturer`.
+- `openOEMAutoStartSettings()` → vendor-specific `startActivityAsync(...)` via `expo-intent-launcher`.
+  - Xiaomi: `miui.intent.action.APP_PERM_EDITOR` + `extra_pkgname`.
+  - Samsung: `com.samsung.android.sm.ACTION_BATTERY`.
+  - Other: `ActivityAction.APPLICATION_DETAILS_SETTINGS` with `data: package:com.runningecosystem.mobile`.
+- On failure → fall back to generic APPLICATION_DETAILS_SETTINGS → on second failure return `vendor: 'launch-failed'`.
+- `<AutostartDialog />` one-shot Modal gated by MMKV flag in `useSettingsStore`; wired into `TrackerStartScreen`.
 
 ---
 
-*Architecture analysis: 2026-05-23*
+*Architecture analysis: 2026-05-24*

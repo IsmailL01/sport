@@ -1,240 +1,249 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-05-23
+**Analysis Date:** 2026-05-24
 
-This codebase is a two-language monorepo (Expo RN TypeScript mobile + Go backend monorepo) for a solo-dev closed-beta. Conventions differ by language; this file documents both side by side and flags cross-cutting rules (commit format, naming, pre-commit hooks).
+Conventions span two main code surfaces:
+- **Mobile (Expo React Native + TypeScript):** `apps/mobile-rn/`
+- **Backend (Go monorepo):** `services/backend/`
+
+Both share the same commit conventions, secret-handling discipline, and Russian-language documentation/UI strings.
 
 ## Naming Patterns
 
-**Files (TypeScript / mobile, `apps/mobile-rn/src/`):**
-- Domain classes / value objects → `PascalCase.ts`: `AreaCalculator.ts`, `ClosureDetector.ts`, `SessionManager.ts`, `LocationAdapter.ts`
-- Modules / barrel files / utilities / state stores → `camelCase.ts` or short lowercase: `activity.ts`, `auth.ts`, `pointRepository.ts`, `geo.ts`, `format.ts`, `index.ts`
-- React components / screens / hooks → `PascalCase.tsx`: `Toast.tsx`, `App.tsx`, `RegionPickerOverlay.tsx`, `ScreenErrorBoundary.tsx`
-- Tests → `<UnitName>.test.ts` / `<UnitName>.test.tsx`, snapshot variant `<Name>.snapshot.test.tsx`. All live in `src/__tests__/`.
-- Lint-failure fixtures → `src/__fixtures__/` (excluded from default ESLint run, exercised with `--no-ignore`).
+### Files
 
-**Files (Go / backend, `services/backend/`):**
-- Source → `snake_case.go`: `debug_session_middleware.go`, `pii_deny_list.go`, `slog_handler.go`, `otel_init.go`
-- Tests → `<file>_test.go` co-located: `auth_test.go`, `jwt_test.go`
-- Generated / `.gen.go` / `_gen.go` are excluded from a subset of linters (see `.golangci.yml:57`).
+**TypeScript modules (mobile):**
+- `camelCase.ts` for plain modules — e.g., `apps/mobile-rn/src/update/manifestCheck.ts`, `apps/mobile-rn/src/update/semverLite.ts`, `apps/mobile-rn/src/util/version.ts`
+- `PascalCase.ts` for class-shaped abstractions / adapters — e.g., `apps/mobile-rn/src/location/LocationAdapter.ts`, `apps/mobile-rn/src/pipeline/Pipeline.ts`, `apps/mobile-rn/src/pipeline/filters/KalmanFilter.ts`
+- `PascalCase.tsx` for components and screens — e.g., `apps/mobile-rn/src/update/UpdateBanner.tsx`, `apps/mobile-rn/src/vendor/AutostartDialog.tsx`
+- `use*.ts` for React hooks — e.g., `apps/mobile-rn/src/update/useUpdateCheckOnForeground.ts`
+- `*.defaults.ts` for default-only constant modules — e.g., `apps/mobile-rn/src/state/featureflags.defaults.ts`
+- `*Api.ts` for API-shaped sibling modules — e.g., `apps/mobile-rn/src/state/featureflagsApi.ts`
 
-**Files (shell smokes, `.planning/phases/*/evidence/`):**
-- `smoke-<area>.sh` kebab-case: `smoke-roundtrip.sh` (umbrella), `smoke-keystore-generated.sh`, `smoke-sops-roundtrip.sh`, `smoke-sha256-captured.sh`, `smoke-ios-cert-roundtrip.sh`, `smoke-ios-provprofile.sh`, `smoke-asc-api-key.sh`.
+**Test fixtures:**
+- `__tests__/<source>.test.ts(x)` co-located beside source — e.g., `apps/mobile-rn/src/update/__tests__/manifestCheck.test.ts`
+- `__mocks__/<module>.ts` at package root for Jest auto-mocks — e.g., `apps/mobile-rn/__mocks__/expo-sqlite.ts`
+- `__fixtures__/*.ts` for intentional-lint-failure fixtures — e.g., `apps/mobile-rn/src/__fixtures__/secret.lint-fixture.ts`
+- Smoke shell scripts: `smoke-<area>.sh` in `evidence/` — e.g., `.planning/phases/08-closed-beta-distribution/evidence/smoke-manifest-sign-roundtrip.sh`
 
-**Functions / methods:**
-- TS — `camelCase`: `calculateArea`, `appendPoints`, `setMapboxAccessToken`, `getClientVersionHeader`. React hooks → `useFoo` prefix (`useToast`, `useActivityStore`, `useTheme`).
-- Go — exported `PascalCase` / unexported `camelCase`: `NewSigner`, `IssueAccess`, `VerifyAccess`, `normalizeEmail`, `validatePassword`. Constructors are always `NewXxx`.
+**Go (backend):**
+- `lower_snake_case.go` aligned with package name — e.g., `services/backend/identity/internal/service/auth.go`
+- Tests in same package: `*_test.go` — e.g., `services/backend/identity/internal/service/auth_test.go`
+- Standard layout: `cmd/<binary>/main.go`, `internal/<layer>/*.go`, `pkg/<shared>/*.go`
 
-**Variables:**
-- TS — `camelCase`, constants are `SCREAMING_SNAKE_CASE` at module scope: `FLUSH_THRESHOLD`, `AREA_RECOMPUTE_INTERVAL_MS` (see `apps/mobile-rn/src/domain/session/SessionManager.ts:24-25`), `MAPBOX_TOKEN`, `DB_NAME`, `TARGET_VERSION`.
-- Go — exported `PascalCase`, unexported `camelCase`: `D17MetricNames`, `Issuer`, `bcryptC`.
-- Env vars — `SCREAMING_SNAKE_CASE`: `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`, `JWT_SECRET`, `SOPS_AGE_KEY_FILE`, `POSTGRES_PASSWORD`, `VPS_HOST`, `DB_URL`.
+### Functions
 
-**Types / interfaces:**
-- TS — `PascalCase` for types, interfaces, classes. Type-only imports are explicit: `import type { Foo } from './bar'` (see `apps/mobile-rn/src/state/activity.ts:21-56`).
-- Interface names are descriptive (`SessionRepo`, `LocationAdapter`, `MapAdapter`, `FeatureFlagChecker`) — no `I`-prefix.
-- Discriminated string-literal unions for state: `'idle' | 'recording' | 'stopped'` (`SessionManager.ts:29`), `'active' | 'paused' | 'background-slc'` (`LocationAdapter.ts:13`).
+**TypeScript:** `camelCase` verbs — `checkForUpdate`, `parseManifest`, `canonicalJsonWithoutSignature`, `verifyManifestSignature`, `getInstalledVersion`. React components are `PascalCase`. Test helpers inside test files are also `camelCase` (`signTestManifest`, `squareAround`).
 
-**Errors:**
-- Go sentinel errors → `ErrXxx` exported vars in domain package: `ErrUserNotFound`, `ErrEmailAlreadyExists`, `ErrInvalidCredentials` (see `services/backend/identity/internal/domain/user.go:38-43`).
+**Go:** `PascalCase` for exported (`Register`, `NewAuthService`, `Refresh`), `camelCase` for unexported (`bcryptC`). Constructors are `New<Type>` (`NewAuthService`, `NewSigner`).
 
-**Test names:**
-- TS — Jest `describe` is the unit name (class / function), `it`-strings are usually Russian and behavior-oriented: `'пропускает точку с accuracy ≤ порога'`, `'квадрат 200×200м (≈40 000 м²) — tolerance 5%'`.
-- Go — `TestSubject_Behavior` underscored: `TestNewSigner_RejectsShortSecret`, `TestDebugSessionMiddleware_AllThreeTrue`, `TestRegister_DuplicateEmail`.
+### Variables and Constants
+
+**TypeScript:**
+- Module-level constants: `UPPER_SNAKE_CASE` with `as const` for hardcoded literals — `MANIFEST_PUBKEY_BASE64 = '...' as const` in `apps/mobile-rn/src/update/manifestSigning.ts:30`, `MANIFEST_URL`, `THROTTLE_MS` in `apps/mobile-rn/src/update/manifestCheck.ts:25-27`
+- Regex constants: `<NAME>_RE` — `SEMVER_RE`, `SHA256_RE`, `RFC3339_RE`, `URL_RE`, `SIG_B64_RE` in `apps/mobile-rn/src/update/manifestSchema.ts:18-24`
+- Locals: `camelCase`
+- Test fixtures: `UPPER_SNAKE_CASE` for top-level fixture objects (`VALID`, `VALID_MANIFEST`, `PAYLOAD`, `TEST_SEED_B64`, `TEST_PUB_B64`)
+
+**Go:** mixedCaps per Go idiom; exported first letter capitalized.
+
+### Types
+
+**TypeScript:**
+- `PascalCase` for type aliases and interfaces — `LocationAdapter`, `SamplingMode`, `Manifest`, `ParseResult`, `CheckResult`, `CheckOptions`, `ManifestForSigning`
+- Discriminated unions use `state` tag — `CheckResult` in `apps/mobile-rn/src/update/manifestCheck.ts:33-38` uses `{ state: 'no-update' } | { state: 'banner-shown' } | { state: 'force-required' } | { state: 'throttled' } | { state: 'failed'; error: string }`
+- Result tagged unions use `ok` — `ParseResult` in `apps/mobile-rn/src/update/manifestSchema.ts:26-28` is `{ ok: true; value: T } | { ok: false; error: string }`
+- No `interface` for value-object shapes; prefer `type =`. `interface` reserved for adapter contracts (e.g., `LocationAdapter`).
 
 ## Code Style
 
-**Formatting (mobile, `apps/mobile-rn/`):**
-- Prettier `^3.8.3` configured at `apps/mobile-rn/.prettierrc.json`:
-  - `semi: true`
-  - `singleQuote: true`
-  - `trailingComma: 'all'`
-  - `printWidth: 90`
-  - `tabWidth: 2`
-  - `arrowParens: 'always'`
-- `npm run format` → `prettier --write "src/**/*.{ts,tsx}" "App.tsx"`.
-- TypeScript: `apps/mobile-rn/tsconfig.json` extends `expo/tsconfig.base` with `strict: true`.
-
-**Formatting (backend):**
-- `gofmt` + `goimports` are run as formatters via `.golangci.yml:76-79` (no `gofumpt` is wired in this repo despite project-context mention — only the two standard formatters).
-- Tab indent (default Go style); editor settings in `.editorconfig:14` force `indent_size = 4` only as a soft hint.
-
-**Editor (cross-cutting, `.editorconfig`):**
-- `charset = utf-8`, `end_of_line = lf`, `insert_final_newline = true`, `trim_trailing_whitespace = true`.
-- Default `indent_style = space`, `indent_size = 2`.
-- `[*.{py,go}]` → `indent_size = 4`. `[Makefile]` → `indent_style = tab`.
+**Formatting (mobile):**
+- Tool: **Prettier 3.8.3** (configured via `prettier --write "src/**/*.{ts,tsx}" "App.tsx"` script in `apps/mobile-rn/package.json:11`)
+- No `.prettierrc` checked in — Prettier defaults apply
+- `.editorconfig` at repo root pins `indent_style = space`, `indent_size = 2` for TS/JS, `4` for `.py`/`.go`/Kotlin/Java, tab for Makefile, LF, UTF-8, trim trailing whitespace (except `.md`)
 
 **Linting (mobile):**
-- ESLint v9 flat-config at `apps/mobile-rn/eslint.config.js`. Migrated from `.eslintrc.json` in PHASE1-13.
-- Extends `eslint-config-expo/flat`.
-- Project-specific rules:
-  - `no-restricted-imports` blocks `@rnmapbox/maps` outside `src/map/**` and `src/__tests__/**` (enforces `MapAdapter` quarantine per ТЗ §3 принцип 10).
-  - `no-restricted-syntax` blocks `process.env.EXPO_PUBLIC_*_SECRET` member access and any string literal matching `/^sk\.[A-Za-z0-9._-]{40,}/` (Mapbox secret-token shape). `{40,}` quantifier prevents false-positives on UI strings like `'sk-button'`.
-- Ignore patterns: `dist/`, `node_modules/`, `android/`, `ios/`, `coverage/`, `.expo/`, `src/__fixtures__/`.
-- `npm run lint` from `apps/mobile-rn/` runs `eslint .`.
+- Tool: **ESLint 9 (flat config)** in `apps/mobile-rn/eslint.config.js`
+- Base: `eslint-config-expo/flat`
+- Run: `npm run lint` (= `eslint .`)
+- Key custom rules:
+  - `no-restricted-imports` blocks `@rnmapbox/maps` outside `src/map/` and `src/__tests__/` — enforces ТЗ §3 принцип 10 (Mapbox adapter quarantine)
+  - `no-restricted-syntax` blocks `process.env.EXPO_PUBLIC_*_SECRET` (secrets ship in the JS bundle — see `docs/SECRETS.md`)
+  - `no-restricted-syntax` blocks string Literal matching `/^sk\.[A-Za-z0-9._-]{40,}/` (hard-coded Mapbox sk. tokens). `{40,}` quantifier prevents UI-string false positives like `'sk-button'`
+- Ignored: `dist/`, `node_modules/`, `android/`, `ios/`, `coverage/`, `.expo/`, `src/__fixtures__/` (latter contains intentional-fail samples that CI verifies with `eslint --no-ignore`)
 
-**Linting (backend):**
-- `.golangci.yml` (v2) at repo root. Conservative-first config: explicit-enable, 15 low-false-positive linters.
-- Enabled linters: `govet`, `ineffassign`, `unused`, `errcheck`, `staticcheck`, `bodyclose`, `errorlint`, `rowserrcheck`, `sqlclosecheck`, `contextcheck`, `copyloopvar`, `nilerr`, `misspell`.
-- Deferred to v1.0.1 (commented with rationale): `gocyclo`, `dupl`, `revive`, `gocritic`, `paralleltest`, `testifylint`.
-- Test files (`_test\.go`) relax `errcheck`, `dupl`, `gocyclo`, `bodyclose`, `govet`.
-- Every disabled linter / rule MUST carry an inline `# Disabled — <rationale>; revisit v1.0.1` annotation per `.golangci.yml:5-6`.
-- CI runs per-module (services/backend has `go.work` workspace, no root `go.mod`) — see `.github/workflows/backend-ci.yml:69-89`.
+**Linting (backend Go):**
+- Tool: **golangci-lint v2.5.0** pinned in `.github/workflows/backend-ci.yml:71-75`; config at `.golangci.yml`
+- Mode: `default: none` — explicit-enable only, 15 conservative linters: `govet`, `ineffassign`, `unused`, `errcheck`, `staticcheck`, `bodyclose`, `errorlint`, `rowserrcheck`, `sqlclosecheck`, `contextcheck`, `copyloopvar`, `nilerr`, `misspell` (+ exclusion presets)
+- Test files relax `errcheck, dupl, gocyclo, bodyclose, govet`
+- Rule: **never silently disable a linter** — every disabled rule has an inline `# Disabled — <rationale>; revisit v1.0.1` annotation (see `.golangci.yml:24-32`)
 
-**Pre-commit hooks (`.pre-commit-config.yaml`):**
-- `gitleaks v8.30.1` (pinned, no `latest` per ROADMAP hard rule) — staged-files-only scan.
-- Full-repo `gitleaks` + `trufflehog` run in CI (`.github/workflows/secret-scan-full.yml` + `backend-ci.yml:165-184`).
-- Mobile ESLint token-secret guard (`no-restricted-syntax` rules in `eslint.config.js:47-60`) provides defense-in-depth at the lint layer.
+**TypeScript strict mode:**
+- `apps/mobile-rn/tsconfig.json:4` extends `expo/tsconfig.base` with `"strict": true`
+- Run: `npm run typecheck` (= `tsc --noEmit`)
+- Zero `any` introduced in Plan 08-01 (per Phase 8 conventions)
+- `as const` mandatory for hardcoded singleton literals (`MANIFEST_PUBKEY_BASE64`)
+- `unknown` preferred over `any` for parsing untrusted JSON (see `apps/mobile-rn/src/update/manifestSchema.ts:30` — `parseManifest(raw: unknown)`)
 
 ## Import Organization
 
-**TypeScript (mobile):**
-Order observed in `apps/mobile-rn/src/state/activity.ts:21-56`:
-1. External: `'react-native'`, `'zustand'`, third-party packages — blank line after.
-2. Relative `../` (sibling-tree modules grouped by directory): `'../domain/...'`, `'../location'`, `'../pipeline'`, `'../storage/...'`.
-3. Relative `./` (same-directory): `'./auth'`, `'./settings'`, `'./wallet'`.
-- Type-only imports use `import type { Foo }` syntax (mandated by `strict: true`).
-- Barrel files (`src/map/index.ts`, `src/pipeline/index.ts`) re-export the public surface; external consumers MUST import from barrels, never deep paths (see `src/map/index.ts:1-3` — direct `@rnmapbox/maps` import forbidden by ESLint rule).
+**Order (observed across mobile codebase):**
+1. Node / external packages — `import * as ed25519 from '@noble/ed25519';`
+2. Cross-module relative imports going up — `import { getInstalledVersion } from '../util/version';`
+3. Same-module relative imports — `import { parseManifest } from './manifestSchema';`
+4. Type-only imports use `import type { … }` — `import type { Point } from '../domain/types';`
 
-**Path aliases:** None — relative paths only.
-
-**Go:**
-Order is standard `goimports`-enforced (validates via formatter in `.golangci.yml:79`):
-1. Stdlib (`"context"`, `"net/http"`, `"testing"`).
-2. Blank line.
-3. Third-party (`"github.com/jackc/pgx/v5/pgxpool"`, `"golang.org/x/crypto/bcrypt"`).
-4. Blank line.
-5. Internal (`"github.com/runningecosystem/backend/..."`).
-
-Example: `services/backend/identity/internal/service/auth.go:5-20`.
+**Path Aliases:** None configured — relative paths only.
 
 ## Error Handling
 
-**Go — sentinel errors + `errors.Is` / `errors.As` + `%w` wrapping:**
-- Domain layer exports sentinel `errors.New(...)` values (`services/backend/identity/internal/domain/user.go:38-43`).
-- Service layer wraps with context via `fmt.Errorf("op: %w", err)` (`services/backend/identity/internal/service/auth.go:63,75`).
-- HTTP handler maps sentinels to status codes via `errors.Is` switch (`services/backend/identity/internal/handler/http.go:322-332`):
-  ```go
-  case errors.Is(err, domain.ErrEmailAlreadyExists):
-      // → 409
-  case errors.Is(err, domain.ErrInvalidCredentials):
-      // → 401
-  ```
-- Linter enforces correct patterns: `errorlint` blocks `err == ErrXxx` direct comparison; `nilerr` blocks `return nil` after handling an error.
-- **No `Result<T, E>` ADT** despite the project-context description — Go uses idiomatic multi-return `(value, error)` everywhere. The "Result-style" framing only refers to the discipline of always pairing sentinel errors with `errors.Is` mapping in handlers.
+**TypeScript:**
+- **Tagged-union Results** for parser-style returns: `ParseResult` (`{ ok, value | error }`) and `CheckResult` (`{ state, error? }`). Callers narrow via `if (!r.ok)` / `if (r.state === 'failed')` — no exceptions thrown for expected failures.
+- **try/catch with silent failure** in fire-and-forget update path: `checkForUpdate` catches all errors and returns `{ state: 'failed', error: msg }`, only logs via `console.warn` when `__DEV__` (per 08-CONTEXT D-13). See `apps/mobile-rn/src/update/manifestCheck.ts:138-146`.
+- **Defensive `try/catch` returning false** for verification functions: `verifyManifestSignature` wraps the full verify chain in try/catch and returns `false` on any throw — never propagates crypto errors (see `apps/mobile-rn/src/update/manifestSigning.ts:79-91`).
+- **Throw `Error('<tag>: …')`** inside catch-wrapped paths so error.message carries a grep-able tag — `throw new Error('signature verification failed')`, `throw new Error(\`schema: ${parsed.error}\`)`, `throw new Error('replay: manifest older than installed baseline')`.
 
-**TypeScript — `throw` + `ErrorBoundary`:**
-- Throw `new Error(message)` from leaf functions for fail-fast cases (e.g. `apps/mobile-rn/src/auth/authProviders.ts:69,76,119`; `src/sensors/adapters/BleSensorAdapter.ts:37-53`).
-- Root-level `ErrorBoundary` class component in `apps/mobile-rn/App.tsx:48-74`: catches via `getDerivedStateFromError` + `componentDidCatch`, renders Russian-language fallback UI (`Приложение упало`).
-- `ScreenErrorBoundary` (`apps/mobile-rn/src/design/components/ScreenErrorBoundary.tsx`) — generic boundary for wrapping critical screens with custom fallback titles. Always logs to `console.error('[ScreenErrorBoundary]', error, info.componentStack)`.
-- Filters in the GPS pipeline return `Point | null` to signal "drop" without exceptions (`AccuracyFilter`, `JumpFilter`, etc. in `src/pipeline/filters/`) — this is the closest analog to a `Result` type in the mobile codebase.
+**Go:**
+- Sentinel errors in `internal/domain` — `domain.ErrEmailAlreadyExists`, `domain.ErrInvalidCredentials`
+- `errors.Is(err, sentinel)` for comparison (enforced by `errorlint` linter)
+- User-enumeration mitigation: `Login` returns `ErrInvalidCredentials` for both unknown user AND wrong password (see `services/backend/identity/internal/service/auth_test.go:98-105`)
 
 ## Logging
 
-**Mobile:**
-- No structured logger — `console.error` / `console.warn` only. Tagged with bracket prefixes: `console.error('[App ErrorBoundary]', error, info.componentStack)` (`App.tsx:56`), `console.error('[ScreenErrorBoundary]', ...)` (`ScreenErrorBoundary.tsx:31`).
+**Framework:** `console.warn` / `console.log` on mobile (production code), gated behind `if (__DEV__)` for diagnostics that should be silenced in release bundles.
 
-**Backend:**
-- `log/slog` JSON handler from `services/backend/pkg/observability/slog_handler.go`. Configurable `Level` with per-request override via `WithLogLevel(ctx, slog.LevelDebug)` (driven by `DebugSessionMiddleware`'s D-22 three-gate rule — `slog_handler.go:71-83`).
-- PII deny-list scrubbing at emit time (`pkg/observability/pii_deny_list.go`).
-- CI-side PII audit grep in `.github/workflows/backend-ci.yml:234-243` (`scripts/pii_audit.sh`) — blocks PR merge if `slog.*Context` calls reference deny-listed attribute keys.
-- Sentry SDK initialized via `MustInitSentry` (`pkg/observability/sentry_init.go`), wired in each service `cmd/server/main.go`.
+**Patterns:**
+- Diagnostic tag prefix: `[update]` for module-scoped warnings — `console.warn('[update] check failed:', msg)` in `apps/mobile-rn/src/update/manifestCheck.ts:142`
+- Backend logging uses `slog` via `pkg/observability/slog_handler.go` with a deny-list for PII attrs (D-12) — enforced by `scripts/pii_audit.sh` in CI
 
 ## Comments
 
-**When to comment (observed practice):**
-- Module-header doc-comment on every TS file >50 LOC and every Go file. Explains scope, references (`ТЗ §X.Y`, ADR-NNNN, plan ID, decision ID like `D-22`), and architecture invariants.
-  - Example: `apps/mobile-rn/src/location/LocationAdapter.ts:1-12` cross-references ТЗ §3 принцип 3 and §4.4.
-  - Example: `services/backend/pkg/observability/debug_session_middleware.go:1-30` cross-references Plan 05-06, OBS-08, D-22, D-23, and RESEARCH §1.8.
-- Inline rationale comments are heavy in CI configs and pre-commit configs — every disabled linter/rule explains "why" and "when to revisit" (`.golangci.yml:36-42`, `.golangci.yml:60-74`).
-- TODO / FIXME comments are rare; pending work is tracked in `STATE.md` + `.planning/phases/` plan docs and `v1.0.1` backlog ADRs, not in code.
+**Header block convention (mobile):** Every non-trivial module opens with a doc-block in this shape:
+```typescript
+// Phase 8 Plan 08-01 Task 5 — manifest fetch + verify + dispatch.
+//
+// Single entry point: `checkForUpdate({ force? })`. Triggered by
+//   1. useUpdateCheckOnForeground hook on AppState='active'
+//   2. SettingsScreen "Проверить обновления" tap (force: true)
+//
+// Throttle: 6 hours between auto-checks (force: true bypasses).
+// ...
+```
+The header cites the originating phase/plan/task + states purpose, dispatch behavior, throttle, and decision-anchors (`D-13`, `D-11`). See `apps/mobile-rn/src/update/manifestCheck.ts:1-15`.
 
-**JSDoc / TSDoc:**
-- Use `/** */` for public exports (functions, types) that have non-obvious contracts. Common pattern: bullet-list of behavior + parameter semantics. Example: `apps/mobile-rn/src/location/LocationAdapter.ts:5-12,20-22` (Russian text).
+**Russian inline comments** are the norm in domain/state/UI modules — e.g., `apps/mobile-rn/src/state/forceUpdate.ts:1-12`, `apps/mobile-rn/src/__tests__/pipeline.test.ts:23-30`. Module headers + ADRs may use English when documenting incidents/infrastructure (e.g., `apps/mobile-rn/src/update/manifestCheck.ts`).
 
-**Russian-language sections:**
-- ADR section headings, `it`-test descriptions, and most inline rationale comments are in Russian. Doc comments and public-API JSDoc are mixed RU+EN. Identifiers / function names are always English.
+**Pitfall citations:** Comments reference specific RESEARCH pitfalls when defending non-obvious code — `// RESEARCH Pitfall 4 — @noble/ed25519 requires explicit hash injection`, `// RESEARCH Pitfall 5 — no Buffer in RN runtime`. See `apps/mobile-rn/src/update/manifestSigning.ts:17-22, 49`.
+
+**JSDoc/TSDoc:** Reserved for exported public surface (functions, constants, types) where the contract is non-obvious — see `verifyManifestSignature` docblock in `apps/mobile-rn/src/update/manifestSigning.ts:63-72`. Not enforced as a lint rule.
 
 ## Function Design
 
-**Size:** Mostly short (<50 LOC). The `state/activity.ts` zustand store was refactored from a 466-line "god-store" into a thin wrapper around `SessionManager` (Phase A / D-09; see comment at `src/state/activity.ts:1-19`).
+**Size:** Pure utilities small (10-40 LOC). State-machine orchestrators (e.g., `checkForUpdate`) up to ~100 LOC with clear linear path + early returns.
 
-**Parameters:**
-- Go services take `ctx context.Context` as first arg always: `func (s *AuthService) Register(ctx context.Context, email, password, displayName, userAgent string)`.
-- TS functions accept positional args for ≤3 params, options-object for more. Domain helpers often use `Partial<X> & { ... }` for test/helper constructors (see `makePoint` in `src/__tests__/pipeline.test.ts:9-20`).
+**Parameters:** Prefer single object for options with defaults — `checkForUpdate(opts: CheckOptions = {})` with `const { force = false } = opts`. Single-arg primitives stay positional.
 
-**Return values:**
-- Go: idiomatic `(value, error)` or `(value1, value2, error)` tuples.
-- TS pipeline filters: `Point | null` to signal drop.
-- TS domain: result objects with explicit shape — e.g. `calculateArea` returns `{ areaM2: number | null, method: CalcMethod, warnings: AreaWarning[] }` (`src/domain/AreaCalculator.ts` + see `AreaCalculator.test.ts:30-44`).
+**Testability override:** When a function depends on a module-level constant the tests need to override, **add an optional parameter** rather than relying on `jest.mock`. Closure-bound `const`s cannot be swapped via mock-spread (Plan 08-01 Task 5 — see `verifyManifestSignature(manifest, pubkeyBase64: string = MANIFEST_PUBKEY_BASE64)` in `apps/mobile-rn/src/update/manifestSigning.ts:73-79`). The production caller omits the arg; tests pass an override.
+
+**Return values:** Tagged unions for fallible operations (above); never use `null` ambiguously when an error state needs distinguishing from absent-data state.
 
 ## Module Design
 
-**Exports (TS):**
-- Named exports only. No default exports outside `App.tsx` (which Expo requires).
-- Barrel `index.ts` per public boundary (`src/map/index.ts`, `src/pipeline/index.ts`, `src/location/index.ts`).
-- Adapter interfaces live in their own files: `LocationAdapter.ts` (interface), `adapters/ExpoLocationAdapter.ts` (impl). Same pattern for map.
+**Exports:** Named exports only — no default exports (matches Expo + RN community convention; verified across `src/update/`, `src/vendor/`, `src/state/`).
 
-**Exports (Go):**
-- `package <name>` matches dir name. Internal packages live under `internal/` (e.g. `identity/internal/service`, `identity/internal/handler`, `identity/internal/repository/memory`).
-- Each microservice is its own `go.mod` under `services/backend/<svc>/`; shared library under `services/backend/pkg/`. Workspace tied together via `services/backend/go.work`.
+**Barrel Files:** Minimal use — `apps/mobile-rn/src/pipeline/index.ts`, `apps/mobile-rn/src/map/index.ts`, `apps/mobile-rn/src/sensors/index.ts`, `apps/mobile-rn/src/location/index.ts`, `apps/mobile-rn/src/design/index.ts`. New module surfaces (e.g., `src/update/`) do NOT add `index.ts` — direct path imports are preferred. Jest `collectCoverageFrom` excludes `**/index.ts` (`apps/mobile-rn/jest.config.js:13`).
 
-**Adapter pattern (cross-cutting, ТЗ §3):**
-- `MapAdapter` quarantine — `@rnmapbox/maps` may be imported only inside `apps/mobile-rn/src/map/adapters/` and `src/map/` boundary files. Enforced by ESLint rule.
-- `LocationAdapter` interface (`apps/mobile-rn/src/location/LocationAdapter.ts`) with `ExpoLocationAdapter` impl (`apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts`).
-- `MockHealthAdapter` (`apps/mobile-rn/src/health/MockHealthAdapter.ts`), `BleSensorAdapter` (`apps/mobile-rn/src/sensors/adapters/BleSensorAdapter.ts`), `expoSpeechAdapter` (`apps/mobile-rn/src/util/expoSpeechAdapter.ts`).
+**State stores (Zustand):**
+- One store per concern, file named `use<Domain><Suffix>Store.ts` — `useForceUpdateStore`, `useUpdateBannerStore`, `useUpdateCheckStore`
+- In-memory by default; persist to MMKV only when at-rest survival is meaningful (see `apps/mobile-rn/src/state/forceUpdate.ts:1-12` which deliberately avoids MMKV because server re-issues 426 on every request)
+- Store shape: `INITIAL` constant + `set/reset` mutators — see `apps/mobile-rn/src/state/forceUpdate.ts:29-39`
 
-**Repository pattern (storage):**
-- Mobile: `apps/mobile-rn/src/storage/` — one file per aggregate (`sessionRepository.ts`, `pointRepository.ts`, `lapRepository.ts`, `recordsRepository.ts`, `sensorRepository.ts`, `socialRepository.ts`, `walletRepository.ts`, `relationsRepository.ts`).
-- `database.ts` owns the singleton `expo-sqlite` connection + schema migrations (`TARGET_VERSION = 19` at `src/storage/database.ts:4`).
-- Backend: per-service `internal/repository/<impl>/` — `memory/` for tests (`services/backend/identity/internal/repository/memory/memory.go`), `postgres/` for production (`services/backend/identity/internal/repository/postgres/`). Interfaces declared in `internal/repository/repository.go`.
+**Adapter pattern (ТЗ §3 принципы 3, 10):**
+- Platform/SDK concerns live behind a TS interface — `LocationAdapter` in `apps/mobile-rn/src/location/LocationAdapter.ts`, `MapAdapter` (under `src/map/`)
+- Concrete implementations live in `<module>/adapters/` — `apps/mobile-rn/src/location/adapters/`
+- Mapbox SDK import quarantine enforced by ESLint `no-restricted-imports` (off only for `src/map/**` and `src/__tests__/**`)
 
-**Three-gate `DebugSessionMiddleware` (backend, Phase 5 / D-22):**
-- `services/backend/pkg/observability/debug_session_middleware.go` elevates per-request slog to `LevelDebug` only when ALL THREE gates pass:
-  1. `X-Debug-Session: 1` HTTP header.
-  2. Bearer JWT valid AND `claims.IsTester == true`.
-  3. featureflag `tester_debug_logging` ON for that userID.
-- Any gate fail → silent passthrough (no slog emission to avoid debug-DoS amplification per RESEARCH §1.8).
-- Chain placement: OUTERMOST observability layer per-service `main.go` (D-32).
-
-## Commit Message Conventions
-
-Observed format from `git log` (50 most recent commits):
-
+**New `src/update/` module shape (Plan 08-01):**
 ```
-<type>(<scope>): <subject in english or russian>
-
-<optional multi-paragraph body — explains why, references commit SHAs,
-plan IDs (e.g. SIGN-01, BUILD-01), decisions (D-22), ADRs (ADR-0012),
-research sections (RESEARCH §1.8). Body is usually English; subjects
-are predominantly English.>
+apps/mobile-rn/src/update/
+├── __tests__/                         # co-located unit tests (4 files, 48 cases)
+│   ├── manifestCheck.test.ts          # state-machine + dispatch
+│   ├── manifestSchema.test.ts         # hand-rolled validator
+│   ├── manifestSigning.test.ts        # Ed25519 sign/verify
+│   └── semverLite.test.ts             # it.each parametric comparator
+├── UpdateBanner.tsx                   # PascalCase component
+├── manifestCheck.ts                   # orchestrator (single public entry)
+├── manifestSchema.ts                  # hand-rolled (zod NOT installed — RESEARCH §9 Q2 documented tradeoff in module header)
+├── manifestSigning.ts                 # @noble/ed25519 + canonical JSON
+├── semverLite.ts                      # hand-rolled comparator (rc/beta only)
+├── updateBannerStore.ts               # Zustand
+├── updateCheckStore.ts                # Zustand
+└── useUpdateCheckOnForeground.ts      # React hook
 ```
+Notable: no `index.ts` barrel; each test file imports directly from `../<module>`.
 
-**Type prefixes (observed frequencies):**
-- `feat(<scope>):` — new feature. Scopes seen: `06-01`, `07-01`, `05-04`, `05-05`, `05-06`, `scope-reset`, `phase-07`. Subjects often end with a plan-task ID in parens: `(SIGN-01)`, `(BUILD-01)`.
-- `fix(<scope>):` — bug fix. Scopes: `security`, `07-01`, `05-04`.
-- `chore(<scope>):` — non-functional: `chore(06-01): Wave 0 — evidence/ scaffolding ...`, `chore(security): rotate ...`, `chore(07-01): Wave 0 Part A — ...`.
-- `docs(<scope>):` — docs/ADR/state changes: `docs(security): ADR-0012 amendment — ...`, `docs(phase-07): plan-check verdict — PASS-WITH-NITS`, `docs(state): record phase 7 context session`.
+## Commit Conventions
 
-**Subject style:**
-- Imperative mood ("add", "rotate", "extend", "mask", "wire").
-- Em-dash (`—`, U+2014) frequently separates clauses: `"chore(security): re-rotate keystore password — self-inflicted chat-dump leak"`.
-- Reference codes appended in parens: `(SIGN-01)`, `(BUILD-01)`, `(D-22)`.
+**Format:** `<type>(<scope>): <summary> (<TASK-ID>)`
 
-**Body style:**
-- Wrapped to ~72 cols.
-- Backticks for code references (`` `xxd | tail -3` ``), commit SHAs in shortform (`commit 21b992c`), file paths, env-var names.
-- Cross-references ADRs by number (`ADR-0006`, `ADR-0012`), plans (`Plan 06-02 Task 4`), and decision codes (`D-22`).
-- Russian and English freely mixed in bodies and inline comments; subjects are predominantly English.
+**Types observed (recent 50 commits):**
+- `feat(<plan>): <description> (<TASK-ID>)` — code tasks (e.g., `feat(08-01): mobile update module — manifest fetch + Ed25519 verify + dispatch (DIST-01)`)
+- `chore(<plan>): <description> (<TASK-ID>)` — evidence scaffolding, tool-version audits (`chore(08-01): Wave 0 — evidence scaffolding + tool-versions audit (DIST-01)`)
+- `fix(<plan>): <description>` — in-task corrections; task ID optional when self-evident (`fix(08-01): @noble/ed25519 v3.1 API drift in manifestSigning.ts`)
+- `docs(<plan or area>): <description>` — ADRs, plans, RESEARCH, STATE updates (`docs(08): plan-check verdict — PASS-WITH-NITS`, `docs(state): record Phase 8 context session`)
 
-**Footer:**
-- `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>` is the standard footer for Claude-assisted commits (per `CLAUDE.md` GSD execution flow).
-- `Refs:` footer used occasionally to link external trackers — rare in the observed window.
+**Scopes:**
+- Numeric plan ID: `01`, `02`, `04-02`, `06-01`, `07-01`, `08`, `08-01` (matches `.planning/phases/<NN-<slug>>/<NN-MM>-PLAN.md`)
+- Cross-cutting tags: `state`, `planning`, `codebase`, `security`
 
-**Never:**
-- Never use the `-i` flag with `git rebase` / `git add` (per `CLAUDE.md` working rules — interactive flows blocked).
-- Never include secret values (passwords, tokens, fingerprints) in commit messages — see ADR-0012 amendment for the `xxd`-leak post-mortem.
+**Task ID suffix:** `(DIST-01)`, `(STAB-01)`, `(BUILD-01)`, `(SIGN-01)` — matches the requirement-ID in `docs/REQUIREMENTS.md` / `docs/DEVELOPMENT_PLAN.md`. Omit when scope already disambiguates (e.g., `fix(07-01): credentialsSource: local …`).
+
+**Body:**
+- Multi-paragraph prose explaining the WHY, not just the WHAT
+- Cite `Pitfall N` references from the corresponding `<NN>-RESEARCH.md` when defending non-obvious choices
+- Cite decision IDs (`D-09`, `D-11`, `D-13`) when implementing a CONTEXT-locked design
+
+**Pre-commit gating (must pass on every commit):**
+- `gitleaks v8.30.1` via `.pre-commit-config.yaml` (staged-files-only)
+- Custom rules in `.gitleaks.toml` extend defaults to catch bare Mapbox `pk.` + `sk.` literals (RESEARCH Pitfall 2)
+- ESLint v9 (mobile) + trufflehog config (full-history scan runs in `secret-scan-full.yml` cron, not pre-commit)
+- All Plan 08-01 commits passed the gate cleanly
+
+## Credential-Diagnostics Discipline (ADR-0012 Amendment, 2026-05-22)
+
+After the self-inflicted chat-dump leak documented in `docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md`, the following rules are now load-bearing for anyone (human or AI agent) handling decrypted secrets:
+
+1. **Single canonical fingerprint form.**
+   Use `printf '%s' "$VAR" | shasum -a 256 | cut -c1-12` **exclusively** when fingerprinting a secret for comparison. Do NOT mix forms (`echo "$VAR" | shasum`, `yq … | shasum`, `<<<"$VAR" shasum`). `yq -r` appends a trailing newline; `$()` strips it; the two forms hash to different prefixes and can be mistaken for evidence of corruption. (See ADR-0012 amendment §"Root cause".)
+
+2. **No byte-level inspection of secret values.**
+   **Never** `xxd`, `od -c`, `hexdump`, `wc -c` paired with sample-char display, `${VAR:0:N}`, `${VAR: -N}`, or any operation that surfaces individual bytes. **The bytes ARE the secret.** A 12-char fingerprint mismatch is the maximum diagnostic detail allowed; rotate-on-suspicion is the response, not deeper inspection.
+
+3. **`SOPS_AGE_KEY_FILE` must be set explicitly.**
+   Every verification script / smoke in `evidence/` and `scripts/` must (a) require `SOPS_AGE_KEY_FILE` (use `: "${SOPS_AGE_KEY_FILE:=$HOME/.config/sops/age/keys.txt}"`), (b) check `sops -d` exit code (no `2>/dev/null` swallow), (c) validate decrypted value length > 0 before downstream processing. A silent decrypt-failure that produces the string `null` hashes to `74234e98…` — that prefix is the false-positive signature for misconfigured SOPS, never a real secret.
+
+4. **`::add-mask::` MUST precede every `$GITHUB_ENV` write of a decrypted secret.**
+   GitHub Actions does NOT auto-mask values that arrive through `echo "VAR=$value" >> $GITHUB_ENV` — only `${{ secrets.X }}` template substitutions are auto-registered. The required pattern (enforced by `smoke-release-distribute.sh`):
+   ```yaml
+   - run: |
+       STORE_PASS=$(sops -d ... | yq -r '.android.keystore_password')
+       echo "::add-mask::$STORE_PASS"
+       echo "RUNNING_ECO_RELEASE_STORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
+   ```
+   See `.github/workflows/android-release.yml:87-91` for the canonical example. Verified by `must "::add-mask::\\\$STORE_PASS"` assertion in `.planning/phases/08-closed-beta-distribution/evidence/smoke-release-distribute.sh:34`.
+
+5. **Treat-as-compromise on first sign of log/transcript leakage.**
+   Once a secret value is observable in any pipe outside the local process — CI logs, AI agent transcript, chat tool — rotate immediately. No "monitoring" alternative is acceptable because keystore-password compromise has no usage dashboard analog. Pattern is universal across `ADR-0006` (Mapbox), `ADR-0012` (keystore).
+
+6. **No `EXPO_PUBLIC_*_SECRET` ever.**
+   Enforced by `no-restricted-syntax` in `apps/mobile-rn/eslint.config.js:47-60`. Secrets ship in the JS bundle when exposed via `EXPO_PUBLIC_*` — they must come from `~/.netrc` / `~/.gradle/gradle.properties` at build time, never runtime env.
+
+7. **No hardcoded Mapbox `sk.` tokens.**
+   Enforced by `no-restricted-syntax` Literal rule. The companion intentional-fail fixture `apps/mobile-rn/src/__fixtures__/secret.lint-fixture.ts` is excluded from normal lint but exercised in CI via `eslint --no-ignore` to verify the rule still fires.
+
+8. **Pre-commit `gitleaks v8.30.1` is non-negotiable.**
+   Custom rules in `.gitleaks.toml` extend `useDefault = true` with `mapbox-secret-token` and `mapbox-public-token-bare` patterns. Bypassing with `--no-verify` is forbidden unless the user explicitly authorizes it.
 
 ---
 
-*Convention analysis: 2026-05-23*
+*Convention analysis: 2026-05-24*

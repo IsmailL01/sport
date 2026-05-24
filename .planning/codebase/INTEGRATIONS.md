@@ -1,198 +1,265 @@
 # External Integrations
 
-**Analysis Date:** 2026-05-23
+**Analysis Date:** 2026-05-24
+
+Single-VPS production (148.253.214.156, sslip.io) + colocated observability host (srv1561293, 82.25.71.215). All inbound TLS via Caddy + Let's Encrypt. Closed-beta scope per ADR-0011 — OAuth providers + Sentry remain dormant.
 
 ## APIs & External Services
 
 **Mapping:**
-- **Mapbox** — primary tile/style/SDK provider. Mobile uses `@rnmapbox/maps@^10.3` (`apps/mobile-rn/package.json:20`); native `RNMapboxMapsImpl: mapbox` (`apps/mobile-rn/app.json:67`). Adapter quarantine: `apps/mobile-rn/src/map/` (direct imports outside this directory rejected by ESLint, `apps/mobile-rn/eslint.config.js:35-46`).
-  - **Public token** (`pk.…`, `dev-public-v2`) — bundled with app via `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`; safe-by-restriction (Mapbox dashboard URL/bundle-ID restrictions per ADR-0006). Initialized at module level in `apps/mobile-rn/App.tsx:33-36` via `setMapboxAccessToken(...)` adapter call.
-  - **Secret download token** (`sk.…`, scope `DOWNLOADS:READ`) — `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` / `MAPBOX_DOWNLOADS_TOKEN`; consumed only at Gradle build time (`apps/mobile-rn/android/build.gradle:27-44`) for `https://api.mapbox.com/downloads/v2/releases/maven`. Lives in `~/.gradle/gradle.properties` (mode 600) on dev machines + iOS `~/.netrc`. ESLint guards prevent any `EXPO_PUBLIC_*_SECRET` bundling or inline `sk.…` literals.
-  - **Encrypted at-rest:** `.secrets/prod/mapbox.yaml` (SOPS).
-  - History: see ADR-0006 (chat-with-AI leak incident → token rotated, SOPS discipline tightened).
+- **Mapbox** — vector tiles + offline regions + map style
+  - Mobile SDK: `@rnmapbox/maps` ^10.3.0 (quarantined inside `apps/mobile-rn/src/map/`; ESLint `no-restricted-imports` blocks direct imports elsewhere per `apps/mobile-rn/eslint.config.js:34-46`)
+  - Maven repo: `https://api.mapbox.com/downloads/v2/releases/maven` wired in `apps/mobile-rn/android/build.gradle:27-43` (auth no longer required — Mapbox dropped download-token requirement; optional via `MAPBOX_DOWNLOADS_TOKEN`)
+  - Public token (pk.): `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` — read in `apps/mobile-rn/App.tsx:35`, applied via `setMapboxAccessToken()` (re-exported from `apps/mobile-rn/src/map/index.ts`)
+  - Secret token (sk.): server-side use only — never bundled (ESLint `no-restricted-syntax` blocks `Literal /^sk\.[A-Za-z0-9._-]{40,}/` per `eslint.config.js:55-59`)
+  - Storage: `.secrets/prod/mapbox.yaml` (SOPS) — unchanged since Plan 06-01
 
-**Push notifications:**
-- **Expo Push Service** — `https://exp.host/--/api/v2/push/send` consumed by `services/backend/notifications/internal/expopush/client.go`. Token format: `ExponentPushToken[…]` / `ExpoPushToken[…]` (`services/backend/notifications/internal/service/svc.go:35`). Backend auth header from `EXPO_ACCESS_TOKEN` env (optional; if empty → fanout no-ops, `services/backend/notifications/cmd/server/main.go:69-73`). Mobile side: `expo-notifications` registers via `Notifications.getExpoPushTokenAsync({ projectId })`, project ID via `EXPO_PUBLIC_EXPO_PROJECT_ID` env or `app.json.extra.eas.projectId` (`apps/mobile-rn/src/notifications/adapters/ExpoNotificationsAdapter.ts:42-46`).
-- **APNs / FCM** — not directly called; both abstracted by Expo Push. FCM credentials would be required for EAS production builds (notes in `ExpoNotificationsAdapter.ts:7-9`); not configured in `app.json` for v1.0.
+**Build/Distribution:**
+- **Expo EAS Cloud Build** — Android .aab build farm
+  - Project: `running-ecosystem-mobile`, projectId `a9f8e26f-bd3f-4296-b67e-21909721132c`, owner `qqweasdf` (`apps/mobile-rn/app.json:87-92`)
+  - Auth: `EXPO_TOKEN` GitHub Actions secret
+  - Workflow: `.github/workflows/android-release.yml` (tag-triggered `v1.0.0-beta.*` | `v1.0.0-rc.*`)
+  - **Phase 8 change** — `--no-wait` flag DROPPED (Pitfall 16 / Plan 08-01 Task 4 line `.github/workflows/android-release.yml:147-156`). Workflow now BLOCKS until EAS finishes (~15 min wall-clock). `--json` mode emits `artifactUrl` + `versionCode` parsed via `jq`.
+  - Credentials: `production.android.credentialsSource: "local"` (`apps/mobile-rn/eas.json:36`). `apps/mobile-rn/credentials.json` generated in CI from SOPS-decrypted passwords + `release.keystore` path (gitignored; lifetime = job duration)
+  - Resource class: `m-medium` (`apps/mobile-rn/eas.json:32`)
+  - .aab → universal APK extraction: bundletool 1.18.1 jar in `.github/workflows/android-release.yml:177-203` (`bundletool build-apks --mode=universal` then `unzip -p universal.apk`)
 
-**OAuth providers (scaffolded, not active in v1.0):**
-- **Google** — stub, requires `EXPO_PUBLIC_GOOGLE_CLIENT_ID` + `expo-auth-session` package (not currently installed). See `apps/mobile-rn/src/auth/authProviders.ts:58-78` + ADR-0003.
-- **Apple Sign In** — stub (iOS only), requires `expo-apple-authentication` (not installed). Same file.
-- **Strava** — stub, `apps/mobile-rn/src/health/StravaAdapter.ts:41` reads `EXPO_PUBLIC_STRAVA_CLIENT_ID`.
-- Encrypted secrets bucket exists for future activation: `.secrets/prod/oauth.yaml` (SOPS).
+**Push:**
+- **Expo Push Notifications** — backend → device
+  - Service: `services/backend/notifications/` Go module
+  - Client: `services/backend/notifications/internal/expopush/client.go`
+  - Auth: `EXPO_ACCESS_TOKEN` env var passed through `services/backend/docker-compose.prod.yml:191` (optional — empty default per `${EXPO_ACCESS_TOKEN:-}`)
 
-**Build / Release Services:**
-- **Expo EAS Cloud Build** — triggered by `.github/workflows/android-release.yml` on tag push (`v1.0.0-beta.*` / `v1.0.0-rc.*`). Command: `eas build --platform android --profile production --non-interactive --no-wait`. Auth: `EXPO_TOKEN` GitHub secret → step env. eas-cli installed explicitly via `npm install -g eas-cli` (`.github/workflows/android-release.yml:101`) — replaced fragile `expo/expo-github-action@v8` per ADR-0012 root cause. Local dev eas-cli version: **19.0.6**. Build profiles in `apps/mobile-rn/eas.json` — `production` profile sets `android.buildType: app-bundle` + `RUNNING_ECO_RELEASE_STORE_FILE: release.keystore` + `RUNNING_ECO_RELEASE_KEY_ALIAS: runningecosystem-release`.
-- **EAS project ID** — placeholder `TODO-eas-project-id-after-eas-init` in `apps/mobile-rn/app.json:74`. Real ID assigned by `eas init` (Phase 8 follow-up).
+**OAuth providers (DORMANT):**
+- STRAVA / GOOGLE / APPLE Sign-In — placeholders only in v1.0
+- `.secrets/prod/oauth.yaml` contains placeholder values with literal `<…>` (e.g., `APPLE_SIGN_IN_CLIENT_SECRET=<deferred-v1.1>`)
+- Root `Makefile:73-76` explicitly handles the `<…>` placeholder breaking `set -a; . file` sourcing during rollback — uses `grep` to extract only `POSTGRES_PASSWORD`
 
 ## Data Storage
 
-**Databases (production, `services/backend/docker-compose.prod.yml`):**
-- **PostgreSQL 16 + TimescaleDB 2.17.2** — single DB `running_ecosystem`, user `re`. Image: `timescale/timescaledb:2.17.2-pg16`. Internal hostname `postgres:5432`. NOT exposed externally.
-  - Connection string template: `postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable`
-  - Driver (all Go services): `github.com/jackc/pgx/v5 v5.9.2`
-  - Schema migrations: `services/backend/migrations/00xx_*.up.sql` / `*.down.sql` (22+ migrations covering users, activities, session_hr, social-graph, messaging, notifications, reactions, media, stories, feed_posts, moderation, xp_grades, auth_otp, featureflags, plus drill migrations `9990`/`9991`)
-  - Runner: `migrate/migrate:v4.18.1` as one-shot init container (`services/backend/docker-compose.prod.yml:101-113`)
-- **TimescaleDB extension** — enabled in `0000_extensions.up.sql`; used by `session_hr` + activity time-series. ClickHouse + dedicated Postgres-per-service from the original v1.0 plan were **dropped** per ADR-0011 lean-scope reset.
-- **Redis 7-alpine** — rate-limit + presence + timeline cache + hot conversation cache. `--maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes`. Consumed by `messaging`, `feed`, `social-graph` (`REDIS_URL=redis://redis:6379/0`) + `services/backend/pkg/ratelimit/ratelimit.go:45`.
-
-**Embedded (mobile):**
-- **SQLite** via `expo-sqlite ~16.0.10` — offline-first local data store (`apps/mobile-rn/package.json:37`). Tests use `better-sqlite3@12.10.0` (devDependency).
-- **MMKV** via `react-native-mmkv@^4.3.1` + `react-native-nitro-modules@^0.35.6` — fast KV for settings, theme, feature flags. v4 API: `createMMKV()` (`apps/mobile-rn/src/state/settings.ts:3`, `apps/mobile-rn/src/state/featureflags.ts:19`, `apps/mobile-rn/src/design/ThemeProvider.tsx:20`). Native namespace `com.margelo.nitro.mmkv` (NOT `mrousavy`) per `apps/mobile-rn/android/app/proguard-rules.pro:33-40`.
-- **SecureStore** via `expo-secure-store ~15.0.8` — auth tokens (`apps/mobile-rn/src/auth/tokenStorage.ts`).
+**Databases:**
+- **PostgreSQL 16 + TimescaleDB 2.17.2** — primary OLTP
+  - Image: `timescale/timescaledb:2.17.2-pg16` (`services/backend/docker-compose.prod.yml:25`)
+  - Connection (per-service env): `<SVC>_DB_URL` → `postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable`
+  - Driver: `github.com/jackc/pgx/v5` v5.9.2 in all services
+  - Migrations: `services/backend/migrations/` — 38 files (`0000`–`0020` numbered + `9990`/`9991` drill migrations for CICD-04). Run via `migrate/migrate:v4.18.1` init container (`docker-compose.prod.yml:101-113`)
+  - Mobile: NOT used directly (`apps/mobile-rn/src/auth/apiClient.ts` always goes through HTTP to backend)
+- **SQLite** — mobile local persistence
+  - Mobile: `expo-sqlite` ~16.0.10 (storage live in `apps/mobile-rn/src/storage/`)
+  - Dev/test: `better-sqlite3` 12.10.0 (`apps/mobile-rn/package.json:61`)
+- **Redis 7** — rate limiting, presence, hot conversation/feed cache
+  - Image: `redis:7-alpine`, 256MB memory cap, `allkeys-lru` eviction, AOF on
+  - Consumers: `messaging`, `feed`, `social-graph` (via `REDIS_URL: redis://redis:6379/0`)
 
 **File Storage:**
-- **MinIO** (S3-compatible) — image: `minio/minio:RELEASE.2025-01-20T14-49-07Z`. Bucket `media`, region `us-east-1` (synthetic). Internal: `minio:9000`. Public client access via Caddy reverse proxy at `https://s3.148-253-214-156.sslip.io` (preserves Host header so SigV4 presigned URLs validate). Consumed by `services/backend/media/` only — `media` service issues presigned URLs that the mobile client uses directly. Client lib: `github.com/minio/minio-go/v7@v7.0.78`.
+- **MinIO** — S3-compatible object storage
+  - Image: `minio/minio:RELEASE.2025-01-20T14-49-07Z`
+  - Internal endpoint: `minio:9000` (compose network)
+  - **Public endpoint via Caddy reverse-proxy:** `s3.148-253-214-156.sslip.io` — wired in `services/backend/gateway/Caddyfile.prod:15-23` (`reverse_proxy minio:9000`). Caddy v2 preserves Host header so MinIO signature validation works.
+  - Buckets:
+    - `media` — Phase B3 media (presigned URLs from `services/backend/media/`)
+    - `android-releases` — **PRIVATE**, holds APKs as `<tag>.apk` (e.g., `v1.0.0-beta.5.apk`). Distribution via 24h presigned URLs generated by `mc share download --expire 24h` (Plan 08-01 Task 2 / `scripts/release-distribute.sh:60-63`)
+    - `android-manifest` — **PUBLIC-READ**, holds signed `manifest.json` (Ed25519-signed; mobile fetches via `GET https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json` in `apps/mobile-rn/src/update/manifestCheck.ts:25-26`)
+  - Service-account auth (CI uploads): `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRET_KEY` — NEW GitHub Actions secrets, scoped to both `android-releases` + `android-manifest`
+  - Atomicity contract (CONTEXT D-21): in `scripts/release-distribute.sh`, manifest is uploaded LAST. If APK upload / signing / round-trip verify fails, no manifest update propagates → clients never see broken pointer.
+  - Media service env: `S3_ENDPOINT: s3.148-253-214-156.sslip.io`, `S3_ENDPOINT_INTERNAL: minio:9000`, `S3_BUCKET: media`, `S3_REGION: us-east-1` (`docker-compose.prod.yml:163-170`); SDK `github.com/minio/minio-go/v7` v7.0.78
 
-**Caching:**
-- **Redis** (see above) — only caching tier. No Memcached, no Varnish.
-
-**Event Bus:**
-- **NATS JetStream** — image `nats:2.11-alpine`, persistent file storage at `/data`, monitor port `8222`. Consumed by `activity-sync`, `feed`, `media`, `messaging`, `notifications`, `realtime-gw`, `social-graph` (`NATS_URL=nats://nats:4222`). Each service connects in its `cmd/server/main.go` via `nats.Connect(natsURL, ...)`. Used as cross-service async event bus + messaging outbox publisher.
+**Messaging/Events:**
+- **NATS JetStream** — async events bus
+  - Image: `nats:2.11-alpine`, persistent file storage, 7d retention, monitoring on :8222
+  - Connection: `NATS_URL: nats://nats:4222`
+  - SDK: `github.com/nats-io/nats.go` v1.39.1
+  - Consumers: `activity-sync`, `feed`, `messaging`, `notifications`, `realtime-gw`, `social-graph`
 
 ## Authentication & Identity
 
-**Auth Provider:** Custom — `services/backend/identity/` (Go service, port 8081).
-- **Algorithm:** JWT HS256 via `github.com/golang-jwt/jwt/v5@v5.3.1`
-- **Shared secret:** `IDENTITY_JWT_SECRET` env (required ≥32 chars in compose) — propagated to every backend service that validates tokens
-- **Mobile flow:** email-OTP (already working, `apps/mobile-rn/src/auth/`); OAuth providers stubbed (ADR-0003)
-- **Token storage (mobile):** `expo-secure-store` keychain/Keystore
-- **API client:** `apps/mobile-rn/src/auth/apiClient.ts` → `${EXPO_PUBLIC_IDENTITY_URL}` / `${EXPO_PUBLIC_API_URL}` (defaults to Android emulator `http://10.0.2.2:8081`)
-- **Routes (via gateway Caddy):** `/auth/*`, `/me` → `identity:8081`
+**Internal:**
+- Custom JWT-based identity service — `services/backend/identity/`
+  - HTTP server with OTP-driven flows in `services/backend/identity/internal/handler/otp.go` + `service/auth.go`
+  - JWT signing/verification: `github.com/golang-jwt/jwt/v5` v5.3.1
+  - Shared secret: `IDENTITY_JWT_SECRET` (≥32 chars enforced via `${JWT_SECRET:?need JWT_SECRET >=32 chars}` in compose). All 7 downstream services consume the same secret for JWT verification.
+- Mobile client: `apps/mobile-rn/src/auth/apiClient.ts` — fetch-based HTTP client, auto-refresh on 401, intercepts 426 (Upgrade Required) → `useForceUpdateStore` (REL-02 blocking Modal)
+- Token storage (mobile): `expo-secure-store` via `apps/mobile-rn/src/auth/tokenStorage.ts` (Keychain/Keystore-backed)
+
+**OAuth (DORMANT):** Strava / Google / Apple — schema present (`.secrets/prod/oauth.yaml`), no live wiring per ADR-0011.
 
 ## Monitoring & Observability
 
-**Error Tracking:**
-- **Sentry SaaS** (sentry.io) — **wired but dormant in v1.0** per ADR-0010 D-38. Backend SDK: `github.com/getsentry/sentry-go@v0.46.2` (`services/backend/pkg/observability/sentry_init.go`). Empty `SENTRY_DSN` → no-op + `slog.Info "observability.sentry: disabled — empty DSN"`. Activation post-v1.0 = SOPS edit `.secrets/prod/sentry.yaml` + redeploy. No mobile crash reporting (Phase 17 dropped per ADR-0011).
-- **Per-service tagging convention:** single shared `prod-backend` project; `service` + `env` tags discriminate.
-
-**Logs:**
-- Stack: **Grafana Loki 3.2.0** on `srv1561293` (`82.25.71.215`), colocated with unrelated `niko-prod` per ADR-0010
-- Shipper: **Grafana Alloy** deployed via Ansible role `infra/ansible/roles/alloy-shipper/` — `discovery.docker` + `loki.source.docker` pair scrapes container stdout on prod VPS
-- Push endpoint: `https://82-25-71-215.sslip.io:8443/loki/api/v1/push` (self-signed TLS, `insecure_skip_verify: true` in Alloy config) — `infra/ansible/roles/alloy-shipper/defaults/main.yml:16`
-- Caddy on `:8443` gates `/loki/api/v1/push` to prod-VPS source IP only via `@allowed_loki { remote_ip 148.253.214.156/32 }` matcher
-- Format: structured slog with PII deny-list scrubbing in `services/backend/pkg/observability/slog_handler.go` + `pii_deny_list.go`
-- CI guard: `scripts/pii_audit.sh` (`.github/workflows/backend-ci.yml:243`) — blocks PRs introducing `slog.*Context` calls with PII attribute keys (D-12 deny-list)
+**Error tracking:**
+- **Sentry** — sentry-go SDK present but DORMANT
+  - SDK: `github.com/getsentry/sentry-go` v0.46.2
+  - Bootstrap: `services/backend/pkg/observability/sentry_init.go:1-35`
+  - **D-38 dormant-by-design path:** empty DSN → `slog.Info "observability.sentry: disabled — empty DSN"` + return no-op shutdown closure. Activation = SOPS edit `.secrets/prod/sentry.yaml` to populate DSN + redeploy (no code change). Per ADR-0010 + D-38.
+  - Single shared `prod-backend` project (RESEARCH §1.9) — discriminated via `SetTag("service", ...)` + `SetTag("env", ...)`
+  - Closed-beta sample rate: `TracesSampleRate = 1.0`
 
 **Metrics:**
-- **Prometheus v2.55.0** scraping all 8 backend services on `:8081-8090` `/metrics` endpoints — config at `services/backend/observability/prometheus.yml` (dev, `host.docker.internal`) and `services/backend/observability/prometheus.yml.j2` (Ansible-rendered for prod)
-- Client lib: `github.com/prometheus/client_golang@v1.20.5` (`services/backend/pkg/observability/metrics.go`)
-- 14-day retention on prod (`infra/observability-stack/docker-compose.yml:37` → `--storage.tsdb.retention.time=14d`)
-- CI guard: `cardinality-probe` job (`.github/workflows/backend-ci.yml:251-296`) runs `scripts/cardinality_probe.py` to block PRs introducing forbidden labels (`user_id`, `session_id`, `device_id`, `external_uuid`, `email`, `phone`) or families exceeding 1000 series
+- **Prometheus** v2.55.0 — image `prom/prometheus:v2.55.0` in `infra/observability-stack/docker-compose.yml:22-40`
+  - Lives on observability host (srv1561293, 82.25.71.215) — separate from prod VPS, colocated with niko-prod
+  - Bound to 127.0.0.1:9090; public access via Caddy :8443 self-signed (`--web.external-url=https://82.25.71.215:8443/prometheus/`)
+  - Retention: 14d (`--storage.tsdb.retention.time=14d`)
+  - Each backend service exposes `/metrics` via `github.com/prometheus/client_golang` v1.20.5
+  - CI cardinality probe: `scripts/cardinality_probe.py` (stdlib only) — blocks PR merge if a metric exposes a forbidden label (user_id / session_id / device_id / external_uuid / email / phone) OR if any family exceeds 1000 series (Phase 5 / OBS-07 / D-18)
 
-**Tracing:**
-- **OpenTelemetry v1.32.0** — OTLP HTTP exporter (`go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp`), `otelhttp` middleware wraps every service mux. PII-attribute scrub via `piiScrubProcessor` (referenced in `pkg/observability/sentry_init.go:25`). Trace export target wired to Sentry's OTLP ingest (correlation across logs/metrics/traces); dormant until SENTRY_DSN populated.
+**Logs:**
+- **Loki** v3.2.0 — image `grafana/loki:3.2.0`, 512m mem cap, bound to 127.0.0.1:3100
+- Ingestion via structured `slog` from `services/backend/pkg/observability/`. PII deny-list (D-12) enforced both at emit time (slog handler drops PII attrs) AND at PR-merge time via `scripts/pii_audit.sh` (Phase 5 / OBS-06 / D-14)
 
 **Dashboards:**
-- **Grafana 11.3.0** at `https://82.25.71.215:8443/grafana/` (basicauth, self-signed cert). Dashboards committed under `services/backend/observability/dashboards/` + provisioning at `infra/observability-stack/grafana/provisioning/`. Admin password via `GF_SECURITY_ADMIN_PASSWORD__FILE` reading `/run/secrets/admin_password` (mounted from `infra/observability-stack/grafana/secrets/`).
+- **Grafana** v11.3.0 — image `grafana/grafana:11.3.0`, 768m mem cap, host:3030 → container:3000 (3000 owned by niko-prod-frontend on same host)
+- Auth: `admin` user + password from `/run/secrets/admin_password` file mount, `GF_AUTH_ANONYMOUS_ENABLED: "false"`
+- Sub-path served: `GF_SERVER_ROOT_URL: https://82.25.71.215:8443/grafana/` + `GF_SERVER_SERVE_FROM_SUB_PATH: "true"`
+- Provisioning: `infra/observability-stack/grafana/provisioning/`
+
+**Tracing:**
+- OpenTelemetry — `go.opentelemetry.io/otel` v1.32.0 + OTLP HTTP exporter v1.32.0
+- HTTP middleware: `OtelHTTPMiddleware` in `services/backend/pkg/observability/sentry_init.go` (paired with sentry recovery + promhttp in chain documented at lines 27-32)
+- PII-attribute scrub in TracerProvider's `piiScrubProcessor` (see `services/backend/pkg/observability/otel_init.go`)
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Application stack: VPS `148.253.214.156` (`148-253-214-156.sslip.io`)
-- Observability stack: VPS `srv1561293` / `82.25.71.215` (`82-25-71-215.sslip.io`)
-- Container registry: **GHCR** (`ghcr.io/ismaill01/<service>:<sha|semver>`) — never `:latest` (D-15 / ROADMAP hard rule, enforced by `no-latest-tag-guard` job in both `backend-ci.yml:218-232` and `backend-cd.yml:134-148`)
-- Mobile distribution: EAS Cloud Build artifacts (`.aab` for Android, Phase 8 plans iOS TestFlight)
+- Production VPS (148.253.214.156) — `services/backend/docker-compose.prod.yml` under systemd sport-stack umbrella at `/opt/sport/services/backend/`. Env file `/run/sport.env`. Image tags pinned via `${SPORT_STACK_TAG:?...}` per service in compose.
+- Observability VPS (srv1561293, 82.25.71.215) — `infra/observability-stack/docker-compose.yml` colocated with niko-prod, Caddy :8443 self-signed.
+- Container registry: `ghcr.io/ismaill01/<service>` (lowercase intentional — GHCR namespace = lowercase user). Tag conventions enforced via `.github/workflows/backend-cd.yml`:
+  - `:<sha>` (always)
+  - `:sha-<short-sha>` (Docker convention)
+  - `:vX.Y.Z` (tag pushes only)
+  - `:vX.Y` (semver major.minor on tag pushes)
+  - **NEVER `:latest`** — hard rule (`no-latest-tag-guard` job in both CI and CD; D-15)
+- Cosign keyless signing via Sigstore/Fulcio + Rekor (OIDC token from GH Actions `id-token: write`). Verified in `cosign-verify-smoke` job.
+- SLSA L2 build provenance via `actions/attest-build-provenance@v2` (LTS).
 
-**CI Pipeline (`.github/workflows/`):**
+**CI Pipelines:**
 
-- **`backend-ci.yml`** — PR + push-to-main gate (paths: `services/backend/**`, `Makefile`, `.golangci.yml`, `.trivyignore.yaml`). Jobs (verbatim names — branch-protection contract per Plan 04-05):
-  - `Test (Go 1.25)` — matrix over 9 modules, `go test -race -coverprofile`
-  - `Lint (golangci-lint v2)` — `v2.5.0` pinned, per-module loop
-  - `SAST (gosec)` — fail on HIGH
-  - `Vuln (govulncheck)` — fail on any
-  - `SAST (semgrep)` — `p/golang` + `p/owasp-top-ten`, ERROR severity
-  - `Secrets (gitleaks + trufflehog — PR diff)` — diff-only, gitleaks-action@v2 + trufflehog@main
-  - `Docker build (no push, verify)` — matrix over 8 services, BuildKit cache, then Trivy image scan (HIGH/CRITICAL → fail)
-  - `Guard (no :latest)` — negative grep
-  - `PII Audit (slog grep)` — `scripts/pii_audit.sh`
-  - `Cardinality Probe (Prom labels)` — boots prod compose + runs `scripts/cardinality_probe.py`
+`.github/workflows/backend-ci.yml` (PR + push-to-main on `services/backend/**`):
+- `Test (Go 1.25)` — `go test -race -coverprofile=coverage.out` matrix across 9 modules
+- `Lint (golangci-lint v2)` — pinned v2.5.0, per-module loop (services/backend is workspace-root with `go.work` but no `go.mod`)
+- `SAST (gosec)` — `gosec -severity high`, blocks HIGH per D-10
+- `Vuln (govulncheck)` — per-module loop, blocks on findings
+- `SAST (semgrep)` — `returntocorp/semgrep` container, configs `p/golang` + `p/owasp-top-ten`, `--severity ERROR --error`
+- `Secrets (gitleaks + trufflehog — PR diff)` — PR-only; full-history runs in cron
+- `Docker build (no push, verify)` — buildx + Trivy image scan, HIGH+CRITICAL block, `.trivyignore.yaml` exceptions
+- `Guard (no :latest)` — negative grep
+- `PII Audit (slog grep)` — `scripts/pii_audit.sh`, Phase 5 / OBS-06 / D-14
+- `Cardinality Probe (Prom labels)` — boots compose stack, polls /metrics, runs `scripts/cardinality_probe.py`
 
-- **`backend-cd.yml`** — push to `main` or any `v*` tag (paths-filtered for main, full for tags). Matrix over 8 services:
-  - Builds + pushes to GHCR with tags `sha-<short>`, `<sha>`, `v<X.Y.Z>`, `v<X.Y>` (NEVER `:latest`)
-  - **Cosign keyless signing** via Sigstore/Fulcio (`id-token: write` permission, OIDC → Fulcio cert → Rekor transparency log). `sigstore/cosign-installer@v3`
-  - **SLSA L2 build provenance** via `actions/attest-build-provenance@v2` (LTS, NOT @v1)
-  - `cosign-verify-smoke` job round-trips verify (`--certificate-identity-regexp 'https://github.com/IsmailL01/.*'` + `--certificate-oidc-issuer https://token.actions.githubusercontent.com`)
-  - Per ADR-0011: cosign + SLSA kept as best-effort, not deploy-gating
+`.github/workflows/backend-cd.yml` (push to main on `services/backend/**` OR `v*` tag):
+- `Publish ${service}` matrix × 8 services — buildx push to ghcr.io
+- Cosign keyless sign each image
+- SLSA L2 attestation pushed to registry
+- `Cosign verify smoke` (CICD-02 self-check)
+- `Guard (no :latest in CD outputs)`
 
-- **`android-release.yml`** — tag-triggered (`v1.0.0-beta.*` / `v1.0.0-rc.*`):
-  1. `actions/checkout@v4`, `actions/setup-node@v4` (Node 20, npm cache), `actions/setup-java@v4` (Temurin 17)
-  2. Install SOPS 3.13.1 + yq (mikefarah)
-  3. Restore CI age key from `secrets.SOPS_AGE_KEY_CI` → `~/.config/sops/age/keys.txt` (chmod 600)
-  4. `sops -d .secrets/prod/mobile-signing.yaml` → extract base64 keystore + both passwords; emit `::add-mask::` directives **BEFORE** any `>> $GITHUB_ENV` write (per ADR-0012 P0 incident — bare `echo "X=$value" >> $GITHUB_ENV` does NOT engage log masker; only `${{ secrets.X }}` references auto-mask)
-  5. `npm ci` (`apps/mobile-rn/`)
-  6. `npm install -g eas-cli` (explicit, replaces `expo/expo-github-action@v8`)
-  7. `eas build --platform android --profile production --non-interactive --no-wait` with `EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}`
-  - Timeout: 30 min
+`.github/workflows/android-release.yml` (tag-triggered `v1.0.0-beta.*` | `v1.0.0-rc.*`):
+- Setup: Node 20 + JDK 17 (temurin) + SOPS 3.13.1 + yq
+- Restore CI age key from `SOPS_AGE_KEY_CI` secret → `~/.config/sops/age/keys.txt`
+- **Decrypt mobile-signing bundle** (`.secrets/prod/mobile-signing.yaml`): base64 keystore → `apps/mobile-rn/android/app/release.keystore`; passwords via `::add-mask::` BEFORE `$GITHUB_ENV` write (per ADR-0012 P0 incident response 2026-05-22)
+- Generate `apps/mobile-rn/credentials.json` (gitignored) inline via `jq -n`
+- `npm ci` (mobile) + explicit `npm install -g eas-cli`
+- EAS build (blocks until done; `--json` mode → `artifactUrl` + `versionCode`)
+- **NEW Plan 08-01 Task 4 distribution steps:**
+  - Install `bundletool` 1.18.1 jar + `mc` (MinIO client) latest
+  - Download .aab + extract universal APK via `bundletool build-apks --mode=universal` → unzip
+  - Decrypt manifest-signing key (`.secrets/prod/manifest-signing.yaml`); private value masked
+  - Run `bash scripts/release-distribute.sh /tmp/build.apk "${GITHUB_REF_NAME}" "${version_code}"`:
+    1. `mc alias set sport-prod` against `https://s3.148-253-214-156.sslip.io`
+    2. Compute APK sha256 + size; upload to `android-releases` bucket
+    3. `mc share download --expire 24h` → presigned URL
+    4. `go run scripts/sign-manifest.go` — Ed25519-sign canonical manifest (alphabetical struct field declaration matches mobile `Object.keys().sort()` for byte-identity)
+    5. `go run scripts/verify-manifest.go` — self-verify
+    6. Upload manifest LAST to `android-manifest` (atomicity per D-21)
+    7. Re-fetch + re-verify (catches MinIO-side corruption)
 
-- **`secret-scan-full.yml`** — cron `0 3 * * 0` (Sundays 03:00 UTC) + `workflow_dispatch`. `fetch-depth: 0` for full-history gitleaks + trufflehog. Diff-on-PR jobs live in `backend-ci.yml` (per RESEARCH Pitfall 10).
+`.github/workflows/secret-scan-full.yml` (cron Sun 03:00 UTC = 06:00 MSK):
+- gitleaks-action@v2 + trufflehog full-history scan (fetch-depth: 0 — Pitfall 10: never on every PR)
+- Manual trigger via `gh workflow run secret-scan-full.yml`
 
-**Pre-commit:**
-- `.pre-commit-config.yaml` (3.9KB) — local hook config
-- `.gitleaks.toml` — additional gitleaks rules
-- `.trufflehog/` — trufflehog config dir
-- `.golangci.yml` — Go lint rules
-- `.trivyignore.yaml` — Trivy CVE exceptions
-
-**Deploy (production):**
-- Ansible — `infra/ansible/site.yml` orchestrates roles `ufw`, `alloy-shipper`, plus deploy roles for the sport-stack umbrella systemd unit
-- Image tag: `SPORT_STACK_TAG` env injected via `ansible-playbook -e sport_stack_tag=<tag>` (referenced in every `image:` line of `services/backend/docker-compose.prod.yml`)
-- Branch protection: 10 required CI check contexts (Plan 04-05) — verbatim names from `backend-ci.yml` job `name:` fields
+**Required GitHub Actions secrets:**
+- `EXPO_TOKEN` — Expo authentication for `eas build`
+- `SOPS_AGE_KEY_CI` — CI age private key (lifted Plan 07-01 commit `dd0dce5`); public half is recipient in `.sops.yaml:23` (`age19ysu774h4...`)
+- `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRET_KEY` — NEW Plan 08-01 Task 2; MinIO service-account scoped to `android-releases` (private) + `android-manifest` (public-read) buckets
+- `GITHUB_TOKEN` — standard, for gitleaks-action PR comments + GHCR push
+- (NOT set, intentional) `GITLEAKS_LICENSE` — repo is personal account (IsmailL01/sport), license NOT required; license needed only if namespace = organization
 
 ## Environment Configuration
 
-**Secrets management:**
-- **SOPS + age** — backend choice per Plan 02-01 / SEC-02 / `.sops.yaml`
-- Recipients (`.sops.yaml:29-32`):
-  - `DEV_A`: `age1ph7d4a62n9ngghvt5lzgh4eywfayzgrzx9mq6rfzpgp9sme0eg0snl33my`
-  - `CI`: `age19ysu774h4crzynkpf9pjpe829cxt0e3ckgfmnkweag0h7dxmp4kqn9vswx` — private half lives in GitHub Actions secret `SOPS_AGE_KEY_CI`
-- Encrypted files (committed):
-  - `.secrets/prod/shared.yaml` — POSTGRES/JWT/MinIO/Expo/Caddy
-  - `.secrets/prod/mapbox.yaml` — Mapbox pk + sk tokens
-  - `.secrets/prod/oauth.yaml` — Google/Apple/Strava placeholders
-  - `.secrets/prod/sentry.yaml` — Sentry DSN (currently empty per D-38)
-  - `.secrets/prod/mobile-signing.yaml` — Android PKCS12 keystore (base64) + `keystore_password` + `key_password` (identical on PKCS12 by invariant; rotated 2026-05-22 per ADR-0012)
-  - `.secrets/staging/*.yaml`, `.secrets/dev/*.yaml` — parallel sets
-- **Rotation command** (non-destructive): `sops updatekeys .secrets/<env>/*.yaml`
-- **gitattributes guard:** `.gitattributes` sets `-text` on `.secrets/**/*.yaml` to disable git 3-way merge driver on ciphertext (Pitfall 5)
-- **Plaintext .env files** — gitignored; `apps/mobile-rn/.env.example` is the only committed template
+**Required env vars (production):**
+- `POSTGRES_PASSWORD`, `JWT_SECRET` (≥32 chars), `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `CADDY_ACME_EMAIL` (compose-enforced via `${VAR:?need VAR}`)
+- `SPORT_STACK_TAG` — image tag pin (set via `ansible-playbook -e sport_stack_tag=<v>`)
+- `EXPO_ACCESS_TOKEN` (optional; notifications service)
 
-**Required GitHub Actions secrets:**
-- `SOPS_AGE_KEY_CI` — CI's age private key (restores to `~/.config/sops/age/keys.txt`)
-- `EXPO_TOKEN` — EAS Cloud Build authentication
-- `GITHUB_TOKEN` — auto-provisioned; used by GHCR login + gitleaks-action
+**Required env vars (mobile build, via EAS):**
+- `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`
+- `EXPO_PUBLIC_IDENTITY_URL`, `EXPO_PUBLIC_SYNC_URL`, `EXPO_PUBLIC_API_URL`
+- `RUNNING_ECO_RELEASE_STORE_FILE`, `RUNNING_ECO_RELEASE_STORE_PASSWORD`, `RUNNING_ECO_RELEASE_KEY_ALIAS`, `RUNNING_ECO_RELEASE_KEY_PASSWORD` (signing — Gradle reads via `findProperty`)
+- `MANIFEST_SIGNING_PRIVATE`, `MANIFEST_SIGNING_PUBLIC` (Plan 08-01 Task 5; private masked via `::add-mask::`)
 
-**Critical env vars (production):**
-- `POSTGRES_PASSWORD`, `JWT_SECRET` (≥32 chars), `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `CADDY_ACME_EMAIL`, `SPORT_STACK_TAG`
-- Optional: `EXPO_ACCESS_TOKEN` (push fanout activation), `SENTRY_DSN` (Sentry activation)
+**Secrets location:**
+- SOPS-encrypted YAML bundles in `.secrets/{dev,staging,prod}/*.yaml` (committed to git; ciphertext only)
+- Age recipients DEV_A + CI configured in `.sops.yaml`; DEV_B TODO
+- Plaintext NEVER committed — `.gitleaks.toml` + `.trufflehog/` + `.gitattributes` (with `-text` on ciphertext to disable git 3-way merge)
+- Pre-commit hooks via `.pre-commit-config.yaml`
 
-## Webhooks & Callbacks
+**Webhooks & Callbacks:**
 
 **Incoming:**
-- None implemented in v1.0. OAuth callbacks (Strava/Google/Apple) would land at backend endpoints per ADR-0003 — deferred.
+- `/healthz` on gateway (`services/backend/gateway/Caddyfile.prod:39-41`)
+- Per-service HTTP endpoints — addresses listed in compose env:
+  - `identity`: `:8081`
+  - `activity-sync`: `:8082`
+  - `messaging`: `:8083`
+  - `social-graph`: `:8084`
+  - `feed`: `:8085`
+  - `media`: `:8086`
+  - `notifications`: `:8087`
+  - `realtime-gw`: `:8090` (WebSocket)
+- Caddy gateway routes `148-253-214-156.sslip.io/*` + `s3.148-253-214-156.sslip.io/*` (MinIO proxy)
+- Mobile deep-link scheme: `runningecosystem://` (`apps/mobile-rn/android/app/src/main/AndroidManifest.xml:29-34`)
 
 **Outgoing:**
-- **Expo Push send** — POST `https://exp.host/--/api/v2/push/send` (`services/backend/notifications/internal/expopush/client.go`). Empty `EXPO_ACCESS_TOKEN` → no-op.
-- **Mapbox tile fetch** — outbound HTTPS from mobile clients to Mapbox CDN; no server-side hop.
-- **Let's Encrypt ACME HTTP-01** — Caddy on prod VPS port 80/443 (`services/backend/gateway/Caddyfile.prod:7-10` + `services/backend/docker-compose.prod.yml:298-302`)
-- **GHCR push** — from GitHub Actions runner during `backend-cd.yml`
-- **Sigstore Fulcio + Rekor** — cosign keyless signing path (dormant until next `backend-cd.yml` run)
-- **Loki push** — Alloy on prod VPS → `https://82-25-71-215.sslip.io:8443/loki/api/v1/push` (cross-VPS, gated by Caddy `@allowed_loki` source-IP matcher)
-- **Prometheus scrape** — Prometheus on obs VPS → prod-VPS service `/metrics` endpoints (reverse direction: scrape pull)
+- Mobile → Mapbox CDN (tiles, styles)
+- Mobile → backend Caddy (`https://148-253-214-156.sslip.io/`) — all API traffic
+- Mobile → MinIO via Caddy (`https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json`) — Plan 08-01 update check (no auth; public-read bucket)
+- Mobile → MinIO presigned URL (`https://s3.148-253-214-156.sslip.io/android-releases/<tag>.apk?...`) — 24h expiry, used by `Linking.openURL(manifest.apk_url)` in `apps/mobile-rn/src/update/UpdateBanner.tsx`
+- Backend notifications → Expo Push API (with optional `EXPO_ACCESS_TOKEN`)
+- CI → GHCR (`ghcr.io/ismaill01/*`)
+- CI → Sigstore/Fulcio (OIDC) + Rekor transparency log
+- CI → MinIO (`s3.148-253-214-156.sslip.io`) via `mc` for APK + manifest upload
+- CI → EAS Cloud (`expo.dev`) for .aab build trigger
 
-## Public Endpoints (prod VPS Caddy gateway)
+## OEM/Vendor Integrations (NEW Plan 07-03 Task 3+4)
 
-- `https://148-253-214-156.sslip.io/auth/*`, `/me` → `identity:8081`
-- `https://148-253-214-156.sslip.io/sessions[/*]` → `activity-sync:8082`
-- `https://148-253-214-156.sslip.io/conversations[/*]`, `/messages/*` → `messaging:8083`
-- `https://148-253-214-156.sslip.io/profiles[/*]`, `/search/users`, `/relations/*`, `/follows/*`, `/blocks/*`, `/reports[/*]`, `/admin/*` → `social-graph:8084`
-- `https://148-253-214-156.sslip.io/stories[/*]`, `/posts[/*]`, `/feed/*` → `feed:8085`
-- `https://148-253-214-156.sslip.io/uploads[/*]`, `/media/*` → `media:8086`
-- `https://148-253-214-156.sslip.io/devices[/*]`, `/notifications[/*]`, `/preferences` → `notifications:8087`
-- `wss://148-253-214-156.sslip.io/ws` → `realtime-gw:8090`
-- `https://148-253-214-156.sslip.io/admin` → static admin dashboard (`services/backend/gateway/admin/`)
-- `https://s3.148-253-214-156.sslip.io` → `minio:9000` (presigned-URL host, preserves Host header for SigV4)
+Vendor-killer mitigation (foreground-service stoppage on Xiaomi MIUI / Samsung One UI):
+- Detection: `apps/mobile-rn/src/vendor/oem.ts` reads `expo-device` `Device.manufacturer` → returns `'xiaomi' | 'samsung' | 'huawei' | 'generic'` (HyperOS bucketed under Xiaomi; EMUI/HarmonyOS detected but deferred per CONTEXT D-17)
+- Deep-link intents fired via `expo-intent-launcher` in `apps/mobile-rn/src/vendor/openOEMSettings.ts`:
+  - Xiaomi: `miui.intent.action.APP_PERM_EDITOR` with `extra_pkgname` extra
+  - Samsung: `com.samsung.android.sm.ACTION_BATTERY`
+  - Default: `ActivityAction.APPLICATION_DETAILS_SETTINGS` with `data: package:com.runningecosystem.mobile`
+- First-launch dialog: `apps/mobile-rn/src/vendor/AutostartDialog.tsx` (Modal with MMKV one-shot flag)
+
+## Android Foreground Notifications (NEW active in Plan 07-03 Task 2)
+
+- File: `apps/mobile-rn/src/foreground/notification.ts`
+- Channel: `recording`, importance `AndroidImportance.LOW`, `lockscreenVisibility: PUBLIC`, no sound/vibration
+- Sticky notification id `recording-status`; 5000ms tick from `setInterval` while `useActivityStore.state === 'recording'`
+- Body: RU-formatted "Запись пробежки активна — %duration% • %distance%" — duration derived from `now - startedAt`, distance from `totalDistance(points)` (util/geo)
+- iOS no-op (Platform.OS guard) — iOS uses SLC + UIBackgroundModes; deferred per ADR-0011 Amendment 3
+
+## Manifest-Driven Auto-Update (NEW Plan 08-01 Task 5)
+
+- Trigger: `apps/mobile-rn/src/update/useUpdateCheckOnForeground.ts` wires `AppState 'active'` listener + initial fire; calls `checkForUpdate()` in `apps/mobile-rn/src/update/manifestCheck.ts` (6h throttle; force-bypass for manual "Проверить обновления" tap)
+- Fetch: `GET https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json`
+- Validation: `apps/mobile-rn/src/update/manifestSchema.ts` — hand-rolled (no zod; ~30 KB saved). Regexes for sha256/semver/RFC3339/url/Ed25519 base64 sig
+- Signature: `apps/mobile-rn/src/update/manifestSigning.ts` — `@noble/ed25519` with `@noble/hashes/sha2.js` SHA-512 wired explicitly. Public key HARDCODED (`MANIFEST_PUBKEY_BASE64 = 'rDfoNbDp88ls1yoiuuKONsJ/PdstLOrioQqvXYIA40I='`); rotation = ship new app version
+- Canonical JSON: keys sorted via `Object.keys().sort()`, signature field excluded — must match `scripts/sign-manifest.go` `Manifest` struct alphabetical field declaration byte-for-byte
+- Replay protection: persists `installedReleasedAt` in MMKV; rejects manifest with older `released_at`
+- Dispatch (CONTEXT D-11):
+  - `min_supported_version > installed` → `useForceUpdateStore` blocking Modal (REL-02)
+  - `version > installed` → `useUpdateBannerStore` (non-blocking banner in `TrackerStartScreen`, `JournalScreen`, `SettingsScreen` per Plan 08-01 Task 6)
+  - else → silent
+- Failure mode: silent (no toast); `console.warn` only in `__DEV__` (CONTEXT D-13)
 
 ---
 
-*Integration audit: 2026-05-23*
+*Integration audit: 2026-05-24*
