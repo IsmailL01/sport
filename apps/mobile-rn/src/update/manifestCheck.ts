@@ -22,8 +22,14 @@ import { gt as semverGt } from './semverLite';
 import { useForceUpdateStore } from '../state/forceUpdate';
 import { getInstalledVersion } from '../util/version';
 
-const MANIFEST_URL =
-  'https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json';
+// Phase 8 distribution gated per ADR-0011 Amendment 5 (2026-05-24): closed-beta
+// scope reduced to manual sideload by solo dev. Empty/unset env →
+// checkForUpdate short-circuits to `disabled` without network fetch. Re-enable
+// by setting EXPO_PUBLIC_UPDATE_MANIFEST_URL in .env / shell env / app.json
+// `extra` before `expo prebuild` / `eas build`.
+function getManifestUrl(): string {
+  return process.env.EXPO_PUBLIC_UPDATE_MANIFEST_URL ?? '';
+}
 const THROTTLE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 export type CheckOptions = {
@@ -31,6 +37,7 @@ export type CheckOptions = {
 };
 
 export type CheckResult =
+  | { state: 'disabled' }
   | { state: 'no-update' }
   | { state: 'banner-shown' }
   | { state: 'force-required' }
@@ -41,6 +48,15 @@ export async function checkForUpdate(
   opts: CheckOptions = {},
 ): Promise<CheckResult> {
   const { force = false } = opts;
+  const manifestUrl = getManifestUrl();
+  if (!manifestUrl) {
+    if (__DEV__) {
+      console.warn(
+        '[update] disabled — EXPO_PUBLIC_UPDATE_MANIFEST_URL not set (ADR-0011 Amendment 5)',
+      );
+    }
+    return { state: 'disabled' };
+  }
   const { lastCheckedAt, checking } = useUpdateCheckStore.getState();
 
   if (checking) return { state: 'failed', error: 'already checking' };
@@ -55,7 +71,7 @@ export async function checkForUpdate(
   useUpdateCheckStore.setState({ checking: true, lastError: null });
 
   try {
-    const res = await fetch(MANIFEST_URL, { method: 'GET' });
+    const res = await fetch(manifestUrl, { method: 'GET' });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }

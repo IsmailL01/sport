@@ -53,6 +53,10 @@ export function SettingsScreen() {
       toast.show('У вас актуальная версия');
     } else if (r.state === 'failed') {
       toast.show('Не удалось проверить обновления');
+    } else if (r.state === 'disabled') {
+      // ADR-0011 Amendment 5: distribution channel parked for closed beta;
+      // user-tap path still surfaces a toast so the button doesn't feel broken.
+      toast.show('Проверка обновлений отключена');
     }
     // banner-shown / force-required: the respective UI surfaces (UpdateBanner /
     // ForceUpdateScreen) handle their own rendering; no toast needed.

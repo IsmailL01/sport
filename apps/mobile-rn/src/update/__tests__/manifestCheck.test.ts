@@ -92,6 +92,14 @@ beforeEach(() => {
   mockVerify.mockReset().mockReturnValue(true);
   mockInstalledVersion.mockReset().mockReturnValue('1.0.0-beta.3');
   global.fetch = jest.fn();
+  // Open the ADR-0011 Amendment 5 gate for the dispatch-logic tests. The
+  // gated-off path is exercised in its own describe-block below.
+  process.env.EXPO_PUBLIC_UPDATE_MANIFEST_URL =
+    'https://test.example/manifest.json';
+});
+
+afterEach(() => {
+  delete process.env.EXPO_PUBLIC_UPDATE_MANIFEST_URL;
 });
 
 describe('checkForUpdate — optional update path', () => {
@@ -214,6 +222,22 @@ describe('checkForUpdate — throttle', () => {
     const r = await checkForUpdate({ force: true });
     expect(r.state).toBe('banner-shown');
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('checkForUpdate — gated (ADR-0011 Amendment 5)', () => {
+  it('returns disabled without fetch when EXPO_PUBLIC_UPDATE_MANIFEST_URL is empty', async () => {
+    process.env.EXPO_PUBLIC_UPDATE_MANIFEST_URL = '';
+    const r = await checkForUpdate({ force: true });
+    expect(r.state).toBe('disabled');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns disabled without fetch when EXPO_PUBLIC_UPDATE_MANIFEST_URL is unset', async () => {
+    delete process.env.EXPO_PUBLIC_UPDATE_MANIFEST_URL;
+    const r = await checkForUpdate({ force: true });
+    expect(r.state).toBe('disabled');
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
 

@@ -52,6 +52,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # ADR-0011 Amendment 5 (2026-05-24) — Phase 8 distribution-pipeline gate.
+      # When MINIO_RELEASES_ACCESS_KEY secret is not configured, all post-EAS
+      # distribution steps are skipped. The .aab is still built and the EAS
+      # artifact URL is printed in the EAS step output for manual sideload.
+      # Re-enable by populating MINIO_RELEASES_ACCESS_KEY + MINIO_RELEASES_SECRET_KEY
+      # secrets at repo level.
+      DISTRIBUTE_ENABLED: ${{ secrets.MINIO_RELEASES_ACCESS_KEY != '' && 'true' || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -175,6 +183,7 @@ jobs:
       # invocation below inherits that.
 
       - name: Install bundletool + mc
+        if: env.DISTRIBUTE_ENABLED == 'true'
         run: |
           # bundletool 1.18.1 (jar form for version pinning + reproducibility)
           BUNDLETOOL_VERSION=1.18.1
@@ -192,6 +201,7 @@ jobs:
           mc --version | head -3
 
       - name: Download .aab + extract universal APK
+        if: env.DISTRIBUTE_ENABLED == 'true'
         run: |
           curl -L -o /tmp/build.aab "${{ steps.eas.outputs.artifact_url }}"
           ls -la /tmp/build.aab
@@ -204,6 +214,7 @@ jobs:
           echo "APK sha256: $(sha256sum /tmp/build.apk | awk '{print $1}')"
 
       - name: Decrypt manifest-signing key
+        if: env.DISTRIBUTE_ENABLED == 'true'
         run: |
           # Same ::add-mask:: discipline as the mobile-signing step (ADR-0012).
           # Private key value is masked BEFORE the $GITHUB_ENV write. Public key
@@ -215,6 +226,7 @@ jobs:
           echo "MANIFEST_SIGNING_PUBLIC=$MANIFEST_SIGNING_PUBLIC" >> "$GITHUB_ENV"
 
       - name: Distribute release (upload APK + sign manifest + publish)
+        if: env.DISTRIBUTE_ENABLED == 'true'
         env:
           MINIO_ACCESS_KEY: ${{ secrets.MINIO_RELEASES_ACCESS_KEY }}
           MINIO_SECRET_KEY: ${{ secrets.MINIO_RELEASES_SECRET_KEY }}
