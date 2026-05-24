@@ -1,0 +1,101 @@
+name: Android debug APK
+
+# Builds a universal debug APK (arm64-v8a + x86_64) with JS bundle embedded,
+# then uploads it as a GitHub Actions artifact downloadable from the run page.
+#
+# Use cases:
+#   - BlueStacks dev-loop without running Metro locally
+#   - Ad-hoc APK sharing with internal testers (download from Actions → Artifacts)
+#   - Quick smoke checks on Pixel without needing local Android SDK
+#
+# NOT a substitute for:
+#   - Plan 07-03 pocket-walk validation — that uses the production-signed .aab
+#     from android-release.yml (tag push). Production-signing matters for any
+#     "this is what closed-beta testers will install" testing.
+#
+# Triggers:
+#   - workflow_dispatch (manual button in Actions UI)
+#   - push to feat/cursona-redesign or main when mobile-rn or this workflow changes
+#
+# Output artifact: `app-debug-<sha>` containing `app-debug.apk` (~80-120MB universal)
+# Retention: 14 days (default GH Actions retention for artifacts)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/cursona-redesign
+    paths:
+      - "apps/mobile-rn/**"
+      - ".github/workflows/android-debug-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build debug APK (universal)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/mobile-rn/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Cache Gradle caches + wrapper
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-debug-${{ hashFiles('apps/mobile-rn/android/**/*.gradle*', 'apps/mobile-rn/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-debug-
+            ${{ runner.os }}-gradle-
+
+      - name: Install npm dependencies
+        working-directory: apps/mobile-rn
+        run: npm ci
+
+      - name: Build debug APK (universal ABI + JS bundle embedded)
+        working-directory: apps/mobile-rn/android
+        run: |
+          ./gradlew :app:assembleDebug \
+            -PrunningEcoAbiFilters="arm64-v8a,x86_64" \
+            -PreactNativeArchitectures="arm64-v8a,x86_64" \
+            -PrunningEcoEmbedJSInDebug=true \
+            --no-daemon
+
+      - name: Show APK info
+        working-directory: apps/mobile-rn/android
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          if [ ! -f "$APK" ]; then
+            echo "::error::APK not produced at expected path $APK"
+            find app/build/outputs/apk -type f -name "*.apk" || true
+            exit 1
+          fi
+          echo "APK: $APK"
+          echo "Size: $(du -h "$APK" | cut -f1)"
+          echo "SHA256: $(sha256sum "$APK" | awk '{print $1}')"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-${{ github.sha }}
+          path: apps/mobile-rn/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

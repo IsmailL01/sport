@@ -61,6 +61,14 @@ react {
 
     /* Autolinking */
     autolinkLibrariesWithApp()
+
+    // CI debug APK (android-debug-apk.yml) needs JS bundle embedded so the APK works
+    // standalone without a running Metro server. Default RN behavior: debuggableVariants
+    // = ["debug"] → bundle skipped, APK requires Metro on localhost:8081. Setting it to
+    // [] forces bundle embedding for all variants. Override via -PrunningEcoEmbedJSInDebug=true.
+    if (project.hasProperty('runningEcoEmbedJSInDebug') && project.runningEcoEmbedJSInDebug.toBoolean()) {
+        debuggableVariants = []
+    }
 }
 
 /**
@@ -108,8 +116,16 @@ packagingOptions {
         // Phase 7 Plan 07-01 Task 4 — single-ABI build for closed beta (per ADR-0011 lean scope)
         // Cuts .aab size from ~140MB (4 ABIs) to ~50-60MB (arm64-v8a only).
         // Pixel 6+ + all 2020+ devices are arm64-v8a; legacy ABIs deferred to v1.1.0 if needed.
+        //
+        // Override via -PrunningEcoAbiFilters="arm64-v8a,x86_64" for debug builds that need
+        // to run on x86_64 emulators (BlueStacks, Android Studio AVD without ARM translation).
+        // Used by android-debug-apk.yml CI workflow.
         ndk {
-            abiFilters 'arm64-v8a'
+            if (project.hasProperty('runningEcoAbiFilters')) {
+                abiFilters = project.runningEcoAbiFilters.split(',').collect { it.trim() } as Set
+            } else {
+                abiFilters 'arm64-v8a'
+            }
         }
     }
     signingConfigs {
