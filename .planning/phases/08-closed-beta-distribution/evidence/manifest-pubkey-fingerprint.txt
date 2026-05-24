@@ -1,0 +1,19 @@
+# Phase 8 Plan 08-01 Task 1 — Ed25519 manifest-signing public key
+# Generated: 2026-05-24T17:00:01Z
+# Algorithm: Ed25519 (RFC 8032)
+# Size: 32 bytes raw / 44 base64 chars (with padding)
+#
+# Public key (safe to commit; verifies manifest signatures; embedded in mobile
+# app at apps/mobile-rn/src/update/manifestSigning.ts as MANIFEST_PUBKEY_BASE64):
+public_base64:        rDfoNbDp88ls1yoiuuKONsJ/PdstLOrioQqvXYIA40I=
+public_sha256_prefix: b57acd1efa3f
+
+# Private key fingerprint (audit-only; value lives in SOPS-encrypted
+# .secrets/prod/manifest-signing.yaml + GitHub Actions secret state via
+# CI age recipient):
+private_sha256_prefix: aa97bfc02ba3
+
+# Rotation: generate new keypair + ship new app version with new pubkey
+# hardcoded. Compromise recovery: same as keystore per ADR-0012 (regenerate
+# keypair + rotate keystore + ship new APK with both rotated values).
+# Backlog item: v1.0.1 MANIFEST-SIGNING-KEY-ROTATION playbook (see ROADMAP.md).
