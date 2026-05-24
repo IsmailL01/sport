@@ -14,7 +14,7 @@
 
 import 'react-native-get-random-values';
 
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, useEffect, type ErrorInfo, type ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Text, View } from 'react-native';
@@ -27,6 +27,7 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { ToastProvider } from './src/ui/Toast';
 import { ForceUpdateScreen } from './src/ui/screens/ForceUpdateScreen';
 import { useFeatureFlagsStore } from './src/state/featureflags';
+import { subscribeToRecordingTick } from './src/foreground/notification';
 
 // === Module-level side effects ===
 
@@ -76,6 +77,14 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 // === Root ===
 
 export default function App() {
+  // Phase 7 / Plan 07-03 Task 2: foreground notification updater. Subscribes to
+  // useActivityStore.state transitions; while 'recording', maintains a sticky
+  // Android notification with live duration + distance (no-op on iOS).
+  useEffect(() => {
+    const unsubscribe = subscribeToRecordingTick();
+    return () => unsubscribe();
+  }, []);
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
