@@ -12,6 +12,12 @@
       "ios",
       "android"
     ],
+    "notification": {
+      "icon": "./assets/notification-icon.png",
+      "color": "#0F1419",
+      "androidMode": "default",
+      "androidCollapsedTitle": "Running Ecosystem — запись"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -61,7 +67,10 @@
           "locationWhenInUsePermission": "Нужно для трекинга пробежки и отображения вашей позиции на карте.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": true
+          "isAndroidForegroundServiceEnabled": true,
+          "notificationTitle": "Running Ecosystem",
+          "notificationBody": "Запись пробежки активна",
+          "notificationColor": "#0F1419"
         }
       ],
       "expo-task-manager",
