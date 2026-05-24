@@ -1,0 +1,27 @@
+# Phase 5 / Plan 05-07 v2 / D-26 — alert routing policies
+# Criticals fire immediately; warnings respect night-mute-msk (21:00-04:00 UTC).
+
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: telegram-alerts
+    group_by: ['alertname', 'port', 'consumer', 'provider']
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      # Criticals: immediate, no mute
+      - receiver: telegram-alerts
+        matchers:
+          - severity = critical
+        group_wait: 0s
+        group_interval: 5m
+        repeat_interval: 1h
+
+      # Warnings: routed through night-mute
+      - receiver: telegram-alerts
+        matchers:
+          - severity = warning
+        mute_time_intervals:
+          - night-mute-msk

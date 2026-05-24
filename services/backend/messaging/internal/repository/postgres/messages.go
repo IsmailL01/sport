@@ -198,11 +198,11 @@ func (r *MessageRepo) Edit(ctx context.Context, messageID string, newBody string
 // получает media_id и зовёт /media/{id} отдельно для presigned download URL.
 // Возвращает map[messageID] → mediaInfo.
 type MediaInfo struct {
-	Mime        string
-	Width       *int
-	Height      *int
-	DurationMs  *int
-	Status      string // pending | ready | failed
+	Mime       string
+	Width      *int
+	Height     *int
+	DurationMs *int
+	Status     string // pending | ready | failed
 }
 
 func (r *MessageRepo) LoadMediaInfo(ctx context.Context, messageIDs []string) (map[string]*MediaInfo, error) {

@@ -38,4 +38,30 @@ yarn-error.*
 
 # generated native folders
 /ios
-/android
+
+# Android: most of the prebuild tree is generated, but Phase 7 Plan 07-01 needs
+# 3 customized build config files committed so CI (actions/checkout) sees them.
+# Git won't re-include files inside an excluded parent dir, so we ignore the
+# individual generated children instead of the whole /android subtree.
+/android/.gradle/
+/android/build/
+/android/captures/
+/android/local.properties
+/android/gradlew
+/android/gradlew.bat
+/android/gradle/
+/android/build.gradle
+/android/settings.gradle
+/android/app/build/
+/android/app/release/
+/android/app/.cxx/
+/android/app/debug.keystore
+/android/app/release.keystore
+/android/app/src/debug/AndroidManifest.xml
+/android/app/src/debugOptimized/AndroidManifest.xml
+/android/app/src/main/AndroidManifest.xml
+/android/app/src/main/java/
+/android/app/src/main/res/
+/android/.gitignore
+# Customized + committed: /android/gradle.properties, /android/app/build.gradle,
+# /android/app/proguard-rules.pro (Phase 7 Plan 07-01)

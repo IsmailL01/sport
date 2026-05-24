@@ -1,321 +1,240 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-05-14
+**Analysis Date:** 2026-05-23
 
-## Language & Strictness
-
-**TypeScript:** ~5.9.2, `strict: true` enabled in `apps/mobile-rn/tsconfig.json` (extends `expo/tsconfig.base`). No `tsconfig` overrides for the `src/` tree — entire mobile codebase is type-checked strictly.
-
-**Type-check command:** `npm run typecheck` → `tsc --noEmit`. STATUS.md repeatedly notes "tsc clean" after each milestone — strict-mode breakage is treated as a release blocker.
-
-**Backend (Go):** module-rooted under `services/backend/`. Workspace via `go.work`. Each sub-service follows `cmd/ + internal/{domain,service,repository,handler}` layout. Not in scope for mobile conventions but mirrored test matrix (see `apps/mobile-rn/src/__tests__/permissions.test.ts` — explicit comment: "mirror Go pkg/permissions/check_test.go").
+This codebase is a two-language monorepo (Expo RN TypeScript mobile + Go backend monorepo) for a solo-dev closed-beta. Conventions differ by language; this file documents both side by side and flags cross-cutting rules (commit format, naming, pre-commit hooks).
 
 ## Naming Patterns
 
-**Files:**
-- Domain types & pure logic: lower-camelCase (`walletDomain.ts`, `importPlan.ts`, `importSanity.ts`, `recordsFormat.ts`).
-- Classes / single-class modules: PascalCase (`AreaCalculator.ts`, `ClosureDetector.ts`, `KalmanFilter.ts`, `ExpoLocationAdapter.ts`, `MockRealtimeAdapter.ts`).
-- Zustand stores in modular folders: PascalCase camel `useXxxStore.ts` (`useChatStore.ts`, `useModerationStore.ts`, `useNotificationsStore.ts`).
-- Legacy flat stores in `src/state/`: short lower-case (`auth.ts`, `wallet.ts`, `settings.ts`).
-- React screens / components: PascalCase `.tsx` (`MapboxView.tsx`, `SessionDetailModal.tsx`, `ReportSheet.tsx`).
-- Repository files in `storage/`: lowerCamel + `Repository` suffix (`walletRepository.ts`, `sessionRepository.ts`, `relationsRepository.ts`).
-- Test files: mirror source under `src/__tests__/<name>.test.ts` (centralized, NOT co-located).
+**Files (TypeScript / mobile, `apps/mobile-rn/src/`):**
+- Domain classes / value objects → `PascalCase.ts`: `AreaCalculator.ts`, `ClosureDetector.ts`, `SessionManager.ts`, `LocationAdapter.ts`
+- Modules / barrel files / utilities / state stores → `camelCase.ts` or short lowercase: `activity.ts`, `auth.ts`, `pointRepository.ts`, `geo.ts`, `format.ts`, `index.ts`
+- React components / screens / hooks → `PascalCase.tsx`: `Toast.tsx`, `App.tsx`, `RegionPickerOverlay.tsx`, `ScreenErrorBoundary.tsx`
+- Tests → `<UnitName>.test.ts` / `<UnitName>.test.tsx`, snapshot variant `<Name>.snapshot.test.tsx`. All live in `src/__tests__/`.
+- Lint-failure fixtures → `src/__fixtures__/` (excluded from default ESLint run, exercised with `--no-ignore`).
 
-**Functions:**
-- camelCase verbs (`decideCoinsForSession`, `validateTransaction`, `planWorkout`, `calculateArea`, `signedAmountFor`, `recordTransaction`).
-- Pure-domain functions are explicitly noted in module headers as "Pure functions: no DB, no side effects" (see `src/domain/currency.ts`, `src/domain/walletDomain.ts`).
-- Zustand actions are inline lambdas on the store object — they read like methods: `awardForSession`, `hydrate`, `refresh`, `clearAll`.
+**Files (Go / backend, `services/backend/`):**
+- Source → `snake_case.go`: `debug_session_middleware.go`, `pii_deny_list.go`, `slog_handler.go`, `otel_init.go`
+- Tests → `<file>_test.go` co-located: `auth_test.go`, `jwt_test.go`
+- Generated / `.gen.go` / `_gen.go` are excluded from a subset of linters (see `.golangci.yml:57`).
+
+**Files (shell smokes, `.planning/phases/*/evidence/`):**
+- `smoke-<area>.sh` kebab-case: `smoke-roundtrip.sh` (umbrella), `smoke-keystore-generated.sh`, `smoke-sops-roundtrip.sh`, `smoke-sha256-captured.sh`, `smoke-ios-cert-roundtrip.sh`, `smoke-ios-provprofile.sh`, `smoke-asc-api-key.sh`.
+
+**Functions / methods:**
+- TS — `camelCase`: `calculateArea`, `appendPoints`, `setMapboxAccessToken`, `getClientVersionHeader`. React hooks → `useFoo` prefix (`useToast`, `useActivityStore`, `useTheme`).
+- Go — exported `PascalCase` / unexported `camelCase`: `NewSigner`, `IssueAccess`, `VerifyAccess`, `normalizeEmail`, `validatePassword`. Constructors are always `NewXxx`.
 
 **Variables:**
-- camelCase (`avgHrBpm`, `kcalBurned`, `durationS`, `coinsEarnedToday`).
-- Units encoded in the suffix: `durationS` (seconds), `distanceM` (metres), `areaM2` (square metres), `paceMinKm`, `weightKg`, `heightCm`, `bpm`, `kcalBurned`. Do not omit units.
-- Booleans: positive predicate (`isClosed`, `isAdmin`, `isAuthenticated`, `needsOnboarding`, `capped`).
-- Database row columns are snake_case in SQL; mapped to camelCase via explicit `rowToX` helpers (see `apps/mobile-rn/src/storage/sessionRepository.ts:22` `rowToSession`).
+- TS — `camelCase`, constants are `SCREAMING_SNAKE_CASE` at module scope: `FLUSH_THRESHOLD`, `AREA_RECOMPUTE_INTERVAL_MS` (see `apps/mobile-rn/src/domain/session/SessionManager.ts:24-25`), `MAPBOX_TOKEN`, `DB_NAME`, `TARGET_VERSION`.
+- Go — exported `PascalCase`, unexported `camelCase`: `D17MetricNames`, `Issuer`, `bcryptC`.
+- Env vars — `SCREAMING_SNAKE_CASE`: `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`, `JWT_SECRET`, `SOPS_AGE_KEY_FILE`, `POSTGRES_PASSWORD`, `VPS_HOST`, `DB_URL`.
 
-**Types & Interfaces:**
-- PascalCase (`Session`, `RawPoint`, `Point`, `WalletTxKind`, `CurrencyDecision`, `WorkoutPlan`, `ReportTargetKind`).
-- Discriminated unions on `decision` / `status` / `kind` (see `WorkoutPlan` with `decision: 'insert' | 'duplicate' | 'reject'`).
-- Prefer `type` over `interface` everywhere except adapter contracts (`interface LocationAdapter`, `interface RealtimeAdapter`).
-- String-literal unions for enums (`ActivityType = 'run' | 'trail' | 'walk' | 'cycle' | 'treadmill' | 'generic_cardio'`, `ChatRole`, `ReportStatus`).
+**Types / interfaces:**
+- TS — `PascalCase` for types, interfaces, classes. Type-only imports are explicit: `import type { Foo } from './bar'` (see `apps/mobile-rn/src/state/activity.ts:21-56`).
+- Interface names are descriptive (`SessionRepo`, `LocationAdapter`, `MapAdapter`, `FeatureFlagChecker`) — no `I`-prefix.
+- Discriminated string-literal unions for state: `'idle' | 'recording' | 'stopped'` (`SessionManager.ts:29`), `'active' | 'paused' | 'background-slc'` (`LocationAdapter.ts:13`).
 
-**Constants:**
-- SCREAMING_SNAKE for module-level invariants (`DAILY_COIN_CAP`, `MIN_SESSION_DURATION_S`, `MIN_RUN_PACE_MIN_KM`, `KCAL_PER_COIN`, `REPORT_BODY_MAX_LENGTH`, `STYLE_URLS`).
-- `as const` is not used aggressively — explicit string-literal types do that job.
+**Errors:**
+- Go sentinel errors → `ErrXxx` exported vars in domain package: `ErrUserNotFound`, `ErrEmailAlreadyExists`, `ErrInvalidCredentials` (see `services/backend/identity/internal/domain/user.go:38-43`).
+
+**Test names:**
+- TS — Jest `describe` is the unit name (class / function), `it`-strings are usually Russian and behavior-oriented: `'пропускает точку с accuracy ≤ порога'`, `'квадрат 200×200м (≈40 000 м²) — tolerance 5%'`.
+- Go — `TestSubject_Behavior` underscored: `TestNewSigner_RejectsShortSecret`, `TestDebugSessionMiddleware_AllThreeTrue`, `TestRegister_DuplicateEmail`.
 
 ## Code Style
 
-**Formatter:** Prettier 3.8 (`apps/mobile-rn/.prettierrc.json`):
-- `semi: true`
-- `singleQuote: true`
-- `trailingComma: "all"`
-- `printWidth: 90`
-- `tabWidth: 2`
-- `useTabs: false`
-- `arrowParens: "always"`
+**Formatting (mobile, `apps/mobile-rn/`):**
+- Prettier `^3.8.3` configured at `apps/mobile-rn/.prettierrc.json`:
+  - `semi: true`
+  - `singleQuote: true`
+  - `trailingComma: 'all'`
+  - `printWidth: 90`
+  - `tabWidth: 2`
+  - `arrowParens: 'always'`
+- `npm run format` → `prettier --write "src/**/*.{ts,tsx}" "App.tsx"`.
+- TypeScript: `apps/mobile-rn/tsconfig.json` extends `expo/tsconfig.base` with `strict: true`.
 
-Run: `npm run format` → `prettier --write "src/**/*.{ts,tsx}" "App.tsx"`.
+**Formatting (backend):**
+- `gofmt` + `goimports` are run as formatters via `.golangci.yml:76-79` (no `gofumpt` is wired in this repo despite project-context mention — only the two standard formatters).
+- Tab indent (default Go style); editor settings in `.editorconfig:14` force `indent_size = 4` only as a soft hint.
 
-**Linter:** ESLint 9 with `eslint-config-expo` (`apps/mobile-rn/.eslintrc.json`). Run: `npm run lint`.
+**Editor (cross-cutting, `.editorconfig`):**
+- `charset = utf-8`, `end_of_line = lf`, `insert_final_newline = true`, `trim_trailing_whitespace = true`.
+- Default `indent_style = space`, `indent_size = 2`.
+- `[*.{py,go}]` → `indent_size = 4`. `[Makefile]` → `indent_style = tab`.
 
-**Architectural lint rule (critical):**
-```json
-"no-restricted-imports": [
-  "error",
-  {
-    "paths": [
-      {
-        "name": "@rnmapbox/maps",
-        "message": "Импорт Mapbox SDK разрешён только из src/map/. См. ТЗ §3 принцип 10."
-      }
-    ]
-  }
-]
-```
-- The ESLint rule is **enforced**: importing `@rnmapbox/maps` anywhere outside `src/map/**/*.{ts,tsx}` is a build-breaking error.
-- The `src/map/` folder has an override that turns the rule off — so adapters can do their job.
-- This is the ONLY way the codebase guarantees `MapAdapter` discipline. Touch this rule with extreme care; CLAUDE.md mandates it.
+**Linting (mobile):**
+- ESLint v9 flat-config at `apps/mobile-rn/eslint.config.js`. Migrated from `.eslintrc.json` in PHASE1-13.
+- Extends `eslint-config-expo/flat`.
+- Project-specific rules:
+  - `no-restricted-imports` blocks `@rnmapbox/maps` outside `src/map/**` and `src/__tests__/**` (enforces `MapAdapter` quarantine per ТЗ §3 принцип 10).
+  - `no-restricted-syntax` blocks `process.env.EXPO_PUBLIC_*_SECRET` member access and any string literal matching `/^sk\.[A-Za-z0-9._-]{40,}/` (Mapbox secret-token shape). `{40,}` quantifier prevents false-positives on UI strings like `'sk-button'`.
+- Ignore patterns: `dist/`, `node_modules/`, `android/`, `ios/`, `coverage/`, `.expo/`, `src/__fixtures__/`.
+- `npm run lint` from `apps/mobile-rn/` runs `eslint .`.
 
-**Ignored paths:** `dist/`, `node_modules/`, `android/`, `ios/`.
+**Linting (backend):**
+- `.golangci.yml` (v2) at repo root. Conservative-first config: explicit-enable, 15 low-false-positive linters.
+- Enabled linters: `govet`, `ineffassign`, `unused`, `errcheck`, `staticcheck`, `bodyclose`, `errorlint`, `rowserrcheck`, `sqlclosecheck`, `contextcheck`, `copyloopvar`, `nilerr`, `misspell`.
+- Deferred to v1.0.1 (commented with rationale): `gocyclo`, `dupl`, `revive`, `gocritic`, `paralleltest`, `testifylint`.
+- Test files (`_test\.go`) relax `errcheck`, `dupl`, `gocyclo`, `bodyclose`, `govet`.
+- Every disabled linter / rule MUST carry an inline `# Disabled — <rationale>; revisit v1.0.1` annotation per `.golangci.yml:5-6`.
+- CI runs per-module (services/backend has `go.work` workspace, no root `go.mod`) — see `.github/workflows/backend-ci.yml:69-89`.
+
+**Pre-commit hooks (`.pre-commit-config.yaml`):**
+- `gitleaks v8.30.1` (pinned, no `latest` per ROADMAP hard rule) — staged-files-only scan.
+- Full-repo `gitleaks` + `trufflehog` run in CI (`.github/workflows/secret-scan-full.yml` + `backend-ci.yml:165-184`).
+- Mobile ESLint token-secret guard (`no-restricted-syntax` rules in `eslint.config.js:47-60`) provides defense-in-depth at the lint layer.
 
 ## Import Organization
 
-**Convention (Prettier-default + Expo-default; not enforced by `simple-import-sort`):**
+**TypeScript (mobile):**
+Order observed in `apps/mobile-rn/src/state/activity.ts:21-56`:
+1. External: `'react-native'`, `'zustand'`, third-party packages — blank line after.
+2. Relative `../` (sibling-tree modules grouped by directory): `'../domain/...'`, `'../location'`, `'../pipeline'`, `'../storage/...'`.
+3. Relative `./` (same-directory): `'./auth'`, `'./settings'`, `'./wallet'`.
+- Type-only imports use `import type { Foo }` syntax (mandated by `strict: true`).
+- Barrel files (`src/map/index.ts`, `src/pipeline/index.ts`) re-export the public surface; external consumers MUST import from barrels, never deep paths (see `src/map/index.ts:1-3` — direct `@rnmapbox/maps` import forbidden by ESLint rule).
 
-1. External packages first (React, RN, zustand, expo-*, @rnmapbox).
+**Path aliases:** None — relative paths only.
+
+**Go:**
+Order is standard `goimports`-enforced (validates via formatter in `.golangci.yml:79`):
+1. Stdlib (`"context"`, `"net/http"`, `"testing"`).
 2. Blank line.
-3. Internal absolute / relative imports, grouped roughly by layer (domain → util → storage → state → ui).
+3. Third-party (`"github.com/jackc/pgx/v5/pgxpool"`, `"golang.org/x/crypto/bcrypt"`).
+4. Blank line.
+5. Internal (`"github.com/runningecosystem/backend/..."`).
 
-Example from `apps/mobile-rn/src/state/wallet.ts:10`:
-```typescript
-import { create } from 'zustand';
-
-import { decideCoinsForSession, type ActivityType, type CurrencyDecision } from '../domain/currency';
-import {
-  coinsEarnedSince,
-  getBalance,
-  hasTransactionForSession,
-  // ...
-} from '../storage/walletRepository';
-```
-
-**Type-only imports:** Use `import type { ... }` for pure type imports (`import type { Point } from '../domain/types';`). Inline `type` modifier when mixing (`import { decideCoinsForSession, type ActivityType }`).
-
-**No path aliases.** All internal imports are relative (`../domain/types`, `../storage/walletRepository`). `expo/tsconfig.base` does set up `@/*` mapping to `src/*` but the codebase does not use it. Stay consistent with existing relative-path style.
-
-**Lazy / dynamic imports** are used deliberately to break module-load cycles and to avoid pulling `expo-sqlite` into Jest. Example pattern from `src/state/auth.ts:221`:
-```typescript
-const { useModerationStore } = await import('../modules/moderation');
-useModerationStore.getState().clearAll();
-```
-Used for cross-module cleanup on logout. Wrap each dynamic import in its own try/catch — a failure in one module must not block others.
+Example: `services/backend/identity/internal/service/auth.go:5-20`.
 
 ## Error Handling
 
-**Two-tier strategy:**
+**Go — sentinel errors + `errors.Is` / `errors.As` + `%w` wrapping:**
+- Domain layer exports sentinel `errors.New(...)` values (`services/backend/identity/internal/domain/user.go:38-43`).
+- Service layer wraps with context via `fmt.Errorf("op: %w", err)` (`services/backend/identity/internal/service/auth.go:63,75`).
+- HTTP handler maps sentinels to status codes via `errors.Is` switch (`services/backend/identity/internal/handler/http.go:322-332`):
+  ```go
+  case errors.Is(err, domain.ErrEmailAlreadyExists):
+      // → 409
+  case errors.Is(err, domain.ErrInvalidCredentials):
+      // → 401
+  ```
+- Linter enforces correct patterns: `errorlint` blocks `err == ErrXxx` direct comparison; `nilerr` blocks `return nil` after handling an error.
+- **No `Result<T, E>` ADT** despite the project-context description — Go uses idiomatic multi-return `(value, error)` everywhere. The "Result-style" framing only refers to the discipline of always pairing sentinel errors with `errors.Is` mapping in handlers.
 
-1. **Domain layer — typed errors as values OR thrown classes.**
-   - Pure validators return `Error | null` (caller decides). See `validateTransaction` in `apps/mobile-rn/src/domain/walletDomain.ts:25`:
-     ```typescript
-     export function validateTransaction(args, currentBalance): Error | null {
-       if (!Number.isFinite(args.amount)) return new Error('amount must be finite');
-       if (signed < 0 && currentBalance + signed < 0) {
-         return new InsufficientBalanceError(args.userId, Math.abs(signed), currentBalance);
-       }
-       return null;
-     }
-     ```
-   - Discriminated-union return types instead of throwing on hot paths: `planWorkout` returns `{ decision: 'insert' | 'duplicate' | 'reject', ... }` (`apps/mobile-rn/src/health/importPlan.ts:32`).
-   - `decideCoinsForSession` returns `{ coins: 0, reason: 'session_too_short', meta }` — antifraud rejects are values, not exceptions.
-
-2. **Repository / API layer — typed Error subclasses.**
-   - **InsufficientBalanceError** (`apps/mobile-rn/src/domain/walletDomain.ts:7`): carries `userId`, `need`, `have` as public readonly fields. Thrown from `recordTransaction` BEFORE DB write; CHECK constraint v19 is the second contour.
-     ```typescript
-     export class InsufficientBalanceError extends Error {
-       constructor(public readonly userId: string, public readonly need: number, public readonly have: number) {
-         super(`Недостаточно монет: нужно ${need}, есть ${have}`);
-         this.name = 'InsufficientBalanceError';
-       }
-     }
-     ```
-   - **RateLimitedError** (`apps/mobile-rn/src/modules/moderation/sync/moderationApi.ts:18`): carries `retryAfterS`. Thrown when API returns 429 with `Retry-After` header.
-   - Pattern for new typed errors: extend `Error`, always set `this.name`, expose context as `public readonly` constructor params, include user-facing message in Russian where appropriate.
-
-3. **Store / UI layer — try/catch + console.warn + state.error.**
-   - Zustand store actions catch all errors and write the message to `error: string | null`. Pattern from `src/state/auth.ts:101`:
-     ```typescript
-     } catch (e) {
-       set({ state: 'unauthenticated', error: 'Не удалось связаться с сервером...' });
-       console.warn('[auth] register failed', e);
-     }
-     ```
-   - UI reads `error` from store, shows it, then calls `clearError()`.
-   - **Never throw from a store action.** Always catch → set error → log via `console.warn('[scope] message', e)`.
-
-**Network failures:**
-- `apiClient.parseRateLimit(resp)` is the canonical 429 handler. Use it before parsing JSON in any sync module.
-- 401 triggers silent refresh via `ApiClient.fetch`; UI sees `unauthenticated` state if refresh also fails.
+**TypeScript — `throw` + `ErrorBoundary`:**
+- Throw `new Error(message)` from leaf functions for fail-fast cases (e.g. `apps/mobile-rn/src/auth/authProviders.ts:69,76,119`; `src/sensors/adapters/BleSensorAdapter.ts:37-53`).
+- Root-level `ErrorBoundary` class component in `apps/mobile-rn/App.tsx:48-74`: catches via `getDerivedStateFromError` + `componentDidCatch`, renders Russian-language fallback UI (`Приложение упало`).
+- `ScreenErrorBoundary` (`apps/mobile-rn/src/design/components/ScreenErrorBoundary.tsx`) — generic boundary for wrapping critical screens with custom fallback titles. Always logs to `console.error('[ScreenErrorBoundary]', error, info.componentStack)`.
+- Filters in the GPS pipeline return `Point | null` to signal "drop" without exceptions (`AccuracyFilter`, `JumpFilter`, etc. in `src/pipeline/filters/`) — this is the closest analog to a `Result` type in the mobile codebase.
 
 ## Logging
 
-**Framework:** None — `console.log` / `console.warn` / `console.error` directly.
+**Mobile:**
+- No structured logger — `console.error` / `console.warn` only. Tagged with bracket prefixes: `console.error('[App ErrorBoundary]', error, info.componentStack)` (`App.tsx:56`), `console.error('[ScreenErrorBoundary]', ...)` (`ScreenErrorBoundary.tsx:31`).
 
-**Patterns:**
-- `console.warn('[scope] message', err)` — scope tag in square brackets, always lowercase, hyphenated (`[auth]`, `[wallet]`, `[apiClient]`, `[sensors]`, `[SessionDetail]`, `[ScreenErrorBoundary]`).
-- `console.log` only behind `__DEV__` guard (see `src/util/speech.ts:17`).
-- `console.error` reserved for unrecoverable conditions in error boundaries and headless tasks (`src/location/adapters/ExpoLocationAdapter.ts:21`).
-
-**Do NOT:**
-- Throw `console.log` into production code paths without `__DEV__`.
-- Add structured loggers / 3rd-party libs without ADR.
+**Backend:**
+- `log/slog` JSON handler from `services/backend/pkg/observability/slog_handler.go`. Configurable `Level` with per-request override via `WithLogLevel(ctx, slog.LevelDebug)` (driven by `DebugSessionMiddleware`'s D-22 three-gate rule — `slog_handler.go:71-83`).
+- PII deny-list scrubbing at emit time (`pkg/observability/pii_deny_list.go`).
+- CI-side PII audit grep in `.github/workflows/backend-ci.yml:234-243` (`scripts/pii_audit.sh`) — blocks PR merge if `slog.*Context` calls reference deny-listed attribute keys.
+- Sentry SDK initialized via `MustInitSentry` (`pkg/observability/sentry_init.go`), wired in each service `cmd/server/main.go`.
 
 ## Comments
 
-**When to comment:**
-- **Module headers are mandatory** for domain / pipeline / adapter files. They state purpose, layering rationale, and link to ТЗ § sections or `docs/*.md`. Example from `src/domain/walletDomain.ts:1`:
-  ```typescript
-  // Pure-логика wallet: знак суммы и pre-flight валидация.
-  // Вынесено отдельно от storage/walletRepository чтобы Jest мог тестировать
-  // без подгрузки expo-sqlite (см. почему — комментарий в health/importSanity.ts).
-  ```
-- Pure-function intent + units (`/** kcal сожжённых за сессию. */`, `/** дистанция в метрах (0 для статичных тренажёров). */`).
-- "Why not what." Comment ratio is high around antifraud rules, idempotency, race-conditions, and migration version bumps (`v19`, `v18`, `v17` — referenced inline).
+**When to comment (observed practice):**
+- Module-header doc-comment on every TS file >50 LOC and every Go file. Explains scope, references (`ТЗ §X.Y`, ADR-NNNN, plan ID, decision ID like `D-22`), and architecture invariants.
+  - Example: `apps/mobile-rn/src/location/LocationAdapter.ts:1-12` cross-references ТЗ §3 принцип 3 and §4.4.
+  - Example: `services/backend/pkg/observability/debug_session_middleware.go:1-30` cross-references Plan 05-06, OBS-08, D-22, D-23, and RESEARCH §1.8.
+- Inline rationale comments are heavy in CI configs and pre-commit configs — every disabled linter/rule explains "why" and "when to revisit" (`.golangci.yml:36-42`, `.golangci.yml:60-74`).
+- TODO / FIXME comments are rare; pending work is tracked in `STATE.md` + `.planning/phases/` plan docs and `v1.0.1` backlog ADRs, not in code.
 
-**JSDoc/TSDoc:**
-- Light JSDoc on public functions (`/** ... */` single line common). Full `@param` is rare; types do the heavy lifting.
-- Use TSDoc for the `@param existingKeys` style ONLY where the parameter semantics aren't obvious from type (see `apps/mobile-rn/src/health/importPlan.ts:38`).
+**JSDoc / TSDoc:**
+- Use `/** */` for public exports (functions, types) that have non-obvious contracts. Common pattern: bullet-list of behavior + parameter semantics. Example: `apps/mobile-rn/src/location/LocationAdapter.ts:5-12,20-22` (Russian text).
 
-**Language:** Russian and English are both common in comments. Domain-specific (currency, antifraud, UX-facing strings) tends to be Russian; technical/architectural is English. Match the surrounding file.
-
-**Phase tags:** Comments often anchor to phase IDs ("Phase 8 / M10.2", "Phase E", "Phase 1") and ТЗ sections ("ТЗ §6.6", "ТЗ §10.5"). Preserve these when modifying — they are navigation breadcrumbs.
-
-**TODO/FIXME:** Plain `TODO:` is used (e.g. `src/domain/types.ts:38` "TODO: расширить под полную state-машину"). Keep them attached to a specific phase or owner.
+**Russian-language sections:**
+- ADR section headings, `it`-test descriptions, and most inline rationale comments are in Russian. Doc comments and public-API JSDoc are mixed RU+EN. Identifiers / function names are always English.
 
 ## Function Design
 
-**Size & shape:**
-- Domain functions stay small (≤ 60 LOC). `decideCoinsForSession` (~55 LOC, 6 early returns) is at the upper end and is held up as the reference.
-- Multiple early returns are encouraged for antifraud / validation chains — flat control flow over nested ifs.
+**Size:** Mostly short (<50 LOC). The `state/activity.ts` zustand store was refactored from a 466-line "god-store" into a thin wrapper around `SessionManager` (Phase A / D-09; see comment at `src/state/activity.ts:1-19`).
 
 **Parameters:**
-- 1–2 positional params; 3+ → bundle into a single options object (`{ userId, sessionId, activity, kcal, durationS, distanceM, avgHrBpm }`).
-- All numeric inputs carry unit suffix in name.
-- `null` (not `undefined`) for "absent / unknown" everywhere (`avgHrBpm: number | null`, `endedAt: number | null`).
+- Go services take `ctx context.Context` as first arg always: `func (s *AuthService) Register(ctx context.Context, email, password, displayName, userAgent string)`.
+- TS functions accept positional args for ≤3 params, options-object for more. Domain helpers often use `Partial<X> & { ... }` for test/helper constructors (see `makePoint` in `src/__tests__/pipeline.test.ts:9-20`).
 
 **Return values:**
-- Prefer discriminated unions (`WorkoutPlan`) and `T | null` over throwing.
-- Decision objects always include `meta` for audit/UI (see `CurrencyDecision.meta` carrying `activity`, `kcal`, `paceMinKm`, `multiplier`, `capped`).
-- `Error | null` for pure validators.
+- Go: idiomatic `(value, error)` or `(value1, value2, error)` tuples.
+- TS pipeline filters: `Point | null` to signal drop.
+- TS domain: result objects with explicit shape — e.g. `calculateArea` returns `{ areaM2: number | null, method: CalcMethod, warnings: AreaWarning[] }` (`src/domain/AreaCalculator.ts` + see `AreaCalculator.test.ts:30-44`).
 
 ## Module Design
 
-**Exports:**
-- Named exports only — no default exports in domain / state / storage / module-root code.
-- Module barrel pattern in modular features (`src/modules/<name>/index.ts` re-exports `types`, store hook, UI components — see `src/modules/moderation/index.ts:1`).
-- Public surface is explicit: anything not in `index.ts` is private to the module.
+**Exports (TS):**
+- Named exports only. No default exports outside `App.tsx` (which Expo requires).
+- Barrel `index.ts` per public boundary (`src/map/index.ts`, `src/pipeline/index.ts`, `src/location/index.ts`).
+- Adapter interfaces live in their own files: `LocationAdapter.ts` (interface), `adapters/ExpoLocationAdapter.ts` (impl). Same pattern for map.
 
-**Modular folder layout (Phase 8 standard):**
+**Exports (Go):**
+- `package <name>` matches dir name. Internal packages live under `internal/` (e.g. `identity/internal/service`, `identity/internal/handler`, `identity/internal/repository/memory`).
+- Each microservice is its own `go.mod` under `services/backend/<svc>/`; shared library under `services/backend/pkg/`. Workspace tied together via `services/backend/go.work`.
+
+**Adapter pattern (cross-cutting, ТЗ §3):**
+- `MapAdapter` quarantine — `@rnmapbox/maps` may be imported only inside `apps/mobile-rn/src/map/adapters/` and `src/map/` boundary files. Enforced by ESLint rule.
+- `LocationAdapter` interface (`apps/mobile-rn/src/location/LocationAdapter.ts`) with `ExpoLocationAdapter` impl (`apps/mobile-rn/src/location/adapters/ExpoLocationAdapter.ts`).
+- `MockHealthAdapter` (`apps/mobile-rn/src/health/MockHealthAdapter.ts`), `BleSensorAdapter` (`apps/mobile-rn/src/sensors/adapters/BleSensorAdapter.ts`), `expoSpeechAdapter` (`apps/mobile-rn/src/util/expoSpeechAdapter.ts`).
+
+**Repository pattern (storage):**
+- Mobile: `apps/mobile-rn/src/storage/` — one file per aggregate (`sessionRepository.ts`, `pointRepository.ts`, `lapRepository.ts`, `recordsRepository.ts`, `sensorRepository.ts`, `socialRepository.ts`, `walletRepository.ts`, `relationsRepository.ts`).
+- `database.ts` owns the singleton `expo-sqlite` connection + schema migrations (`TARGET_VERSION = 19` at `src/storage/database.ts:4`).
+- Backend: per-service `internal/repository/<impl>/` — `memory/` for tests (`services/backend/identity/internal/repository/memory/memory.go`), `postgres/` for production (`services/backend/identity/internal/repository/postgres/`). Interfaces declared in `internal/repository/repository.go`.
+
+**Three-gate `DebugSessionMiddleware` (backend, Phase 5 / D-22):**
+- `services/backend/pkg/observability/debug_session_middleware.go` elevates per-request slog to `LevelDebug` only when ALL THREE gates pass:
+  1. `X-Debug-Session: 1` HTTP header.
+  2. Bearer JWT valid AND `claims.IsTester == true`.
+  3. featureflag `tester_debug_logging` ON for that userID.
+- Any gate fail → silent passthrough (no slog emission to avoid debug-DoS amplification per RESEARCH §1.8).
+- Chain placement: OUTERMOST observability layer per-service `main.go` (D-32).
+
+## Commit Message Conventions
+
+Observed format from `git log` (50 most recent commits):
+
 ```
-src/modules/<feature>/
-  domain/      # pure types + constants
-  state/       # useXxxStore.ts (zustand)
-  sync/        # API client wrappers, DTO mappers
-  storage/     # SQLite (optional)
-  ui/          # screens + components
-  index.ts     # public surface
+<type>(<scope>): <subject in english or russian>
+
+<optional multi-paragraph body — explains why, references commit SHAs,
+plan IDs (e.g. SIGN-01, BUILD-01), decisions (D-22), ADRs (ADR-0012),
+research sections (RESEARCH §1.8). Body is usually English; subjects
+are predominantly English.>
 ```
-Used by `moderation/`, `gamification/`, `permissions/`. Old code lives in flat `src/{domain,state,storage,...}/` — both styles coexist; prefer the modular layout for new features.
 
-## State Management (Zustand)
+**Type prefixes (observed frequencies):**
+- `feat(<scope>):` — new feature. Scopes seen: `06-01`, `07-01`, `05-04`, `05-05`, `05-06`, `scope-reset`, `phase-07`. Subjects often end with a plan-task ID in parens: `(SIGN-01)`, `(BUILD-01)`.
+- `fix(<scope>):` — bug fix. Scopes: `security`, `07-01`, `05-04`.
+- `chore(<scope>):` — non-functional: `chore(06-01): Wave 0 — evidence/ scaffolding ...`, `chore(security): rotate ...`, `chore(07-01): Wave 0 Part A — ...`.
+- `docs(<scope>):` — docs/ADR/state changes: `docs(security): ADR-0012 amendment — ...`, `docs(phase-07): plan-check verdict — PASS-WITH-NITS`, `docs(state): record phase 7 context session`.
 
-**Library:** `zustand@5`. Always `create<StoreType>(...)`.
+**Subject style:**
+- Imperative mood ("add", "rotate", "extend", "mask", "wire").
+- Em-dash (`—`, U+2014) frequently separates clauses: `"chore(security): re-rotate keystore password — self-inflicted chat-dump leak"`.
+- Reference codes appended in parens: `(SIGN-01)`, `(BUILD-01)`, `(D-22)`.
 
-**Two flavours:**
+**Body style:**
+- Wrapped to ~72 cols.
+- Backticks for code references (`` `xxd | tail -3` ``), commit SHAs in shortform (`commit 21b992c`), file paths, env-var names.
+- Cross-references ADRs by number (`ADR-0006`, `ADR-0012`), plans (`Plan 06-02 Task 4`), and decision codes (`D-22`).
+- Russian and English freely mixed in bodies and inline comments; subjects are predominantly English.
 
-1. **In-memory store (default):**
-   ```typescript
-   export const useWalletStore = create<WalletStore>((set, get) => ({
-     userId: null,
-     balance: 0,
-     // ...
-     hydrate: (userId) => { set({ ... }); },
-     awardForSession: (args) => { /* ... */ },
-     clearAll: () => set({ userId: null, balance: 0, ... }),
-   }));
-   ```
-   File: `apps/mobile-rn/src/state/wallet.ts:43`.
+**Footer:**
+- `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>` is the standard footer for Claude-assisted commits (per `CLAUDE.md` GSD execution flow).
+- `Refs:` footer used occasionally to link external trackers — rare in the observed window.
 
-2. **MMKV-persisted store** (settings, athlete profile):
-   ```typescript
-   export const useSettingsStore = create<SettingsStore>()(
-     persist(
-       (set) => ({ ... }),
-       { name: 'running-ecosystem-settings', storage: createJSONStorage(() => mmkvStorage), version: 5 },
-     ),
-   );
-   ```
-   File: `apps/mobile-rn/src/state/settings.ts:82`. **Always bump `version` and document the migration in a comment** when changing persisted shape.
-
-**Mandatory store conventions:**
-- Type the full shape as `type XxxStore = { ...state, ...actions }`.
-- Action signatures inside the type definition (above the `create`) so consumers get IntelliSense.
-- Every store that holds per-user data must expose `clearAll()` and be wiped from `useAuthStore.logout` via dynamic import (see `src/state/auth.ts:217-251`).
-- Use `set((s) => ({ ... }))` (functional) when the next state depends on the current state — STATUS R7 fixed a race in `markLap` by switching to this form. **Default to functional `set` for any mutation that reads existing state.**
-- Errors from async actions go into `error: string | null`. Never throw out of an action.
-
-**Modular store location:** `src/modules/<feature>/state/useXxxStore.ts`. Legacy stores live in `src/state/*.ts` and `src/state/social/*.ts`.
-
-## Repositories (SQLite)
-
-**Pattern:** Pure I/O wrappers around `expo-sqlite`. Zero business logic — formulas and validation live in `src/domain/`.
-
-**Conventions:**
-- Module header explains separation rationale (see `walletRepository.ts:1` referencing `walletDomain.ts`).
-- One file per aggregate (`sessionRepository.ts`, `walletRepository.ts`, `relationsRepository.ts`).
-- `getDatabase()` from `./database.ts` is the only handle source — never instantiate `SQLite.openDatabaseSync` directly.
-- DB columns are snake_case in SQL; map to camelCase via `rowToX` helpers.
-- Transactions use `db.withTransactionSync(() => { ... })`.
-- Atomic operations (e.g. balance bump + insert tx) call `validateTransaction` BEFORE `withTransactionSync` so failures don't open a tx.
-- Migrations bump a single integer `version` in `database.ts`; comment trail in `settings.ts` and `STATUS.md` references `v15`, `v17`, `v18`, `v19`.
-
-**Why repositories aren't directly testable:** `expo-sqlite` is a native module and refuses to load under Jest. Tests mock the entire module (`jest.mock('../storage/walletRepository', ...)`). New repositories should keep zero domain logic so the domain stays Jest-friendly.
-
-## Adapters (Sensor-Agnostic / Sensor-First Layering)
-
-**Adapters are the only place that may import platform / native SDKs.** Domain and pipeline depend on the `interface`, never on a concrete implementation.
-
-**Adapter interfaces:** `src/location/LocationAdapter.ts`, `src/map/` (via `MapboxView` boundary), `src/realtime/RealtimeAdapter.ts`, `src/health/HealthAdapter.ts`, `src/auth/authProviders.ts`, `src/notifications/`.
-
-**Concrete adapters:** `<Iface>` subfolder `adapters/` — `ExpoLocationAdapter`, `MockRealtimeAdapter`, `WebSocketRealtimeAdapter`, `HealthKitAdapter`, `HealthConnectAdapter`, `StravaAdapter`, `MockHealthAdapter`.
-
-**Singleton wiring:** The adapter folder's `index.ts` exports the interface type and a module-level singleton:
-```typescript
-// apps/mobile-rn/src/location/index.ts
-import { ExpoLocationAdapter } from './adapters/ExpoLocationAdapter';
-export type { LocationAdapter } from './LocationAdapter';
-export const locationAdapter = new ExpoLocationAdapter();
-```
-Consumers import the singleton (`import { locationAdapter } from '../location'`). DI for tests is achieved by `jest.mock` of the index file or by passing a `MockRealtimeAdapter` instance directly.
-
-**Stub-safe adapters:** Where native packages may be absent (Google / Apple auth, react-native-health), implement an adapter that returns "not available" cleanly rather than crashing at import — pattern from `src/auth/authProviders.ts`.
-
-## Architectural Constraints (Enforced)
-
-**Hard rules from `CLAUDE.md` § Что НЕ делать никогда:**
-
-1. **`@rnmapbox/maps` import outside `src/map/`** → ESLint error (`no-restricted-imports`). Adding a new map feature? Put it in `src/map/components/` and re-export from `src/map/index.ts`.
-2. **Direct lat/lon area math.** Always project to local plane via `localProjection` (`src/util/geo.ts`) before applying `shoelaceArea`. Reference impl: `apps/mobile-rn/src/domain/AreaCalculator.ts:39`. ТЗ §6.6.
-3. **`PolylineAnnotation` / `AnnotationManager` for tracks.** Forbidden. Use `LineLayer + ShapeSource` (`apps/mobile-rn/src/map/components/TrackLayer.tsx:5`). ТЗ §10.5 / FR-022. Update shape without recreating the source (FR-024).
-4. **Secrets in code.** Tokens come from `.env` (`EXPO_PUBLIC_*`) or native keystore (`expo-secure-store` via `src/auth/tokenStorage`).
-5. **Pure-domain Jest tests must never touch SQLite.** Wallet domain was specifically extracted to `walletDomain.ts` "чтобы Jest мог тестировать без подгрузки expo-sqlite" (see file header). Apply this pattern when adding new domain logic.
-
-**Soft rules (style / DX, not lint-enforced):**
-
-- One-file-per-store, one-file-per-aggregate-repository.
-- Comments anchored to ТЗ / phase IDs.
-- Russian for user-facing strings; English (or Russian) for technical comments — match the file.
-- No default exports.
-- No path aliases (use relative imports).
+**Never:**
+- Never use the `-i` flag with `git rebase` / `git add` (per `CLAUDE.md` working rules — interactive flows blocked).
+- Never include secret values (passwords, tokens, fingerprints) in commit messages — see ADR-0012 amendment for the `xxd`-leak post-mortem.
 
 ---
 
-*Convention analysis: 2026-05-14*
+*Convention analysis: 2026-05-23*

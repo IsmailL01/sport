@@ -2,11 +2,11 @@
 // social-graph и mobile clients). Phase 8 / M3.
 //
 // Принципы:
-//   1. Pure-function design — нет side effects, нет DB/NATS внутри.
-//   2. Mirror на mobile (TS) — identical inputs дают identical outputs.
-//   3. Версионируем формулу через `FormulaVersion` const — если меняем
-//      коэффициенты, бамп версии + record старого пользователя пересчёт.
-//   4. Цифры консервативны на MVP — итерация с реальными данными в M9+.
+//  1. Pure-function design — нет side effects, нет DB/NATS внутри.
+//  2. Mirror на mobile (TS) — identical inputs дают identical outputs.
+//  3. Версионируем формулу через `FormulaVersion` const — если меняем
+//     коэффициенты, бамп версии + record старого пользователя пересчёт.
+//  4. Цифры консервативны на MVP — итерация с реальными данными в M9+.
 package gamification
 
 import "math"

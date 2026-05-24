@@ -1,0 +1,18 @@
+## Tool versions captured at Phase 6 execution
+2026-05-20T16:58:17Z
+
+=== sops ===
+sops 3.13.1 (latest)
+=== yq (must be mikefarah Go binary v4.x — NOT python yq) ===
+yq (https://github.com/mikefarah/yq/) version v4.53.2
+=== openssl ===
+OpenSSL 3.0.18 30 Sep 2025 (Library: OpenSSL 3.0.18 30 Sep 2025)
+=== keytool ===
+Key and Certificate Management Tool
+=== hdiutil ===
+Usage: hdiutil <verb> <options>
+=== base64 (BSD — must support -i flag) ===
+b2sK
+
+=== macOS ===
+26.2

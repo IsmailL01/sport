@@ -1,0 +1,57 @@
+// /etc/alloy/config.alloy — Phase 5 / Plan 05-06 / OBS-06.
+// Managed by Ansible (roles/alloy-shipper/templates/alloy-config.alloy.j2).
+// DO NOT EDIT BY HAND — manual changes will be overwritten on next deploy.
+//
+// Pipeline:
+//   discovery.docker → loki.source.docker → loki.write (Caddy-fronted)
+//
+// Per RESEARCH §P21: discovery.docker + loki.source.docker MUST be paired;
+// hardcoding container names = fragile across restarts. Per RESEARCH §P16:
+// Loki labels for slow-changing dims only (env + cluster); request_id INSIDE
+// log JSON body, NEVER as a label — stream-cardinality explosion otherwise.
+//
+// Per ADR-0010 amendment 2026-05-19 / D-36 / D-37:
+//   - Push URL is Caddy-fronted on observability VPS at :8443 (replaces direct
+//     Loki :3100 from pre-ADR-0010 architecture; Caddy @allowed_loki matcher
+//     restricts source IP).
+//   - tls_config insecure_skip_verify=true required for v1.0 self-signed cert.
+
+// =========================================================================
+// Discovery — все running Docker containers через unix socket.
+// =========================================================================
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+}
+
+// =========================================================================
+// Source — читаем stdout / stderr каждого container'a.
+// Per RESEARCH §P21 — pair with discovery.docker; never hardcode names.
+// =========================================================================
+loki.source.docker "containers" {
+  host        = "unix:///var/run/docker.sock"
+  targets     = discovery.docker.containers.targets
+  forward_to  = [loki.write.observability_vps.receiver]
+  labels      = {
+    env     = "{{ alloy_env_label }}",
+    cluster = "{{ alloy_cluster_label }}",
+  }
+}
+
+// =========================================================================
+// Write — push to Caddy-fronted Loki on observability VPS (srv1561293).
+// =========================================================================
+loki.write "observability_vps" {
+  endpoint {
+    url = "{{ alloy_loki_endpoint_url }}"
+    tls_config {
+      // D-37: Caddy on observability VPS uses self-signed internal CA cert for
+      // v1.0; cert SAN = 82-25-71-215.sslip.io. Alloy outbound POST trusts
+      // it via skip_verify until v1.1 introduces a real domain + ACME cert.
+      // Authentication remains via Caddy @allowed_loki source-IP matcher
+      // (prod VPS source IP only) per D-36 — TLS is transport security,
+      // not auth, here.
+      insecure_skip_verify = {{ alloy_loki_tls_skip_verify | string | lower }}
+    }
+  }
+}

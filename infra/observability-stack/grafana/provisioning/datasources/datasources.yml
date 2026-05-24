@@ -1,0 +1,27 @@
+# Phase 5 / Plan 05-07 v2 / D-34 — Grafana datasources
+# URLs use Docker internal DNS — observability_internal network resolves container names.
+
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: false
+    jsonData:
+      timeout: 30
+      maxLines: 1000
+
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST

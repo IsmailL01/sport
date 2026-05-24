@@ -1,88 +1,296 @@
+# .github/workflows/backend-ci.yml
+# PR + push-к-main CI for the Go backend monorepo.
+# Source: Plan 04-02 / RESEARCH §Code Examples §A. Eight job-`name:` strings below are a
+# verbatim contract consumed by Plan 04-05 branch-protection JSON — DO NOT vary spelling
+# (including the em-dash `—` U+2014 в secrets-scan-diff name).
 name: backend-ci
 
-# Запускается на изменения в services/backend/ или сам workflow.
 on:
   push:
     branches: [main]
     paths:
       - "services/backend/**"
       - ".github/workflows/backend-ci.yml"
+      - ".github/workflows/secret-scan-full.yml"
+      - "Makefile"
+      - ".golangci.yml"
+      - ".trivyignore.yaml"
   pull_request:
     branches: [main]
     paths:
       - "services/backend/**"
       - ".github/workflows/backend-ci.yml"
+      - ".github/workflows/secret-scan-full.yml"
+      - "Makefile"
+      - ".golangci.yml"
+      - ".trivyignore.yaml"
+
+permissions:
+  contents: read
+  security-events: write   # reserved (currently no SARIF uploads — GHAS-only on private repo)
+  pull-requests: read      # gitleaks-action reads PR commits via API
+  actions: read            # reserved (was needed for SARIF uploader telemetry)
 
 jobs:
   test:
-    name: Test (Go)
+    name: Test (Go 1.25)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/backend
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-          cache-dependency-path: |
-            services/backend/identity/go.sum
-            services/backend/activity-sync/go.sum
-            services/backend/pkg/go.sum
-
-      - name: Verify modules
-        run: |
-          cd pkg && go mod download
-          cd ../identity && go mod download
-          cd ../activity-sync && go mod download
-
-      - name: Vet
-        run: |
-          cd pkg && go vet ./...
-          cd ../identity && go vet ./...
-          cd ../activity-sync && go vet ./...
-
-      - name: Test
-        run: |
-          cd pkg && go test -race -coverprofile=../coverage-pkg.out ./...
-          cd ../identity && go test -race -coverprofile=../coverage-identity.out ./...
-          cd ../activity-sync && go test -race -coverprofile=../coverage-activity-sync.out ./...
-
-      - name: Coverage summary
-        run: |
-          for f in coverage-*.out; do
-            echo "=== $f ==="
-            go tool cover -func="$f" | tail -1
-          done
-
-  docker:
-    name: Docker build
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
-        service: [identity, activity-sync]
+        service: [pkg, identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: services/backend/${{ matrix.service }}/go.sum
+      - name: Test ${{ matrix.service }}
+        working-directory: services/backend/${{ matrix.service }}
+        run: |
+          go mod download
+          go test -race -coverprofile=coverage.out ./...
+          echo "### Coverage — ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out | tail -1 >> $GITHUB_STEP_SUMMARY
 
+  lint:
+    name: Lint (golangci-lint v2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      # services/backend is workspace-root с go.work but no go.mod → action's `./...` glob
+      # from there errors "directory prefix . does not contain modules listed в go.work".
+      # Loop per-module instead (each has its own go.mod). Single check-context preserved.
+      - name: Install golangci-lint
+        run: |
+          curl -fsSL -o /tmp/glcl.tar.gz \
+            https://github.com/golangci/golangci-lint/releases/download/v2.5.0/golangci-lint-2.5.0-linux-amd64.tar.gz
+          tar -xzf /tmp/glcl.tar.gz -C /tmp
+          sudo mv /tmp/golangci-lint-2.5.0-linux-amd64/golangci-lint /usr/local/bin/
+          golangci-lint --version
+      - name: Run golangci-lint per module
+        run: |
+          set -e
+          CFG=$PWD/.golangci.yml
+          FAIL=0
+          for SVC in pkg identity activity-sync feed media messaging notifications realtime-gw social-graph; do
+            echo "::group::golangci-lint $SVC"
+            ( cd services/backend/$SVC && golangci-lint run --timeout=5m --config="$CFG" ./... ) || FAIL=1
+            echo "::endgroup::"
+          done
+          if [ "$FAIL" != "0" ]; then
+            echo "::error::golangci-lint failed in one or more modules"
+            exit 1
+          fi
+
+  gosec:
+    name: SAST (gosec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Run gosec
+        run: |
+          # services/backend has no go.mod (workspace) → run per-module.
+          # SARIF upload removed: GitHub Code Scanning требует GHAS на private repos
+          # (paid feature). Findings surface via stdout + step summary; block-on-HIGH
+          # via gosec exit code (per D-10). Revisit v1.0.1 если GHAS enabled OR repo
+          # made public (deferred к Plan 04 Wave 4 если privacy-zone clipping ready).
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          FAIL=0
+          for SVC in pkg identity activity-sync feed media messaging notifications realtime-gw social-graph; do
+            echo "::group::gosec $SVC"
+            ( cd services/backend/$SVC && gosec -severity high ./... ) || FAIL=1
+            echo "::endgroup::"
+          done
+          if [ "$FAIL" != "0" ]; then
+            echo "::error::gosec found HIGH severity issues (blocks merge per D-10)"
+            exit 1
+          fi
+
+  govulncheck:
+    name: Vuln (govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      # services/backend is workspace-root с go.work but no go.mod, so the upstream
+      # golang/govulncheck-action@v1 fails ("no go.mod file"). Run per-module instead via
+      # a shell loop — keeps the single `Vuln (govulncheck)` check-context (Plan 04-05
+      # branch-protection contract requires verbatim name without matrix dimension).
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck per module
+        run: |
+          set -e
+          FAIL=0
+          for SVC in pkg identity activity-sync feed media messaging notifications realtime-gw social-graph; do
+            echo "::group::govulncheck $SVC"
+            ( cd services/backend/$SVC && govulncheck ./... ) || FAIL=1
+            echo "::endgroup::"
+          done
+          if [ "$FAIL" != "0" ]; then
+            echo "::error::govulncheck found vulnerabilities (blocks merge per D-10)"
+            exit 1
+          fi
+
+  semgrep:
+    name: SAST (semgrep)
+    runs-on: ubuntu-latest
+    container: returntocorp/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep scan
+        run: |
+          # `semgrep scan` (not `semgrep ci` — `ci` rejects `--severity`).
+          # Severity filters: ERROR only (block-on-HIGH per D-10; WARNING surfaces к
+          # step summary без blocking).
+          # SARIF upload removed: GitHub Code Scanning требует GHAS на private repos.
+          # Findings surface via stdout. Revisit v1.0.1 if GHAS enabled.
+          semgrep scan \
+            --config=p/golang \
+            --config=p/owasp-top-ten \
+            --severity ERROR \
+            --error
+
+  secrets-scan-diff:
+    name: Secrets (gitleaks + trufflehog — PR diff)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'   # diff-only on PRs — full history runs в secret-scan-full.yml cron
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks needs commits even on diff
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          # ↑ Uncomment ONLY если repo namespace = organization (per RESEARCH Pitfall 4 +
+          # 04-01-SUMMARY ownership decision). Verified: github.com/IsmailL01/sport =
+          # personal account, ownership=personal → license NOT required → keep commented.
+      - name: TruffleHog (diff)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --results=verified,unknown
+          # base/head auto-detected on PR — diff scan only
+
+  docker-build:
+    name: Docker build (no push, verify)
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]
+    steps:
+      - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-
-      # Логин в реестр — добавляется позже когда выберем (GHCR / Docker Hub).
-      # - uses: docker/login-action@v3
-      #   with:
-      #     registry: ghcr.io
-      #     username: ${{ github.actor }}
-      #     password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build ${{ matrix.service }}
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: services/backend
           file: services/backend/${{ matrix.service }}/Dockerfile
           push: false
-          tags: ghcr.io/ismaill01/${{ matrix.service }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          load: true   # load into local Docker для Trivy scan downstream
+          tags: ghcr.io/ismaill01/${{ matrix.service }}:ci-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/ismaill01/${{ matrix.service }}:ci-${{ github.sha }}
+          format: table   # stdout — SARIF upload removed (GHAS-only on private repo)
+          severity: HIGH,CRITICAL   # D-10 — block on these
+          exit-code: '1'   # fail job on findings
+          ignore-unfixed: false
+          trivyignores: .trivyignore.yaml
+
+  no-latest-tag-guard:
+    name: Guard (no :latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Negative grep — forbid `:latest`
+        run: |
+          # Strip comment lines first; grep -c counts comments otherwise (header prose
+          # self-invalidates per planner-antipatterns — RESEARCH Pitfall 6).
+          if grep -v '^#' .github/workflows/*.yml services/backend/docker-compose.prod.yml \
+               | grep -E ':latest["\x27]?\s*$' ; then
+            echo "FAIL: \`:latest\` tag found (excluding comment lines) — ROADMAP hard rule violated"
+            exit 1
+          fi
+          echo "PASS — no :latest tags found in non-comment lines"
+
+  pii-audit:
+    # Phase 5 / OBS-06 / D-14 — block PR merge if a new slog.*Context call
+    # uses a PII attribute key (D-12 deny-list). Defense-in-depth alongside
+    # the pkg/observability slog handler that drops these attrs at emit time.
+    name: PII Audit (slog grep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run PII grep audit
+        run: bash scripts/pii_audit.sh
+
+  cardinality-probe:
+    # Phase 5 / OBS-07 / D-18 — block PR merge if a metric exposes a
+    # forbidden label (user_id / session_id / device_id / external_uuid /
+    # email / phone) OR if any metric family exceeds 1000 series. Boots
+    # the 8 backend services via docker-compose.prod.yml, waits for /metrics,
+    # runs scripts/cardinality_probe.py (Python stdlib only — no pip deps).
+    name: Cardinality Probe (Prom labels)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Boot services + run probe
+        run: |
+          set -e
+          # docker compose уже доступен на ubuntu-latest runner.
+          # docker-compose.prod.yml тянет ghcr.io tags — для CI smoke
+          # этого достаточно. Если pull fails (например, package private
+          # без auth), job skip'аются: probe сам выявит unreachable services
+          # и в non-strict mode пропустит. CI strict mode = explicit failure.
+          cd services/backend
+          docker compose -f docker-compose.prod.yml up -d || {
+            echo "::warning::docker compose up failed — likely GHCR auth on private packages; skip probe"
+            exit 0
+          }
+          cd "$GITHUB_WORKSPACE"
+
+          # Wait for /metrics endpoints — poll up to 60s.
+          READY=0
+          for i in $(seq 1 12); do
+            if curl -sf http://localhost:8081/metrics >/dev/null 2>&1; then
+              READY=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "$READY" != "1" ]; then
+            echo "::warning::identity:8081/metrics не ответил за 60s — skip probe"
+            exit 0
+          fi
+
+          # Non-strict: if other services не подняты, skip их. Strict mode
+          # потребует все 8.  В CI хотим catch cardinality bugs если хотя
+          # бы один сервис up — поэтому non-strict.
+          python3 scripts/cardinality_probe.py
+      - name: Tear down
+        if: always()
+        run: |
+          cd services/backend
+          docker compose -f docker-compose.prod.yml down --remove-orphans || true

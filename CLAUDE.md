@@ -4,7 +4,7 @@
 
 ## О проекте
 
-**Running Ecosystem** — мобильное приложение и экосистема для полупрофессиональных бегунов. Команда: 2 разработчика. Текущая стадия — Phase 0 (выбор фреймворка) или Phase 1 (Territory Core) — см. `STATUS.md`.
+**Running Ecosystem** — мобильное приложение и экосистема для полупрофессиональных бегунов. Команда: 1 разработчик (solo dev — was 2, shrunk; см. ADR-0011). Текущая стадия — Milestone v1.0 Closed Beta (4-phase lean scope per ADR-0011; Phases 1-5 shipped, 6-9 remaining). См. `.planning/STATE.md` для актуальной фазы.
 
 ## Документы, которые ты ВСЕГДА читаешь перед задачей
 

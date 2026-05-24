@@ -31,6 +31,18 @@ type Claims struct {
 	// Refresh-токены не должны проходить проверку как access — поэтому
 	// VerifyAccess отдельно проверяет Type=="access".
 	Type string `json:"typ"`
+	// IsTester — Phase 5 / Plan 05-06 / OBS-08 / D-22. Дублирует флаг
+	// `users.is_tester` (BOOL column). По умолчанию false; admin flips per-
+	// user через Phase 1 REL-03 admin UI (column add deferred to v1.1 —
+	// до этого IssueAccess всегда эмитит IsTester=false, что keeps gate
+	// closed-by-default per RESEARCH §1.8 three-gate model).
+	//
+	// Только в комбинации с X-Debug-Session header + featureflag
+	// tester_debug_logging=ON активирует DebugSessionMiddleware elevation
+	// к slog.LevelDebug для этого запроса. Header-only - debug-DoS vector
+	// (RESEARCH §1.8); JWT-only - permanent elevation (anti-pattern); ff-
+	// only - mass elevation. Только три-gate-AND mitigate threat.
+	IsTester bool `json:"is_tester,omitempty"`
 }
 
 // Signer выпускает и верифицирует JWT с симметричным ключом (HS256).
@@ -48,16 +60,27 @@ func NewSigner(secret []byte) (*Signer, error) {
 }
 
 // IssueAccess создаёт access-токен для пользователя.
+// IsTester всегда false на этом пути — production path для обычных
+// пользователей (users.is_tester column TBD; OBS-08 mobile UX = Phase 17).
 func (s *Signer) IssueAccess(userID string) (string, error) {
-	return s.issue(userID, "access", AccessTokenTTL)
+	return s.issue(userID, "access", AccessTokenTTL, false)
+}
+
+// IssueTesterAccess - Phase 5 / Plan 05-06 / OBS-08 / D-22 - выпускает access-
+// токен с явным IsTester флагом. Используется когда identity-service считывает
+// users.is_tester column (когда оно появится в v1.1) и пробрасывает значение в
+// JWT. В v1.0 этот метод используется тестами; production path = IssueAccess
+// (всегда false). Подключение к DB column — separate ticket post-v1.0.
+func (s *Signer) IssueTesterAccess(userID string, isTester bool) (string, error) {
+	return s.issue(userID, "access", AccessTokenTTL, isTester)
 }
 
 // IssueRefresh создаёт refresh-токен.
 func (s *Signer) IssueRefresh(userID string) (string, error) {
-	return s.issue(userID, "refresh", RefreshTokenTTL)
+	return s.issue(userID, "refresh", RefreshTokenTTL, false)
 }
 
-func (s *Signer) issue(userID, tokenType string, ttl time.Duration) (string, error) {
+func (s *Signer) issue(userID, tokenType string, ttl time.Duration, isTester bool) (string, error) {
 	now := time.Now()
 	jti, err := randomJTI()
 	if err != nil {
@@ -72,8 +95,9 @@ func (s *Signer) issue(userID, tokenType string, ttl time.Duration) (string, err
 			NotBefore: jwt.NewNumericDate(now),
 			ID:        jti,
 		},
-		UserID: userID,
-		Type:   tokenType,
+		UserID:   userID,
+		Type:     tokenType,
+		IsTester: isTester,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString(s.secret)

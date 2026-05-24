@@ -1,17 +1,17 @@
 // Package permissions — централизованная RBAC система.
 //
 // Принципы:
-//   1. Capability strings — стабильные ID действий (для audit_log + UI gating).
-//   2. Role hierarchy — иерархическое сравнение через rank-функции.
-//   3. Defense in depth: ban check всегда первый.
-//   4. Global admin/moderator override — может действовать по любому ресурсу
-//      (пользовательский content) для модерации.
-//   5. Ownership-by-default — owner ресурса всегда может его модифицировать
-//      (если не banned).
-//   6. Time-window policy — edit-окно (24h) проверяется на сервере, не только
-//      хардкодится в клиенте.
-//   7. Single source of truth — каждый сервис импортирует pkg вместо своих
-//      ad-hoc проверок.
+//  1. Capability strings — стабильные ID действий (для audit_log + UI gating).
+//  2. Role hierarchy — иерархическое сравнение через rank-функции.
+//  3. Defense in depth: ban check всегда первый.
+//  4. Global admin/moderator override — может действовать по любому ресурсу
+//     (пользовательский content) для модерации.
+//  5. Ownership-by-default — owner ресурса всегда может его модифицировать
+//     (если не banned).
+//  6. Time-window policy — edit-окно (24h) проверяется на сервере, не только
+//     хардкодится в клиенте.
+//  7. Single source of truth — каждый сервис импортирует pkg вместо своих
+//     ad-hoc проверок.
 //
 // API: `Check(subject, capability, ctx) Decision` — единственная точка
 // принятия решения. Decision несёт Reason для логирования и UI.

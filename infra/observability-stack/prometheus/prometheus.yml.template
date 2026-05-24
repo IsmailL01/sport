@@ -1,0 +1,37 @@
+# Phase 5 / Plan 05-07 v2 / D-15 / D-17 — Prometheus scrape config
+# Template — deploy script substitutes {{PROD_VPS_IP}} → 148.253.214.156 before scp.
+# 8 backend services on prod VPS, ports 8081-8088 (CONTEXT.md §scout_findings).
+# /metrics endpoint per service lands in Plan 05-04 (Wave 3) — until then, scrape returns 404 (acceptable).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'running-ecosystem'
+    env: 'prod'
+
+scrape_configs:
+  # Prometheus self-scrape (sanity baseline)
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 8 Go services on prod VPS — /metrics lands in Plan 05-04
+  - job_name: 'backend-services'
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - '{{PROD_VPS_IP}}:8081'    # identity
+          - '{{PROD_VPS_IP}}:8082'    # activity-sync
+          - '{{PROD_VPS_IP}}:8083'    # feed
+          - '{{PROD_VPS_IP}}:8084'    # media
+          - '{{PROD_VPS_IP}}:8085'    # messaging
+          - '{{PROD_VPS_IP}}:8086'    # notifications
+          - '{{PROD_VPS_IP}}:8087'    # realtime-gw
+          - '{{PROD_VPS_IP}}:8088'    # social-graph
+    relabel_configs:
+      # Extract service name from port suffix (8081 → identity, etc.)
+      - source_labels: [__address__]
+        regex: '.*:(\d+)$'
+        target_label: port
+        replacement: '${1}'

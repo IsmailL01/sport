@@ -1,11 +1,12 @@
 // feed/cmd/server — Phase C: stories. Phase D: posts/likes/comments + home feed.
 //
 // Конфиг через ENV:
-//   FEED_HTTP_ADDR        OPTIONAL  :8085
-//   FEED_DB_URL           REQUIRED  postgres://... (содержит пароль)
-//   IDENTITY_JWT_SECRET   REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
-//   NATS_URL              OPTIONAL  nats://localhost:4222
-//   REDIS_URL             OPTIONAL  redis://localhost:6379/0 (ratelimit)
+//
+//	FEED_HTTP_ADDR        OPTIONAL  :8085
+//	FEED_DB_URL           REQUIRED  postgres://... (содержит пароль)
+//	IDENTITY_JWT_SECRET   REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//	NATS_URL              OPTIONAL  nats://localhost:4222
+//	REDIS_URL             OPTIONAL  redis://localhost:6379/0 (ratelimit)
 package main
 
 import (
@@ -22,6 +23,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/runningecosystem/backend/feed/internal/cleanup"
 	"github.com/runningecosystem/backend/feed/internal/handler"
 	"github.com/runningecosystem/backend/feed/internal/repository/postgres"
@@ -30,9 +33,16 @@ import (
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
 	"github.com/runningecosystem/backend/pkg/featureflags"
+	"github.com/runningecosystem/backend/pkg/observability"
 	"github.com/runningecosystem/backend/pkg/permissions"
 	"github.com/runningecosystem/backend/pkg/ratelimit"
 )
+
+// serviceName — Phase 5 / D-32. Используется как:
+//   - "service" label на всех Prometheus метриках (Plan 05-04 / D-17)
+//   - Sentry tag (Plan 05-05 — TBD)
+//   - "service" attr в slog default attrs (Plan 05-03 / D-10)
+const serviceName = "feed"
 
 func main() {
 	if err := run(); err != nil {
@@ -42,7 +52,12 @@ func main() {
 }
 
 func run() error {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := observability.NewSlogJSONHandler(observability.Config{
+		ServiceName: serviceName,
+		Env:         envOr("ENV", "prod"),
+		Version:     envOr("BUILD_VERSION", "dev"),
+		Level:       observability.ParseLevel(envOr("LOG_LEVEL", "info")),
+	})
 	slog.SetDefault(logger)
 
 	addr := envOr("FEED_HTTP_ADDR", ":8085")
@@ -60,6 +75,26 @@ func run() error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Phase 5 / Plan 05-05 / D-32 / D-38 — Sentry SDK + OTel TracerProvider.
+	// Empty SENTRY_DSN_BACKEND → no-op closures (ADR-0010 amendment 2026-05-19 PM).
+	sentryShutdown := observability.MustInitSentry(observability.SentryConfig{
+		DSN:         os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:         envOr("ENV", "prod"),
+		Release:     envOr("BUILD_VERSION", "dev"),
+		ServiceName: serviceName,
+		SampleRate:  1.0,
+	})
+	defer sentryShutdown()
+
+	tracerShutdown := observability.MustInitTracer(ctx, observability.TracerConfig{
+		ServiceName:  serviceName,
+		OtlpEndpoint: os.Getenv("SENTRY_OTLP_ENDPOINT"),
+		SentryDSN:    os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:          envOr("ENV", "prod"),
+		Release:      envOr("BUILD_VERSION", "dev"),
+	})
+	defer tracerShutdown()
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
@@ -98,10 +133,9 @@ func run() error {
 
 	go cleanup.Run(ctx, svc, logger)
 
-	// Phase 1 / REL-03: feature flag store (Plan 03).  Reserved-for-future —
-	// feed пока не имеет flag-driven branching.
+	// Phase 1 / REL-03 + Phase 5 / Plan 05-06 / D-22 — feature flag store
+	// consumed by DebugSessionMiddleware (tester_debug_logging gate).
 	flagStore := featureflags.NewPostgresStore(pool, 30*time.Second)
-	_ = flagStore
 
 	h := handler.New(svc, signer, limiter, logger)
 
@@ -114,11 +148,28 @@ func run() error {
 		ForceUpdateURLiOS:     envOr("FORCE_UPDATE_URL_IOS", ""),
 		SkipPaths:             []string{"/healthz", "/metrics"},
 	}
-	versionedMux := clientversion.Middleware(h.Routes(), versionPolicy, logger)
+	// Phase 5 / OBS-05 / D-19 — Prometheus /metrics endpoint + PromhttpMiddleware
+	// chain. /metrics регистрируется в outer mux (clientversion SkipPaths уже
+	// содержит "/metrics", так что clientversion проходит сквозь). Plan 05-05
+	// будет дополнительно оборачивать OtelHTTP + SentryRecovery между
+	// PromhttpMiddleware и versionedMux.
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", h.Routes())
+
+	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
+	// Phase 5 / Plan 05-06 / D-22 / D-32 — DebugSession (outermost) → Promhttp →
+	// SentryRecovery → OtelHTTP → clientversion → mux. См. RESEARCH §1.8 three-
+	// gate model для DebugSessionMiddleware.
+	ffAdapter := observability.NewFeatureflagAdapter(flagStore)
+	rootHandler := observability.DebugSessionMiddleware(signer, ffAdapter)(
+		observability.PromhttpMiddleware(serviceName,
+			observability.SentryRecoveryMiddleware(
+				observability.OtelHTTPMiddleware(serviceName, versionedMux))))
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           versionedMux,
+		Handler:           rootHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

@@ -42,6 +42,15 @@
   become: false                  # synchronize runs over SSH-as-ansible_user; sudo not needed for /opt/sport (deploy owns it)
   tags: [sport-stack]
 
+# Plan 04-04 Wave 4 — pull GHCR images on controller, gh-attest verify, save/scp/load
+# onto prod. Activated by `-e sport_stack_tag=<gh-cd-tag>`. Routine config-only deploys
+# (no tag specified) skip this and the docker daemon retains previously-loaded images
+# referenced by compose's ${SPORT_STACK_TAG}.
+- name: "Transfer images via save/scp/load (when sport_stack_tag set)"
+  ansible.builtin.import_tasks: transfer_images.yml
+  when: sport_stack_tag is defined and sport_stack_tag | length > 0
+  tags: [sport-stack, transfer-images]
+
 - name: "Decrypt SOPS + template /run/sport.env (D-12 + D-26)"
   ansible.builtin.import_tasks: decrypt_sops.yml
   tags: [sport-stack]
@@ -49,7 +58,7 @@
 - name: "Run migrations (D-14 — one-shot, before service-up)"
   ansible.builtin.import_tasks: run_migrations.yml
   when: not ansible_check_mode    # migration container can't run during --check (no live docker exec)
-  tags: [sport-stack]
+  tags: [sport-stack, run-migrations]
 
 - name: "Install sport-stack.service systemd unit"
   ansible.builtin.template:

@@ -1,10 +1,11 @@
 // realtime-gw/cmd/server — WebSocket terminus.
 //
 // Конфиг через ENV:
-//   REALTIME_GW_HTTP_ADDR  OPTIONAL  :8090
-//   IDENTITY_JWT_SECRET    REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
-//   NATS_URL               OPTIONAL  nats://nats:4222
-//   REALTIME_GW_DB_URL     OPTIONAL  если задан — featureflags подключаются
+//
+//	REALTIME_GW_HTTP_ADDR  OPTIONAL  :8090
+//	IDENTITY_JWT_SECRET    REQUIRED  ≥32 байта (enforced в pkg/auth.NewSigner)
+//	NATS_URL               OPTIONAL  nats://nats:4222
+//	REALTIME_GW_DB_URL     OPTIONAL  если задан — featureflags подключаются
 package main
 
 import (
@@ -21,11 +22,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/clientversion"
 	"github.com/runningecosystem/backend/pkg/featureflags"
+	"github.com/runningecosystem/backend/pkg/observability"
 	"github.com/runningecosystem/backend/realtime-gw/internal/gw"
 )
+
+// serviceName — Phase 5 / D-32. Используется как:
+//   - "service" label на всех Prometheus метриках (Plan 05-04 / D-17)
+//   - Sentry tag (Plan 05-05 — TBD)
+//   - "service" attr в slog default attrs (Plan 05-03 / D-10)
+const serviceName = "realtime-gw"
 
 func main() {
 	if err := run(); err != nil {
@@ -35,7 +45,12 @@ func main() {
 }
 
 func run() error {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := observability.NewSlogJSONHandler(observability.Config{
+		ServiceName: serviceName,
+		Env:         envOr("ENV", "prod"),
+		Version:     envOr("BUILD_VERSION", "dev"),
+		Level:       observability.ParseLevel(envOr("LOG_LEVEL", "info")),
+	})
 	slog.SetDefault(logger)
 
 	addr := envOr("REALTIME_GW_HTTP_ADDR", ":8090")
@@ -56,6 +71,29 @@ func run() error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Phase 5 / Plan 05-05 / D-32 / D-38 — Sentry SDK + OTel TracerProvider.
+	// Empty SENTRY_DSN_BACKEND → no-op closures (ADR-0010 amendment 2026-05-19 PM).
+	// WS specifics: SentryRecoveryMiddleware + OtelHTTPMiddleware oба
+	// проксируют Hijacker/Flusher (out-of-the-box upstream behavior + наш
+	// headerWroteRecorder wrapper); WS upgrade работает через всю chain.
+	sentryShutdown := observability.MustInitSentry(observability.SentryConfig{
+		DSN:         os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:         envOr("ENV", "prod"),
+		Release:     envOr("BUILD_VERSION", "dev"),
+		ServiceName: serviceName,
+		SampleRate:  1.0,
+	})
+	defer sentryShutdown()
+
+	tracerShutdown := observability.MustInitTracer(ctx, observability.TracerConfig{
+		ServiceName:  serviceName,
+		OtlpEndpoint: os.Getenv("SENTRY_OTLP_ENDPOINT"),
+		SentryDSN:    os.Getenv("SENTRY_DSN_BACKEND"),
+		Env:          envOr("ENV", "prod"),
+		Release:      envOr("BUILD_VERSION", "dev"),
+	})
+	defer tracerShutdown()
 
 	nc, err := nats.Connect(natsURL,
 		nats.Name("realtime-gw"),
@@ -94,7 +132,7 @@ func run() error {
 			}
 		}
 	}
-	_ = flagStore
+	// flagStore теперь consumed by DebugSessionMiddleware ниже (Plan 05-06).
 
 	registry := gw.NewRegistry()
 	handler := gw.NewHandler(ctx, signer, nc, registry, logger)
@@ -111,11 +149,32 @@ func run() error {
 		ForceUpdateURLiOS:     envOr("FORCE_UPDATE_URL_IOS", ""),
 		SkipPaths:             []string{"/healthz", "/metrics"},
 	}
-	versionedMux := clientversion.Middleware(handler.Routes(), versionPolicy, logger)
+	// Phase 5 / OBS-05 / D-19 — Prometheus /metrics endpoint + PromhttpMiddleware
+	// chain. WS-сервис: PromhttpMiddleware безопасна над WS upgrade благодаря
+	// statusRecorder.Hijack() passthrough (Plan 05-04 Task 2 deviation Rule 2 —
+	// см. pkg/observability/promhttp_middleware.go). /metrics регистрируется в
+	// outer mux; clientversion SkipPaths уже содержит "/metrics".  Plan 05-05
+	// будет дополнительно оборачивать OtelHTTP + SentryRecovery между
+	// PromhttpMiddleware и versionedMux.
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", handler.Routes())
+
+	versionedMux := clientversion.Middleware(mux, versionPolicy, logger)
+	// Phase 5 / Plan 05-06 / D-22 / D-32 — DebugSession (outermost) → Promhttp →
+	// SentryRecovery → OtelHTTP → clientversion → mux. Все middleware'ы (включая
+	// DebugSession) поддерживают Hijacker passthrough для WS upgrade.
+	// DebugSession не задевает ResponseWriter; sees Bearer header в HTTP-фазе WS-
+	// handshake до Upgrade, gate выполняется один раз. См. RESEARCH §1.8.
+	ffAdapter := observability.NewFeatureflagAdapter(flagStore)
+	rootHandler := observability.DebugSessionMiddleware(signer, ffAdapter)(
+		observability.PromhttpMiddleware(serviceName,
+			observability.SentryRecoveryMiddleware(
+				observability.OtelHTTPMiddleware(serviceName, versionedMux))))
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           versionedMux,
+		Handler:           rootHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		// Длинные timeouts для WebSocket (не блокируют upgrade).
 		ReadTimeout:  0,

@@ -1,0 +1,32 @@
+---
+# defaults/main.yml — Phase 5 / Plan 05-06 / OBS-06 + D-27 / D-28 / D-29 / D-36 / D-37.
+#
+# Default values for alloy-shipper role. Override via group_vars/inventory.
+
+# Alloy pinned version per RESEARCH §4 (v1.5.0 — current LTS line as of
+# Phase 5 planning; Promtail replaced per RESEARCH §1.6 / §P20 — Promtail
+# EOL 2026-03-02).
+alloy_version_spec: "1.5.0*"
+
+# Caddy-fronted Loki push endpoint on observability-stack VPS (srv1561293).
+# Per ADR-0010 amendment 2026-05-19 / Plan 05-07 SUMMARY — sslip.io hostname
+# resolves to 82.25.71.215; Caddy issues self-signed cert (D-37) so we set
+# insecure_skip_verify=true in Alloy tls_config. UFW + Caddy @allowed_loki
+# matcher (D-36) restrict push to prod VPS IP only.
+alloy_loki_endpoint_url: "https://82-25-71-215.sslip.io:8443/loki/api/v1/push"
+
+# TLS-skip-verify per D-37 (self-signed Caddy internal CA on observability
+# VPS). Set to false when a real cert (v1.1 domain migration) replaces sslip.io.
+alloy_loki_tls_skip_verify: true
+
+# Environment label per RESEARCH §P16 — slow-changing dims only on Loki labels.
+# 'prod' for production VPS; 'staging' for staging VPS (when it exists).
+alloy_env_label: "prod"
+
+# Cluster label per RESEARCH §P16 — coarse grouping for cross-cluster queries.
+alloy_cluster_label: "running-ecosystem"
+
+# Grafana apt repo + GPG key URLs (canonical sources).
+alloy_apt_keyring: "/etc/apt/keyrings/grafana.gpg"
+alloy_apt_key_url: "https://apt.grafana.com/gpg.key"
+alloy_apt_repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"

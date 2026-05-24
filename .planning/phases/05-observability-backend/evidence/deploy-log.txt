@@ -1,0 +1,36 @@
+[preflight] Checking environment...
+  preflight OK
+[secrets] Decrypting .secrets/prod/sentry.yaml on controller (delegate_to: localhost pattern)...
+  secrets extracted (4 non-empty values; never echoed)
+[render] Building substituted configs in /tmp/observability-stack-render.t9DIQW...
+  no dashboards in /Users/ismail/Desktop/projects/sport/services/backend/observability/dashboards yet (Plan 05-04 ships them)
+  templates substituted + render dir ready ( 68K)
+[remote] Preparing remote dirs on myvps...
+[remote] rsync /tmp/observability-stack-render.t9DIQW → myvps:/opt/observability-stack ...
+[remote] scp Caddy secrets.env → /etc/caddy/secrets.env
+[remote] scp Caddyfile → /etc/caddy/Caddyfile
+[remote] Ensuring caddy binary at /usr/local/bin/caddy ...
+v2.8.4 h1:q3pe0wpBj1OcHFZ3n/1nl4V4bxBrYoSoab7rL9BMYNk=
+[remote] Installing systemd units...
+[remote] Ensuring UFW allows :8443/tcp ...
+Rules updated
+Rules updated (v6)
+[remote] Enabling + starting observability-stack.service ...
+Created symlink /etc/systemd/system/multi-user.target.wants/observability-stack.service → /etc/systemd/system/observability-stack.service.
+Job for observability-stack.service failed because the control process exited with error code.
+See "systemctl status observability-stack.service" and "journalctl -xeu observability-stack.service" for details.
+  waiting 15s for containers to come up...
+[remote] Enabling + starting observability-caddy.service ...
+Created symlink /etc/systemd/system/multi-user.target.wants/observability-caddy.service → /etc/systemd/system/observability-caddy.service.
+
+=== systemctl status (oneliner) ===
+active
+active
+
+=== docker ps observability containers ===
+NAMES                      STATUS                         PORTS
+observability-grafana      Restarting (1) 2 seconds ago   
+observability-loki         Up 32 seconds                  127.0.0.1:3100->3100/tcp
+observability-prometheus   Up 32 seconds                  127.0.0.1:9090->9090/tcp
+
+[deploy] Done. Run scripts/smoke_observability_stack.py + scripts/smoke_grafana_alerts.py to verify.

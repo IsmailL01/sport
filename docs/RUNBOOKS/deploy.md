@@ -162,59 +162,121 @@ curl -fsS -o /dev/null -w "HTTP %{http_code}\n" \
 
 ## 5. Routine deploy (после code change)
 
-```bash
-# 5.1. Commit + push code changes (если используешь git как deploy source — пока что нет remote, Ansible rsync'ит worktree напрямую)
+### 5.1. New tag → CI builds images → deploy via save/scp/load
 
-# 5.2. Re-run sport-stack tag — idempotent, only changed bits redeploy
+Phase 4 CI/CD pipeline (`backend-cd.yml`) автоматически билдит, signs (cosign keyless), и attests (SLSA L2) образы при push tag `v*`. Образы залетают в GHCR (`ghcr.io/ismaill01/<svc>:<semver>`). Prod НЕ pull'ит из GHCR; controller (dev workstation) делает transfer.
+
+```bash
+# 5.1.1. Tag + push (triggers backend-cd.yml в GH Actions)
+git tag v1.0.x
+git push origin v1.0.x
+gh run watch    # ~3-5 min for cosign sign + SLSA attest + GHCR push
+
+# 5.1.2. Pre-flight: controller docker daemon up + GHCR login active
+docker info >/dev/null && echo OK
+gh auth token | docker login ghcr.io -u IsmailL01 --password-stdin
+
+# 5.1.3. Deploy с image transfer
 cd infra/ansible
-ansible-playbook -i inventory/prod --tags sport-stack site.yml
+SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt \
+  ansible-playbook -i inventory/prod --tags sport-stack site.yml -e sport_stack_tag=v1.0.x
 
 # Что произойдёт:
-#  - rsync синхронизирует services/backend/ tree (только diff)
-#  - SOPS-decrypt + re-render /run/sport.env (idempotent unless secrets changed)
-#  - migrations one-shot container (golang-migrate skips applied)
-#  - sport-stack.service restart ТОЛЬКО если systemd unit template changed
-#  - smoke probe verify
-
-# 5.3. Ожидаемый output: PLAY RECAP: changed=0 or 1 (migration always reports changed)
+#  - rsync синхронизирует services/backend/ tree
+#  - transfer_images.yml: controller docker pull (--platform=linux/amd64) → gh-attest verify →
+#    docker save | gzip → synchronize tarballs → remote docker load (per service, 8 services)
+#  - SOPS-decrypt + re-render /run/sport.env с SPORT_STACK_TAG=<semver-stripped>
+#  - migrations one-shot (golang-migrate skips applied)
+#  - sport-stack.service restart ONLY if systemd unit template changed
+#  - smoke probe POST /auth/request-code → HTTP 200/202
 ```
 
-**Image rebuild (если Dockerfile changed):**
+Expected first-clean wall-clock: ~5-6 min (image transfer ~3-4 min + rest). Subsequent deploys with same tag: `transfer_images.yml` is idempotent if tarballs already on prod (synchronize copies only changed files); ~25-30s.
+
+### 5.2. Config-only redeploy (no tag, no image change)
+
+```bash
+cd infra/ansible
+ansible-playbook -i inventory/prod --tags sport-stack site.yml   # NO -e sport_stack_tag
+```
+
+Transfer-images block skips (`when: sport_stack_tag is defined and ... | length > 0`). Compose continues using last-loaded `${SPORT_STACK_TAG}` set in `/run/sport.env`.
+
+### 5.3. Image rebuild fallback (если хочешь bypass GHCR)
+
 ```bash
 # На VPS:
 ssh deploy@<vps-ip> 'cd /opt/sport/services/backend && sudo docker compose --env-file /run/sport.env -f docker-compose.prod.yml build && sudo systemctl restart sport-stack.service'
 ```
 
+Используется только если CI/CD pipeline недоступен; нет cosign signatures + SLSA attestation gate в этом сценарии.
+
 ---
 
 ## 6. Rollback (manual emergency)
 
-> v1.0 не имеет CI-driven rollback drill (Phase 4 owner). Для v1.0 closed-beta — manual.
-
 ### 6.1. Code-level rollback
 
 ```bash
-# В worktree: переключаемся на предыдущий tag/commit
-git checkout <previous-tag-or-sha>
-
-# Re-deploy:
-cd infra/ansible
-ansible-playbook -i inventory/prod --tags sport-stack site.yml
+make rollback v=<previous-tag-or-sha>     # automated — see §6.4 для шагов
 ```
+
+Wraps: `git checkout` → preflight (images-present check) → `migrate down 1` → `ansible-playbook --skip-tags=run-migrations` → smoke probe.
 
 ### 6.2. DB migration rollback (если N+1 включал migration)
 
 ```bash
-ssh deploy@<vps-ip> 'cd /opt/sport/services/backend && sudo docker compose --env-file /run/sport.env -f docker-compose.prod.yml run --rm migrations down 1'
+ssh deploy@<vps-ip> 'PASSWD=$(grep "^POSTGRES_PASSWORD=" /run/sport.env | cut -d= -f2-); \
+  cd /opt/sport/services/backend && \
+  sudo docker compose --env-file /run/sport.env -f docker-compose.prod.yml run --rm migrations \
+  -path /migrations \
+  -database "postgres://re:${PASSWD}@postgres:5432/running_ecosystem?sslmode=disable" \
+  down 1'
 ```
 
 **WARNING:** `down 1` откатывает ОДНУ migration. Если их было несколько в новой версии — повторить нужное количество раз. golang-migrate сохраняет порядок в schema_migrations table.
+
+**WHY the inline PASSWD grep:** `/run/sport.env` содержит placeholder values с literal `<`, `>` (i.e. `APPLE_SIGN_IN_CLIENT_SECRET=<deferred-v1.1>`) которые ломают bash `set -a; . file` sourcing. Single-line grep экстракт работает корректно.
 
 ### 6.3. Emergency fallback к manual `/opt/sport/deploy.sh` flow
 
 Если Ansible-driven deploy упёрся во что-то неразрешимое — fallback к manual scp/git pull + docker compose. Каталог `/opt/running-ecosystem/` остаётся на VPS как legacy после Phase 3 cutover (deprecated но не удалён); там лежит pre-cutover compose stack который можно поднять через `sudo docker compose --env-file .env.prod -f docker-compose.prod.yml up -d`.
 
-**Phase 4** (CI/CD) проведёт rollback drill с реальной DB migration в path → CICD-04 acceptance.
+### 6.4. Automated rollback drill log — CICD-04 (closed 2026-05-18)
+
+**Цель:** доказать что rollback path (code revert + DB migration down) работает на реальном проде с реальной schema mutation.
+
+**Scenario:** two backward-compat drill migrations:
+- `9990_drill_metadata_col` — ADD COLUMN users.metadata JSONB DEFAULT NULL
+- `9991_drill_drop_metadata_col` — DROP COLUMN users.metadata
+
+Tags `v1.0.0-rc.test-a` (схема state A — only 9990) и `v1.0.0-rc.test-b` (state B — 9990+9991) указывают на разные SHA с соответствующими migration tree subsets. Локальный тег `v1.0.0-rc.test-a` retargeted для приёма транзитной cherry-pick (Ansible `transfer_images.yml` + Makefile fixes); GHCR images остаются tag-string-matched (CD не re-run).
+
+| Stage | Action | Wall-clock | users.metadata | schema_migrations.version | Smoke |
+|---|---|---|---|---|---|
+| Pre-drill backup | `pg_dump` ~65 KB на /tmp/pre-drill-backup-20260518-174447.sql.gz | ~5s | absent | 21 | n/a |
+| Deploy A | `ansible-playbook -e sport_stack_tag=v1.0.0-rc.test-a` (save/scp/load + migrate up 9990) | ~5 min | **PRESENT ✓** | 9990 | HTTP 202 |
+| Deploy B | `-e sport_stack_tag=v1.0.0-rc.test-b` (migrate up 9991) | ~5 min | **ABSENT ✓** | 9991 | HTTP 202 |
+| Rollback step 3 | `migrate down 1` (revert 9991) | 20ms | PRESENT | 9990 | n/a |
+| Rollback steps 4-6 | ansible re-deploy `--skip-tags=run-migrations` + smoke | ~25s | **PRESENT ✓** | 9990 | HTTP 202 (internal) + HTTP 200 (external /healthz) |
+
+**Verdict: DRILL PASS** — CICD-04 acceptance closed. Backward-compat schema design + `--skip-tags=run-migrations` + image pre-flight check make rollback recoverable in <2 min for fresh-migration scenario.
+
+### 6.5. Deferred — direct GHCR pull from prod (v1.0.1 follow-up)
+
+Текущий flow: controller-side `docker pull` → `cosign verify` → `docker save | gzip` → `synchronize` → remote `docker load`. Prod НЕ pull'ит из GHCR (нет network auth setup).
+
+**Что блокирует direct GHCR pull from prod:**
+- GHCR personal-account package visibility flip требует web UI (REST API не поддерживает `PATCH /user/packages/container/<name>/visibility`)
+- Если packages приватные — prod VPS получит 401 без `docker login ghcr.io` с PAT
+- Setting up long-lived PAT на проде = security debt (rotation, secret-of-secret problem)
+
+**v1.0.1 follow-up options:**
+- (a) Flip all 8 packages public via web UI (one-shot manual; eliminates auth complexity)
+- (b) Generate short-lived registry token via `gh auth token` + push to prod via Ansible `delegate_to: localhost` template
+- (c) Stay with save/scp/load (current) — works, just adds ~5 min wall-clock per deploy
+
+See ROADMAP backlog — debt item "GHCR pull auth setup".
 
 ---
 
@@ -259,6 +321,348 @@ Future re-measurements (incremental deploys, fresh-VPS baselines, Phase 4 CI int
 
 ---
 
+## 10. Branch protection setup (Phase 4 / CICD-06)
+
+> **SEQUENCE GUARD CRITICAL** (RESEARCH Pitfall 1): Enable branch protection ONLY AFTER first green CI run на backend-ci.yml. Enabling before = lockout (cannot merge fixes если required check has never passed).
+
+### 10.1. Initial setup
+
+Run from dev workstation после Plan 04-02 first green CI:
+
+```bash
+./scripts/setup-branch-protection.sh
+# OR с explicit namespace:
+# ./scripts/setup-branch-protection.sh <alt-namespace>/sport main
+```
+
+Effects:
+- `main` branch protected: **8 required status checks** must pass before merge:
+  - `Test (Go 1.25)`, `Lint (golangci-lint v2)`, `SAST (gosec)`, `Vuln (govulncheck)`, `SAST (semgrep)`, `Secrets (gitleaks + trufflehog — PR diff)`, `Docker build (no push, verify)`, `Guard (no :latest)`
+- **0 required reviewers** (solo dev admin self-approves PRs — D-20)
+- **No force-push** к main (`allow_force_pushes: false`)
+- **No branch deletion** (`allow_deletions: false`)
+- **Conversation resolution required** (PR comments must be resolved before merge)
+- **`enforce_admins: false`** (solo dev emergency-override path; v1.1 flips к `true` when DEV_B onboards)
+
+Idempotent — re-run после changing required checks is safe (`gh api PUT` overwrites).
+
+### 10.2. Verify protection state
+
+```bash
+gh api repos/IsmailL01/sport/branches/main/protection --jq '{
+  required_status_checks_count: (.required_status_checks.contexts | length),
+  required_reviewers: .required_pull_request_reviews.required_approving_review_count,
+  enforce_admins: .enforce_admins.enabled,
+  allow_force_pushes: .allow_force_pushes.enabled,
+  allow_deletions: .allow_deletions.enabled,
+  conversation_resolution: .required_conversation_resolution.enabled,
+  contexts: .required_status_checks.contexts
+}'
+```
+
+Expected: `required_status_checks_count: 8`, `required_reviewers: 0`, `allow_force_pushes: false`, `allow_deletions: false`, `enforce_admins: false`.
+
+**Full contract check (boolean):**
+```bash
+gh api repos/IsmailL01/sport/branches/main/protection --jq '
+  (.required_status_checks.contexts | length == 8)
+  and (.required_pull_request_reviews.required_approving_review_count == 0)
+  and (.allow_force_pushes.enabled == false)
+  and (.allow_deletions.enabled == false)
+  and (.enforce_admins.enabled == false)
+'
+# Expected: true
+```
+
+**NOTE:** parens around each comparison are MANDATORY — without them jq pipes the contexts array through `length == 8 and <next>` and tries to access `.next` on the array (which gives `expected an object but got: array`).
+
+### 10.3. Bypass procedure (incident response)
+
+Если incident requires immediate merge bypass (revert breaks CI temporarily; hotfix needs к ship NOW):
+
+**Preferred path — temporarily disable specific check:**
+```bash
+# Disable single check (e.g., temporarily ignore SAST gosec):
+gh api -X PATCH repos/IsmailL01/sport/branches/main/protection/required_status_checks \
+  --field 'contexts[]=Test (Go 1.25)' \
+  --field 'contexts[]=Lint (golangci-lint v2)' \
+  --field 'contexts[]=Vuln (govulncheck)' \
+  --field 'contexts[]=SAST (semgrep)' \
+  --field 'contexts[]=Secrets (gitleaks + trufflehog — PR diff)' \
+  --field 'contexts[]=Docker build (no push, verify)' \
+  --field 'contexts[]=Guard (no :latest)'
+# Merge the PR
+# Re-enable: re-run ./scripts/setup-branch-protection.sh
+```
+
+**Last-resort path — disable protection entirely (use ONLY если above fails):**
+```bash
+gh api -X DELETE repos/IsmailL01/sport/branches/main/protection
+# ... merge fix ...
+# IMMEDIATELY re-apply: ./scripts/setup-branch-protection.sh
+```
+
+**NEVER recommended:** `git push --force` к main — `allow_force_pushes: false` so this fails anyway (intentional safety net).
+
+### 10.4. Change procedure (add/remove required check)
+
+1. Update `.github/workflows/backend-ci.yml` (or backend-cd.yml) с new job + verify it runs green на smoke PR
+2. Update `scripts/setup-branch-protection.sh` JSON body — add/remove job's `name:` string in `contexts` array
+3. Re-run `./scripts/setup-branch-protection.sh` (idempotent — overwrites previous config)
+4. Verify via §10.2 — context list reflects update
+
+### 10.5. Smoke test (verify protection actually blocks unverified merges)
+
+Periodically (after major workflow changes):
+
+```bash
+git checkout -b chore/protection-smoke
+echo "<!-- smoke -->" >> docs/RUNBOOKS/deploy.md
+git commit -am "chore: protection smoke test"
+git push -u origin chore/protection-smoke
+gh pr create --base main --head chore/protection-smoke --title "smoke" --body "verify protection blocks until checks pass"
+# Open PR в browser:
+# — Expected: "Merge pull request" disabled с "Required statuses must pass before merging"
+# — After CI green: button enables (proves end-to-end works)
+# Then close OR merge then delete branch.
+```
+
+---
+
+## 11. Deployment freeze procedure (Phase 4 / CICD-05)
+
+> **Purpose:** halt CD pipeline during incident-response when current deploys must NOT roll out (active P0 incident, post-rollback while root-cause investigation continues, security disclosure waiting for coordinated patch).
+
+> **Solo dev context (Ismail = on-call для v1.0):** procedure designed для zero calm-research required during incident. Copy-paste commands; verify expected behavior; document decision в incident-response log.
+
+### 11.1. When к use each path
+
+| Path | When | Reversibility | Time |
+|------|------|---------------|------|
+| **#1 Disable production environment** | Future seam — v1.0 has no `production` GitHub environment defined (D-05: manual Ansible deploy from dev workstation; CD only publishes images). Hook documented для Phase 21 если auto-deploy lands. | Trivial (re-enable env settings) | N/A v1.0 |
+| **#2 Disable backend-cd workflow** | Works TODAY. Use when current code shouldn't generate new published images (e.g., main has known-bad state but immediate revert not yet ready). Tests + scanners still run on PRs. | Trivial (`gh workflow enable backend-cd.yml`) | <30s |
+| **#3 Immediate revert via `make rollback`** | Active P0/P1 — current deploy broke prod. Use combined с #2 (freeze first, rollback second). | Re-deploy current main when ready | 5-10 min |
+
+### 11.2. Path #1 — Disable production environment (future seam, v1.0 N/A)
+
+> **STATUS v1.0:** No `production` environment defined в repo settings (D-05 — manual Ansible deploy from dev workstation). Below = documented hook для Phase 21 if auto-deploy lands. **Currently NOT functional** — use Path #2 OR Path #3.
+
+When v1.1 OR Phase 21 adds `production` environment с manual-approval gate:
+
+```bash
+# List environments:
+gh api repos/IsmailL01/sport/environments
+
+# Disable specific environment (when one exists):
+# — Via UI: Repo Settings → Environments → production → "Disable environment"
+# — Via API (set zero approvers + null branch policy):
+gh api -X PUT repos/IsmailL01/sport/environments/production \
+  --field deployment_branch_policy=null \
+  --field 'reviewers=[]'
+# OR delete entirely (more aggressive):
+gh api -X DELETE repos/IsmailL01/sport/environments/production
+```
+
+Verify: `gh api repos/IsmailL01/sport/environments` lists без `production` entry.
+
+### 11.3. Path #2 — Disable backend-cd workflow (PRIMARY freeze path для v1.0)
+
+Freeze:
+
+```bash
+gh workflow disable backend-cd.yml
+# OR via UI: Repo Settings → Actions → Workflows → backend-cd.yml → "..." menu → Disable workflow
+```
+
+Verify frozen:
+
+```bash
+gh workflow view backend-cd.yml --json state --jq '.state'
+# Expected: "disabled_manually"
+```
+
+Effect:
+- Subsequent `git push к main` AND `git push origin v*` tags do NOT trigger backend-cd.yml
+- `backend-ci.yml` continues running (PR test/lint/scan flow preserved)
+- Existing published images в GHCR remain reachable + signed + verifiable (deploys can still pull existing images)
+
+Unfreeze (human-gates — no auto-unfreeze per RESEARCH §Open Q 5):
+
+```bash
+gh workflow enable backend-cd.yml
+gh workflow view backend-cd.yml --json state --jq '.state'
+# Expected: "active"
+```
+
+Document decision в incident-response log (§11.6 template).
+
+### 11.4. Path #3 — Immediate revert (combined с Path #2 для maximum safety)
+
+Recommended ordering: **freeze first, rollback second.** Freeze prevents another developer (или future-you under stress) from accidentally re-deploying broken code while rollback runs.
+
+```bash
+# 1. Freeze CD (Path #2):
+gh workflow disable backend-cd.yml
+
+# 2. Identify previous good version:
+git log --oneline -10                 # find last known-good tag/SHA
+git tag -l 'v1.0*' --sort=-v:refname | head -5
+
+# 3. Run rollback (Plan 04-03b Makefile target):
+make rollback v=<previous-tag-or-sha>
+# Internally: git checkout → ssh migrate down 1 → ansible-playbook --skip-tags=run-migrations → smoke
+# Wall-clock: ~30s if images already on prod (no re-transfer); ~5 min if re-transfer needed
+# Pre-flight check: `make rollback` fails-fast if <8/8 images for the target tag present on prod
+
+# 4. Verify prod restored:
+curl -fsS https://148-253-214-156.sslip.io/healthz                # external check
+bash services/backend/scripts/drill_assert_schema.sh expect-present  # OR expect-absent (depends on target schema state)
+```
+
+**DO NOT unfreeze CD until root cause of incident confirmed AND fix landed на main.** Per RESEARCH §Open Q 5: human-gates unfreeze — `make rollback` target intentionally does NOT touch CD freeze state.
+
+### 11.5. Verify freeze worked (smoke procedure)
+
+Periodically (после major workflow changes OR incident debriefs):
+
+```bash
+# 1. Freeze:
+gh workflow disable backend-cd.yml
+
+# 2. Trigger what would normally publish:
+git tag freeze-smoke-test
+git push origin freeze-smoke-test
+
+# 3. Verify backend-cd did NOT run (no new run triggered by freeze-smoke-test SHA):
+gh run list --workflow=backend-cd.yml --limit 1 --json headSha,conclusion --jq '.[0]'
+# Expected: most recent run's headSha is NOT the freeze-smoke-test commit
+
+# 4. Cleanup:
+git push origin :refs/tags/freeze-smoke-test
+git tag -d freeze-smoke-test
+gh workflow enable backend-cd.yml
+```
+
+### 11.6. Incident response log template
+
+For each incident-response freeze, capture (paste into nearest available log — `docs/INCIDENT-LOG.md` will exist post-v1.0; для now: SUMMARY of nearest active plan OR inline comment в this RUNBOOK):
+
+```
+Freeze: <YYYY-MM-DD HH:MM UTC>
+Path used: <#1 / #2 / #3>
+Decision-maker: <name>
+Reason: <1-2 sentences>
+Expected unfreeze condition: <fix landed | root cause confirmed | scheduled review at X>
+Unfreeze: <YYYY-MM-DD HH:MM UTC OR pending>
+Postmortem ref: <link if applicable>
+```
+
+---
+
+## 12. Alloy log shipper deploy & rollback (Phase 5 / Plan 05-06)
+
+> Per Phase 5 / OBS-06 / D-27 / D-29: Grafana Alloy installed via apt + systemd on the prod VPS (NOT containerized), ships container stdout to Loki on observability VPS (`srv1561293`) via Caddy-fronted endpoint per D-36. Pinned at v1.5.0 (RESEARCH §4).
+>
+> **Pre-req:** observability-stack must be deployed first (Plan 05-07 / `bash scripts/deploy_observability_stack.sh` on `srv1561293`); otherwise Alloy logs ship into the void (HTTP 503 from missing Loki backend). See `sentry-ops.md §7-§14` for the observability-stack lifecycle.
+
+### 12.1. First-time deploy
+
+```bash
+# From dev workstation, prod inventory:
+cd infra/ansible
+
+# Dry-run (syntax + diff, no remote touch):
+ansible-playbook -i inventory/prod --check --diff site.yml --tags=alloy
+
+# Live deploy:
+ansible-playbook -i inventory/prod site.yml --tags=alloy
+```
+
+The `alloy` tag runs only the new third play (`Deploy Grafana Alloy log shipper to prod VPS`). It does NOT re-touch `common`, `docker`, `ufw`, or `sport-stack` roles — those run only with their respective tags or default (no tags = all plays).
+
+**Tasks in order:** Grafana apt key + repo → apt install alloy=1.5.0* → add `alloy` user to `docker` group (RESEARCH §P17 — required for `/var/run/docker.sock`) → template `/etc/alloy/config.alloy` + systemd override → daemon-reload + enable + start → smoke probes (no `level=error`; report reader count).
+
+**Acceptance:** smoke probe in role output shows `alloy started_reader log lines: N` где N ≥ 1 once sport-stack containers are up. If N = 0, either `/var/run/docker.sock` is unreachable (regression) or sport-stack isn't running yet (acceptable mid-deploy; re-run smoke probe later).
+
+### 12.2. Routine redeploy (config change)
+
+If you edit `roles/alloy-shipper/templates/alloy-config.alloy.j2` or `defaults/main.yml`:
+
+```bash
+cd infra/ansible
+ansible-playbook -i inventory/prod site.yml --tags=alloy
+```
+
+Handlers (`Restart alloy`) fire only on template changes — idempotent re-run no-ops on unchanged config.
+
+### 12.3. Verify logs are flowing
+
+From dev workstation:
+
+```bash
+# Replace <ip> with prod VPS IP if not using ssh alias
+ssh deploy@<prod-vps-ip> 'sudo systemctl status alloy.service'
+# Expect: Active: active (running)
+
+# Tail recent alloy logs:
+ssh deploy@<prod-vps-ip> 'sudo journalctl -u alloy.service -n 100 --no-pager'
+# Look for "started reader" lines (one per discovered container)
+# Look for absence of "level=error" lines
+
+# Query Loki via Grafana proxy (basicauth — see sentry-ops.md §8 for password):
+python3 scripts/pii_live_probe.py --duration 60
+# Should report N > 0 log lines scanned + 0 PII matches
+```
+
+### 12.4. Rollback
+
+Alloy deployed via apt → rollback = pin to previous version OR stop the service.
+
+**Stop and disable (fast):**
+
+```bash
+ssh deploy@<prod-vps-ip> 'sudo systemctl stop alloy.service && sudo systemctl disable alloy.service'
+# Logs stop shipping immediately; existing logs in Loki retained until retention TTL.
+```
+
+**Re-enable after fix:**
+
+```bash
+ssh deploy@<prod-vps-ip> 'sudo systemctl enable --now alloy.service'
+```
+
+**Pin to previous apt version (if v1.5.0 has a bug):**
+
+Edit `infra/ansible/roles/alloy-shipper/defaults/main.yml`:
+
+```yaml
+alloy_version_spec: "1.4.*"  # previous LTS line
+```
+
+Then redeploy:
+
+```bash
+cd infra/ansible
+ansible-playbook -i inventory/prod site.yml --tags=alloy
+```
+
+The role's apt task will downgrade Alloy package to the matching version. `Restart alloy` handler fires automatically.
+
+### 12.5. Common failure modes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `level=error` in alloy logs about `/var/run/docker.sock: permission denied` | `alloy` user not in `docker` group (RESEARCH §P17 regression) | Re-run role: `ansible-playbook ... --tags=alloy`; the `groups: docker append=true` task heals + handler restarts |
+| Caddy returns 403 to Loki push | Alloy source IP not in `LOKI_PUSH_ALLOWED_SOURCE` SOPS slot | Update SOPS + redeploy observability-stack (`sentry-ops.md §11`) |
+| Caddy returns 401 | basicauth set on `/loki/*` path (should NOT be — only `/grafana/*` and `/prometheus/*`) | Check `infra/observability-stack/caddy/Caddyfile` — `/loki/api/v1/push` should bypass basicauth |
+| Loki receives logs but Grafana shows no data | Loki labels mismatch dashboard queries; or time-window stale | Use Grafana Explore → Loki → query `{service=~".+"}` to verify ingestion |
+
+---
+
 *RUNBOOK created: 2026-05-17 — Phase 3 Plan 03-03 Task 1*
+*§5+§6 rewritten: 2026-05-18 — Phase 4 Plan 04-04 (save/scp/load + drill log)*
+*§10 added: 2026-05-18 — Phase 4 Plan 04-05 (branch protection)*
+*§11 added: 2026-05-18 — Phase 4 Plan 04-06 (deployment freeze)*
+*§12 added: 2026-05-20 — Phase 5 Plan 05-06 (Alloy log shipper deploy + rollback)*
 *Provider-agnostic per CONTEXT D-25*
 *Owner: solo dev (Ismail)*

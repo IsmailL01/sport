@@ -1,14 +1,15 @@
 // Passwordless OTP login. Phase 8 / M4.
 //
 // Flow:
-//   POST /auth/request-code  → server generates 6-digit code, stores
-//     в auth_otp_codes с expires_at = now + 10 min, "doc": лог
-//     stdout в dev (mock SMTP); production — SMTP/SES в Phase N+.
-//   POST /auth/login-with-code → server validates code:
-//     - active (not used, not expired)
-//     - matches submitted code
-//     - attempts < 5 (anti-bruteforce)
-//     После success — mark used, find-or-create user, issue TokenPair.
+//
+//	POST /auth/request-code  → server generates 6-digit code, stores
+//	  в auth_otp_codes с expires_at = now + 10 min, "doc": лог
+//	  stdout в dev (mock SMTP); production — SMTP/SES в Phase N+.
+//	POST /auth/login-with-code → server validates code:
+//	  - active (not used, not expired)
+//	  - matches submitted code
+//	  - attempts < 5 (anti-bruteforce)
+//	  После success — mark used, find-or-create user, issue TokenPair.
 //
 // User auto-create: если /auth/request-code приходит с unknown email,
 // мы НЕ создаём user сразу — только при successful login-with-code.
@@ -37,10 +38,10 @@ const MaxOtpAttempts = 5
 
 // OtpService — отдельная служба (не путать с AuthService.password flow).
 type OtpService struct {
-	otps    *postgres.OtpRepo
-	users   *postgres.UserRepo
-	tokens  *postgres.RefreshTokenRepo
-	auth    *AuthService
+	otps   *postgres.OtpRepo
+	users  *postgres.UserRepo
+	tokens *postgres.RefreshTokenRepo
+	auth   *AuthService
 }
 
 func NewOtpService(
@@ -66,15 +67,30 @@ func (s *OtpService) RequestCode(ctx context.Context, email string, devMode bool
 	if _, err := s.otps.Create(ctx, email, code, time.Now().Add(CodeTTL)); err != nil {
 		return "", fmt.Errorf("otp create: %w", err)
 	}
-	slog.InfoContext(ctx, "otp issued",
-		"email", email,
-		// Dev-mode logging only. В production не логируем code.
-		"code", code,
-	)
+	logOTPIssued(ctx, email, code, devMode)
 	if devMode {
 		return code, nil
 	}
 	return "", nil
+}
+
+// logOTPIssued — D-13 fix (OBS-04). Прод-путь больше не эмитит `code`
+// attribute вообще; единственная эмиссия — через slog.DebugContext под
+// `if devMode { ... }`, которая (a) дропается на baseline LOG_LEVEL=info,
+// (b) даже на LOG_LEVEL=debug проходит через pkg/observability PIIDenyList
+// который ронит attr "code" entirely. Defense-in-depth (D-13).
+//
+// Extracted из RequestCode для unit-testing call-shape без stand-up'a
+// Postgres (single-purpose helper testable via bytes.Buffer slog capture).
+func logOTPIssued(ctx context.Context, email, code string, devMode bool) {
+	slog.InfoContext(ctx, "otp issued", "email", email)
+	if devMode {
+		// LOG_LEVEL=debug gates emission AT THE HANDLER level. Even if
+		// LOG_LEVEL=debug is accidentally promoted to prod, the
+		// pkg/observability slog handler's PIIDenyList drops the "code"
+		// attr from the output line — caller has zero leakage surface.
+		slog.DebugContext(ctx, "otp dev-mode echo", "email", email, "code", code)
+	}
 }
 
 // LoginWithCode — verify code и issue token pair. Создаёт user если не было.

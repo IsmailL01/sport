@@ -225,8 +225,8 @@ func (r *ConversationRepo) ListForUser(ctx context.Context, userID string, limit
 		if err := rows.Scan(
 			&view.ID, &view.Type, &view.Title, &view.AvatarMediaID, &view.CreatedBy,
 			&view.CreatedAt, &view.UpdatedAt, &view.LastMessageAt, &view.DeletedAt,
-			&view.MyRole, // role
-			new(*string), // last_read_message_id (we don't surface here)
+			&view.MyRole,    // role
+			new(*string),    // last_read_message_id (we don't surface here)
 			new(*time.Time), // muted_until
 			&view.MembersCount,
 			&lastMsgID, &lastSenderID, &lastBody, &lastCreatedAt,
@@ -316,9 +316,9 @@ func (r *MemberRepo) IsMember(ctx context.Context, convID, userID string) (bool,
 // MemberStatus — расширенный member-чек: role + muted_until для permission gating.
 // Single PK lookup; не дороже IsMember.
 type MemberStatus struct {
-	IsMember    bool
-	Role        domain.MemberRole
-	MutedUntil  *time.Time
+	IsMember   bool
+	Role       domain.MemberRole
+	MutedUntil *time.Time
 }
 
 func (r *MemberRepo) MemberStatus(ctx context.Context, convID, userID string) (MemberStatus, error) {

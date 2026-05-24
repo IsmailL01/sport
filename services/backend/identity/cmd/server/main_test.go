@@ -12,10 +12,10 @@ func TestEnvRequire_ExitsOnMissing(t *testing.T) {
 	t.Helper()
 
 	cases := []struct {
-		name      string
-		setEnv    bool
-		value     string
-		wantExit  bool
+		name     string
+		setEnv   bool
+		value    string
+		wantExit bool
 	}{
 		{name: "missing var → exit", setEnv: false, value: "", wantExit: true},
 		{name: "empty value → exit", setEnv: true, value: "", wantExit: true},

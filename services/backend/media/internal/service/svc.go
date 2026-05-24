@@ -201,7 +201,7 @@ func mimeToExt(mime string) string {
 }
 
 // Errors helpers.
-func IsNotFound(err error) bool { return errors.Is(err, domain.ErrNotFound) }
-func IsForbidden(err error) bool { return errors.Is(err, domain.ErrForbidden) }
+func IsNotFound(err error) bool   { return errors.Is(err, domain.ErrNotFound) }
+func IsForbidden(err error) bool  { return errors.Is(err, domain.ErrForbidden) }
 func IsInvalidArg(err error) bool { return errors.Is(err, domain.ErrInvalidArg) }
-func IsTooLarge(err error) bool { return errors.Is(err, domain.ErrTooLarge) }
+func IsTooLarge(err error) bool   { return errors.Is(err, domain.ErrTooLarge) }

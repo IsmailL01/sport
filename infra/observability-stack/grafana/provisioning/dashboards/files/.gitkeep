@@ -1,0 +1,4 @@
+# Phase 5 / Plan 05-07 v2 / D-34
+# Plan 05-04 (Wave 3) ships dashboard JSONs into services/backend/observability/dashboards/;
+# deploy_observability_stack.sh rsyncs them into this directory at deploy time.
+# Until Plan 05-04 lands, this dir is empty — Grafana provisioning silently skips (no dashboards).

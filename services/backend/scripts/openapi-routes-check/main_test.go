@@ -75,8 +75,8 @@ func TestWalkHandlers_Literal(t *testing.T) {
 		t.Fatalf("WalkHandlers: %v", err)
 	}
 	want := map[string]bool{
-		"GET /foo":        true,
-		"POST /bar/{id}":  true,
+		"GET /foo":       true,
+		"POST /bar/{id}": true,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("len mismatch: got %d, want %d (got=%v)", len(got), len(want), got)

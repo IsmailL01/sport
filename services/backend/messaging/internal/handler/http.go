@@ -26,10 +26,10 @@ const (
 )
 
 type Handler struct {
-	svc       *service.Service
-	signer    *auth.Signer
-	log       *slog.Logger
-	limiter   *ratelimit.Limiter // nil → no rate limiting
+	svc     *service.Service
+	signer  *auth.Signer
+	log     *slog.Logger
+	limiter *ratelimit.Limiter // nil → no rate limiting
 }
 
 func New(svc *service.Service, signer *auth.Signer, limiter *ratelimit.Limiter, log *slog.Logger) *Handler {
@@ -66,9 +66,9 @@ func (h *Handler) healthz(w http.ResponseWriter, _ *http.Request) {
 // === DTOs ===
 
 type createConvRequest struct {
-	Type      string   `json:"type"`             // 'dm' | 'group'
-	PeerID    string   `json:"peerId,omitempty"` // для DM
-	Title     string   `json:"title,omitempty"`  // для group
+	Type      string   `json:"type"`                // 'dm' | 'group'
+	PeerID    string   `json:"peerId,omitempty"`    // для DM
+	Title     string   `json:"title,omitempty"`     // для group
 	MemberIDs []string `json:"memberIds,omitempty"` // для group
 }
 
@@ -94,18 +94,18 @@ type memberDTO struct {
 }
 
 type convDTO struct {
-	ID            string  `json:"id"`
-	Type          string  `json:"type"`
-	Title         *string `json:"title,omitempty"`
-	AvatarMediaID *string `json:"avatarMediaId,omitempty"`
-	CreatedBy     string  `json:"createdBy"`
-	CreatedAt     int64   `json:"createdAt"`           // ms
-	UpdatedAt     int64   `json:"updatedAt"`
-	LastMessageAt *int64  `json:"lastMessageAt,omitempty"`
-	MyRole        string  `json:"myRole"`
-	MembersCount  int     `json:"membersCount"`
-	UnreadCount   int     `json:"unreadCount"`
-	Muted         bool    `json:"muted"`
+	ID            string      `json:"id"`
+	Type          string      `json:"type"`
+	Title         *string     `json:"title,omitempty"`
+	AvatarMediaID *string     `json:"avatarMediaId,omitempty"`
+	CreatedBy     string      `json:"createdBy"`
+	CreatedAt     int64       `json:"createdAt"` // ms
+	UpdatedAt     int64       `json:"updatedAt"`
+	LastMessageAt *int64      `json:"lastMessageAt,omitempty"`
+	MyRole        string      `json:"myRole"`
+	MembersCount  int         `json:"membersCount"`
+	UnreadCount   int         `json:"unreadCount"`
+	Muted         bool        `json:"muted"`
 	LastMessage   *messageDTO `json:"lastMessage,omitempty"`
 }
 
@@ -118,22 +118,22 @@ type sendMessageRequest struct {
 }
 
 type messageDTO struct {
-	ID             string             `json:"id"`
-	ConversationID string             `json:"conversationId"`
-	SenderID       string             `json:"senderId"`
-	ClientMsgID    string             `json:"clientMsgId"`
-	Kind           string             `json:"kind"`
-	Body           *string            `json:"body,omitempty"`
-	ReplyToID      *string            `json:"replyToId,omitempty"`
-	ReplyPreview   *replyPreviewDTO   `json:"replyPreview,omitempty"`
-	Reactions      []reactionDTO      `json:"reactions,omitempty"`
-	MediaID        *string            `json:"mediaId,omitempty"`
-	MediaMime      *string            `json:"mediaMime,omitempty"`
-	MediaWidth     *int               `json:"mediaWidth,omitempty"`
-	MediaHeight    *int               `json:"mediaHeight,omitempty"`
-	EditedAt       *int64             `json:"editedAt,omitempty"`
-	DeletedAt      *int64             `json:"deletedAt,omitempty"`
-	CreatedAt      int64              `json:"createdAt"`
+	ID             string           `json:"id"`
+	ConversationID string           `json:"conversationId"`
+	SenderID       string           `json:"senderId"`
+	ClientMsgID    string           `json:"clientMsgId"`
+	Kind           string           `json:"kind"`
+	Body           *string          `json:"body,omitempty"`
+	ReplyToID      *string          `json:"replyToId,omitempty"`
+	ReplyPreview   *replyPreviewDTO `json:"replyPreview,omitempty"`
+	Reactions      []reactionDTO    `json:"reactions,omitempty"`
+	MediaID        *string          `json:"mediaId,omitempty"`
+	MediaMime      *string          `json:"mediaMime,omitempty"`
+	MediaWidth     *int             `json:"mediaWidth,omitempty"`
+	MediaHeight    *int             `json:"mediaHeight,omitempty"`
+	EditedAt       *int64           `json:"editedAt,omitempty"`
+	DeletedAt      *int64           `json:"deletedAt,omitempty"`
+	CreatedAt      int64            `json:"createdAt"`
 }
 
 type reactionDTO struct {

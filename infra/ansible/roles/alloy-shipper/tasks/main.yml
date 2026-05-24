@@ -1,0 +1,136 @@
+---
+# alloy-shipper/tasks/main.yml — Phase 5 / Plan 05-06 / OBS-06 / D-27 / D-29.
+#
+# Idempotent install of Grafana Alloy (Promtail successor per RESEARCH §1.6 /
+# §P20 — Promtail EOL 2026-03-02) on the prod VPS, NOT the observability VPS.
+# systemd-managed (not containerized per D-29 — independence from sport-stack.
+# service для отдельный fault-isolation; если sport-stack рестартует, alloy
+# continues shipping logs).
+#
+# Ships container stdout via discovery.docker + loki.source.docker pair
+# (RESEARCH §P21 — they must be used together) to Loki on observability VPS
+# srv1561293 via Caddy-fronted endpoint per D-36 (replaces UFW :3100 rule
+# from pre-ADR-0010 architecture).
+#
+# Roles assumes:
+# - VPS has /etc/apt/keyrings directory (created by common role).
+# - Docker daemon running with /var/run/docker.sock readable by `docker` group.
+# - app_servers inventory group includes only the prod VPS.
+
+- name: Ensure /etc/apt/keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: [alloy]
+
+- name: Fetch Grafana apt GPG key (creates guard idempotency)
+  ansible.builtin.get_url:
+    url: "{{ alloy_apt_key_url }}"
+    dest: "{{ alloy_apt_keyring }}"
+    mode: '0644'
+    owner: root
+    group: root
+  # `force: false` (default) — once landed, don't overwrite; matches docker.asc
+  # heal block pattern in common/tasks/main.yml.
+  tags: [alloy]
+
+- name: Add Grafana apt repository
+  ansible.builtin.apt_repository:
+    repo: "{{ alloy_apt_repo }}"
+    filename: grafana
+    state: present
+    update_cache: true
+  tags: [alloy]
+
+- name: Install alloy at pinned version (RESEARCH §4)
+  ansible.builtin.apt:
+    name: "alloy={{ alloy_version_spec }}"
+    state: present
+    update_cache: false
+  tags: [alloy]
+
+- name: Add alloy user to docker group (RESEARCH §P17 — required for /var/run/docker.sock access)
+  # Without this, loki.source.docker silently fails with permission denied on
+  # the docker socket; alloy emits no logs for hours before operator notices.
+  ansible.builtin.user:
+    name: alloy
+    groups: docker
+    append: true
+  notify: Restart alloy
+  tags: [alloy]
+
+- name: Template /etc/alloy/config.alloy (discovery.docker + loki.source.docker pair)
+  # owner=alloy + mode=0640 — alloy reads its own config; group=alloy keeps
+  # config private from other system users.
+  ansible.builtin.template:
+    src: alloy-config.alloy.j2
+    dest: /etc/alloy/config.alloy
+    owner: alloy
+    group: alloy
+    mode: '0640'
+  notify: Restart alloy
+  tags: [alloy]
+
+- name: Ensure systemd override directory for alloy.service exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/alloy.service.d
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  tags: [alloy]
+
+- name: Template systemd override for alloy.service (Restart=always hardening)
+  ansible.builtin.template:
+    src: alloy.service.j2
+    dest: /etc/systemd/system/alloy.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart alloy
+  tags: [alloy]
+
+- name: Flush handlers to apply config + systemd reload before enable
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable + start alloy.service
+  ansible.builtin.systemd:
+    name: alloy
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+  tags: [alloy]
+
+- name: Smoke probe — journalctl shows no level=error in last 50 alloy log lines
+  ansible.builtin.command: journalctl -u alloy -n 50 --no-pager
+  register: alloy_journal
+  changed_when: false
+  failed_when: "'level=error' in alloy_journal.stdout"
+  when: not ansible_check_mode
+  tags: [alloy]
+
+- name: Smoke probe — alloy started log collection (RESEARCH §P21 — discovery.docker fires)
+  # On healthy boot, alloy logs one "started reader" line per discovered
+  # container. Если ни одной — либо /var/run/docker.sock unreachable (P17
+  # regression), либо нет running containers (acceptable если deploy
+  # происходит до sport-stack startup; в этом случае skip с warning).
+  ansible.builtin.shell: |
+    set -o pipefail
+    journalctl -u alloy -n 200 --no-pager | grep -c 'started reader' || true
+  args:
+    executable: /bin/bash
+  register: alloy_readers
+  changed_when: false
+  when: not ansible_check_mode
+  tags: [alloy]
+
+- name: Report alloy reader count (informational)
+  ansible.builtin.debug:
+    msg: "alloy started_reader log lines: {{ alloy_readers.stdout | trim }} (expected >=1 once sport-stack containers are up)"
+  when: not ansible_check_mode
+  tags: [alloy]

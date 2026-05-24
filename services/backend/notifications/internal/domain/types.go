@@ -14,13 +14,13 @@ const (
 )
 
 type PushDevice struct {
-	ID         string
-	UserID     string
-	ExpoToken  string
-	Platform   Platform
-	DeviceID   *string
-	LastSeen   time.Time
-	CreatedAt  time.Time
+	ID        string
+	UserID    string
+	ExpoToken string
+	Platform  Platform
+	DeviceID  *string
+	LastSeen  time.Time
+	CreatedAt time.Time
 }
 
 type Notification struct {
@@ -45,8 +45,8 @@ type Preferences struct {
 
 func DefaultPreferences(userID string) Preferences {
 	return Preferences{
-		UserID: userID,
-		PushEnabled:  true, PushMessages: true,
+		UserID:      userID,
+		PushEnabled: true, PushMessages: true,
 		PushFollows: true, PushMentions: true,
 	}
 }

@@ -1,414 +1,396 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-05-14
+**Analysis Date:** 2026-05-23
+
+This codebase has three distinct test surfaces: Jest for the Expo RN mobile app, `go test` for the Go backend monorepo, and a `bash` smoke-test family in `.planning/phases/*/evidence/` that verifies release-signing infra. Each has its own conventions; this file documents all three. **Note:** despite the project-context mention of Vitest + RN Testing Library / testify + gomock / msw, the actual stack on disk is **Jest + RN Testing Library** on mobile and **stdlib `testing` + `httptest`** on backend — no Vitest, no testify usage in test code, no gomock, no msw. Mocks are hand-rolled.
 
 ## Test Framework
 
-**Runner:** Jest 29.7 with `jest-expo` 54 preset.
-- Mobile config: `apps/mobile-rn/jest.config.js`
-- Type definitions: `@types/jest@30`
-- Test utilities (RN component tests): `@testing-library/react-native@13`
+### Mobile (`apps/mobile-rn/`)
 
-**Assertion library:** Built-in Jest matchers only (`expect`, `toBe`, `toBeNull`, `toEqual`, `toBeInstanceOf`, `toBeGreaterThan`, `toBeLessThan`, `toMatchObject`, `toContain`, `toHaveLength`). No `chai` / `sinon`.
+**Runner:**
+- Jest `^29.7.0` with the `jest-expo` preset (`jest-expo ~54.0.0`).
+- Config: `apps/mobile-rn/jest.config.js`.
+- `@testing-library/react-native ^13.3.3` for component tests.
+- TypeScript: handled by `jest-expo` preset (Babel-based transform).
 
-**Backend tests:** Go `testing` package (`go test ./...`). Not covered here — see `services/backend/identity/internal/service/auth_test.go:1` for the table-driven style. Mobile `permissions.test.ts` is explicitly written to mirror Go `pkg/permissions/check_test.go` (matrix kept in sync by hand).
-
-**Run Commands (from `apps/mobile-rn/`):**
-
-```bash
-npm test                  # Run all tests
-npm test -- --watch       # Watch mode
-npm run test:coverage     # Run with coverage report (lcov + clover)
-npm run typecheck         # tsc --noEmit (preflight check)
-npm run lint              # ESLint (must pass before commit)
-```
-
-Output goes to `apps/mobile-rn/coverage/` (lcov-report, lcov.info, clover.xml, coverage-final.json).
-
-## Jest Configuration
-
-File: `apps/mobile-rn/jest.config.js`
-
-```javascript
-module.exports = {
+**Config highlights (`apps/mobile-rn/jest.config.js`):**
+```js
+{
   preset: 'jest-expo',
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
-  transformIgnorePatterns: [
-    'node_modules/(?!(jest-)?react-native|@react-native|@react-navigation|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-clone-referenced-element|@sentry/.*|sentry-expo|native-base|react-native-svg|@rnmapbox/.*)',
-  ],
+  transformIgnorePatterns: [/* allow-list for RN / Expo / Mapbox / Sentry / SVG */],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
     '!src/**/*.d.ts',
     '!src/**/index.ts',
   ],
-};
+}
 ```
 
-**Key facts:**
-- Tests are discovered ONLY under `__tests__/` folders (not co-located `*.test.ts` next to source).
-- `index.ts` (barrel exports) is excluded from coverage — they have no logic.
-- `*.d.ts` excluded.
-- `transformIgnorePatterns` whitelists every native module that ships ESM so Jest can transform it. **When adding a new native dependency, append its package name to this list** or tests will fail with "Unexpected token export".
-- No custom `setupFilesAfterEach`, no global mocks, no test environment override — `jest-expo` provides JSDOM-like RN env.
+**Run commands (`apps/mobile-rn/package.json:12-14`):**
+```bash
+npm test                # jest
+npm run test:coverage   # jest --coverage
+npm run typecheck       # tsc --noEmit
+npm run lint            # eslint .
+```
+
+### Backend (`services/backend/`)
+
+**Runner:**
+- Stdlib `testing` package — `go test` only.
+- Go 1.25 (pinned in `.golangci.yml:13` and `.github/workflows/backend-ci.yml:48`).
+- Assertions are hand-written: `if got != want { t.Fatalf(...) }` / `t.Errorf(...)`. **No `stretchr/testify` is imported by test code** despite being present in some `go.sum` files (transitive dep).
+- `httptest.NewServer` / `httptest.NewRecorder` for HTTP-layer tests (`identity/internal/handler/http_test.go`, `pkg/observability/debug_session_middleware_test.go`, etc.).
+
+**Run commands (`services/backend/Makefile:61-73`):**
+```bash
+make test               # per-module: cd pkg && go test ./...; cd identity && go test ./...; ...
+make test-coverage      # adds -coverprofile=... per module + go tool cover -func | tail -1
+```
+
+In CI (`.github/workflows/backend-ci.yml:35-56`):
+```bash
+go test -race -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out | tail -1 >> $GITHUB_STEP_SUMMARY
+```
+
+### Smoke scripts (`.planning/phases/*/evidence/`)
+
+**Runner:**
+- `bash` shell scripts with `set -euo pipefail` (or `set -uo pipefail` for the umbrella runner that needs to keep going).
+- Shared assertion helper `must NAME EXPECTED ACTUAL [DETAIL]` is **redefined verbatim in each script** (no shared library) — pattern lives in `smoke-keystore-generated.sh:14-18`, `smoke-sops-roundtrip.sh:18-22`, `smoke-sha256-captured.sh:10-14`:
+  ```bash
+  must() {
+    local name="$1" expected="$2" actual="$3" detail="${4:-}"
+    [ "$actual" = "$expected" ] || { echo "❌ ${name}: expected '${expected}', got '${actual}' ${detail}"; exit 1; }
+    echo "✓ ${name} → ${actual}"
+  }
+  ```
+- Exit-code contract (uniform across the family):
+  - `0` — smoke green.
+  - `1` — smoke red (assertion failed).
+  - `2` — prerequisite missing OR Wave-0 stub not yet implemented.
+- Umbrella runner `smoke-roundtrip.sh` invokes every sibling smoke, classifies each result, and returns `0` only when all are green; returns `2` when any sub-smoke is still in stub state.
 
 ## Test File Organization
 
-**Location:** Centralized under `apps/mobile-rn/src/__tests__/`. Tests are NOT co-located with source files.
+**Mobile — centralized under `apps/mobile-rn/src/__tests__/`:**
 
-```
-apps/mobile-rn/src/__tests__/
-├── AreaCalculator.test.ts           # domain/AreaCalculator
-├── athlete.test.ts
-├── calories.test.ts                 # domain/calories
-├── caloriesExt.test.ts              # MET + HR fallback
-├── currency.test.ts                 # domain/currency
-├── design.test.ts                   # design tokens / theme
-├── format.test.ts                   # util/format
-├── gamification.test.ts             # modules/gamification
-├── geo.test.ts                      # util/geo
-├── gpx.test.ts                      # domain/gpx
-├── health.test.ts
-├── hrZoneBreakdown.test.ts
-├── importAward.test.ts
-├── importPlan.test.ts               # health/importPlan
-├── importSanity.test.ts             # health/importSanity
-├── lap.test.ts
-├── metrics.test.ts
-├── moderation.test.ts               # modules/moderation
-├── permissions.test.ts              # modules/permissions (mirrors Go matrix)
-├── pipeline.test.ts                 # AccuracyFilter, JumpFilter, KalmanFilter,
-│                                    # MinSegmentFilter, PauseDetector, Pipeline
-├── planGenerator.test.ts
-├── realtimeAdapter.test.ts          # MockRealtimeAdapter
-├── records.test.ts                  # domain/records
-├── sensors.test.ts                  # BLE HR parsing + association
-├── social.test.ts                   # domain/social helpers
-├── splits.test.ts
-├── stats.test.ts
-├── streak.test.ts
-├── training.test.ts
-├── walletDomain.test.ts             # pure
-├── walletStore.test.ts              # zustand store with mocked repo
-└── workoutSession.test.ts
-```
+Tests are NOT co-located next to source files. All Jest tests live in `apps/mobile-rn/src/__tests__/<UnitName>.test.{ts,tsx}`. Example census (40+ files):
+- `pipeline.test.ts` — GPS filters
+- `AreaCalculator.test.ts` — closure-area math
+- `SessionManager.test.ts` — domain session lifecycle
+- `gpx.test.ts`, `geo.test.ts`, `streak.test.ts`, `records.test.ts`, `gamification.test.ts`, `metrics.test.ts`, `splits.test.ts`, `calories.test.ts`, `walletDomain.test.ts`, `training.test.ts`, `social.test.ts`, `moderation.test.ts`, `athlete.test.ts`, ...
+- Hook tests (`*.test.tsx`): `useClosureFeedback.test.tsx`, `useLayerVisibility.test.tsx`, `useTrackerCamera.test.tsx`, `usePauseUI.test.tsx`.
+- Component / screen tests (`*.test.tsx`): `Toast.test.tsx`, `TrackerLiveScreen.navAfterSave.test.tsx`.
+- Snapshot tests: `RunDetailsScreen.snapshot.test.tsx`.
+- Probes (env diagnostics, not behavior tests): `expoSqlite.probe.test.ts`, `importSanity.test.ts`.
 
-**Naming:** `<sourceModule>.test.ts`. One test file per source module (occasionally one per topic — e.g. `caloriesExt.test.ts` covers HR fallback added later).
+**Backend — co-located `_test.go` next to the file under test:**
+- `services/backend/identity/internal/service/auth_test.go` ↔ `auth.go`
+- `services/backend/identity/internal/handler/http_test.go` ↔ `http.go`
+- `services/backend/pkg/auth/jwt_test.go` ↔ `jwt.go`
+- `services/backend/pkg/observability/debug_session_middleware_test.go` ↔ `debug_session_middleware.go`
+- Package tests for HTTP handlers use the `package <name>_test` external-test pattern (see `handler_test.go:1` and `debug_session_middleware_test.go:12`) to verify only the public surface.
 
-**Counts (per `STATUS.md` 2026-05-06):** 435/435 passing across 32 files. Approximate test-case count (grep `^  it(` / `^  test(`): ~415 cases.
+**Smoke scripts — co-located under each phase's `evidence/`:**
+- `.planning/phases/06-release-signing/evidence/smoke-*.sh` (current Phase 6 set).
+- Future phases follow the same convention.
 
-**No top-level `tests/` directory for mobile.** The repo-root `tests/` holds only `FIELD_PROTOCOL.md` (manual field-test protocol). Backend tests are co-located inside each Go package (`*_test.go`).
+**Naming:**
+- Mobile: `<Unit>.test.ts`, hooks/components `<Unit>.test.tsx`, snapshots `<Unit>.snapshot.test.tsx`.
+- Backend: `<file>_test.go`.
+- Smokes: `smoke-<area>.sh`.
 
 ## Test Structure
 
-**Suite organization:** Plain `describe` blocks grouped by function or feature; flat `it` cases inside. No nested describe blocks beyond two levels.
+**Mobile — `describe` / `it` blocks, Russian behavior strings:**
 
-**Reference pattern from `apps/mobile-rn/src/__tests__/walletDomain.test.ts:7`:**
+Example pattern (`apps/mobile-rn/src/__tests__/pipeline.test.ts:22-36`):
 ```typescript
-describe('signedAmountFor', () => {
-  it('earn → +amount', () => expect(signedAmountFor('earn', 50)).toBe(50));
-  it('spend → -amount', () => expect(signedAmountFor('spend', 50)).toBe(-50));
-  // ...
-});
-
-describe('validateTransaction', () => {
-  const u = 'u1';
-
-  it('earn любая сумма — OK', () => {
-    expect(validateTransaction({ userId: u, kind: 'earn', amount: 100 }, 0)).toBeNull();
-    expect(validateTransaction({ userId: u, kind: 'earn', amount: 1000 }, 50)).toBeNull();
+describe('AccuracyFilter', () => {
+  it('пропускает точку с accuracy ≤ порога', () => {
+    const f = new AccuracyFilter(20);
+    expect(f.apply(makePoint({ accuracy: 5 }))).not.toBeNull();
+    expect(f.apply(makePoint({ accuracy: 20 }))).not.toBeNull();
   });
-
-  it('spend > balance — InsufficientBalanceError', () => {
-    const err = validateTransaction({ userId: u, kind: 'spend', amount: 150 }, 100);
-    expect(err).toBeInstanceOf(InsufficientBalanceError);
-    if (err instanceof InsufficientBalanceError) {
-      expect(err.need).toBe(150);
-      expect(err.have).toBe(100);
-    }
+  it('отбрасывает с accuracy > порога', () => {
+    const f = new AccuracyFilter(20);
+    expect(f.apply(makePoint({ accuracy: 25 }))).toBeNull();
   });
 });
 ```
 
-**Conventions:**
-- Test names use natural language (Russian common: "earn любая сумма — OK", "spend > balance — InsufficientBalanceError"). Match the surrounding test file's language.
-- Use arrow-function one-liners for trivial cases; block bodies for multi-step.
-- Narrow `Error` to subclass via `instanceof` inside the test before asserting subclass-specific fields (`if (err instanceof InsufficientBalanceError) { expect(err.need).toBe(150); }`).
-- For discriminated-union returns, narrow with `if (plan.decision === 'insert')` then assert on the narrowed shape (`apps/mobile-rn/src/__tests__/importPlan.test.ts:21`).
+**Test helpers — co-located in the test file as `function` declarations** (NOT a shared `testUtils` module):
+- `makePoint(opts)` constructor — appears in multiple files, copy-paste-adapted (`pipeline.test.ts:9-20`, `SessionManager.test.ts:16-27`, etc.). Comments cite the original: `// Mock-репо паттерн адаптирован из walletStore.test.ts:8-45. makePoint-хелпер заимствован из pipeline.test.ts:1-20.`
+- Mock-repo factories: `makeMockRepo()` returns an interface-shaped object whose methods are `jest.fn(...)` instrumented with a `__calls: string[]` audit trail (`SessionManager.test.ts:41-64`).
 
-**Setup / teardown:**
-- Per-suite state held in module-level `let` only when necessary (see `walletStore.test.ts` mock state).
-- `beforeEach` used sparingly — only for cross-test state (`walletStore.test.ts:57` resets the mocked repo + clears store).
-- `afterEach` / `afterAll` not used in the current suite.
+**Backend — table-less Go tests, `_test` external package for handlers:**
 
-**Factory helpers ("function p / w / msg"):** Universal pattern — every test file defines tiny builders near the top to produce test fixtures with overrides:
-
-```typescript
-// apps/mobile-rn/src/__tests__/pipeline.test.ts:9
-function makePoint(opts: Partial<Point> & { ts?: number; lat?: number; lon?: number }): Point {
-  return {
-    timestamp: opts.ts ?? 0,
-    latitude: opts.lat ?? 50,
-    longitude: opts.lon ?? 10,
-    altitude: null,
-    accuracy: opts.accuracy ?? 5,
-    speed: opts.speed ?? null,
-    heading: null,
-    source: opts.source ?? 'raw',
-  };
+Service-layer pattern (`services/backend/identity/internal/service/auth_test.go:13-23,25-40`):
+```go
+func newTestService(t *testing.T) *AuthService {
+    t.Helper()
+    signer, err := auth.NewSigner([]byte("test-secret-must-be-at-least-32-bytes-long-for-hs256"))
+    if err != nil { t.Fatal(err) }
+    s := NewAuthService(memory.NewUserRepo(), memory.NewRefreshTokenRepo(), signer)
+    s.bcryptC = 4   // lower bcrypt cost for fast tests
+    return s
 }
 
-// apps/mobile-rn/src/__tests__/importPlan.test.ts:4
-function w(overrides: Partial<ImportedWorkout> = {}): ImportedWorkout {
-  return { externalId: 'x', startedAt: 1_700_000_000_000, ..., ...overrides };
-}
-
-// apps/mobile-rn/src/__tests__/social.test.ts:3
-function msg(overrides: Partial<Message>): Message {
-  return { id: 'm1', clientId: 'c1', ..., ...overrides };
+func TestRegister_HappyPath(t *testing.T) {
+    s := newTestService(t)
+    u, pair, err := s.Register(context.Background(), "  Alice@Example.COM  ", "password123", "Alice", "test")
+    if err != nil { t.Fatalf("Register: %v", err) }
+    if u.Email != "alice@example.com" { t.Errorf("email not normalized: %q", u.Email) }
+    ...
 }
 ```
 
-**Always use the spread-overrides factory pattern for new tests.** It keeps each case readable and prevents drift when domain types add fields.
+HTTP-handler pattern (`identity/internal/handler/http_test.go:19-47`):
+```go
+func newTestServer(t *testing.T) (*httptest.Server, *service.AuthService) {
+    t.Helper()
+    signer, _ := auth.NewSigner([]byte("test-secret-..."))
+    svc := service.NewAuthService(memory.NewUserRepo(), memory.NewRefreshTokenRepo(), signer)
+    h := handler.NewAuthHandler(svc, nil, signer, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+    srv := httptest.NewServer(h.Routes())
+    t.Cleanup(srv.Close)
+    return srv, svc
+}
+
+func postJSON(t *testing.T, url string, body any) *http.Response { ... }
+func decode(t *testing.T, r *http.Response, dst any) { ... }
+```
+
+**`t.Parallel()` usage:**
+- Used for stateless tests (`debug_session_middleware_test.go:102,125,145,165,189`).
+- Avoided for tests that mutate package-level state (e.g. `featureflags_test.go` Postgres-backed tests use `mustResetSchema`).
+- `paralleltest` linter is **deferred to v1.0.1** (`.golangci.yml:42`) — not currently enforced.
+
+**Smoke patterns:**
+```bash
+set -euo pipefail
+for bin in keytool grep awk; do
+  command -v "$bin" >/dev/null 2>&1 || { echo "❌ pre-req missing: $bin"; exit 2; }
+done
+must() { ... }   # redefined verbatim per script
+# ... assertions ...
+must "alias-present-in-roundtrip" "1" "$LISTING"
+must "sha256-roundtrip-matches-original" "$SHA_ORIG" "$SHA_RT"
+echo "🎉 smoke green: SOPS round-trip → base64 -d → keytool lists alias + SHA-256 matches"
+```
 
 ## Mocking
 
-**Native modules — module-level `jest.mock` (rare, deliberate):**
+**Mobile — hand-rolled `jest.mock()` factories, no msw:**
 
-Only one test currently mocks a module (`walletStore.test.ts`). It mocks the entire `storage/walletRepository` because the store calls SQLite-backed functions and `expo-sqlite` cannot load under Jest.
+`__mocks__/` directory at `apps/mobile-rn/__mocks__/` contains a single auto-loaded mock: `expo-sqlite.ts` (~94 LOC) shims the sync `expo-sqlite` API on top of `better-sqlite3`. This is the only file in `__mocks__/`.
+- Rationale captured in the file header (`__mocks__/expo-sqlite.ts:1-11`): `jest-expo` cannot load the real `expo-sqlite` because of `Cannot find module 'expo-asset'` import chain.
 
+**Inline `jest.mock(...)` factories per test file** for everything else:
+
+Design barrel stub (`__tests__/Toast.test.tsx:12-14`):
 ```typescript
-// apps/mobile-rn/src/__tests__/walletStore.test.ts:8
-jest.mock('../storage/walletRepository', () => {
-  let _balance = 0;
-  const _seen = new Set<string>();
-  const _txs: Array<Record<string, unknown>> = [];
-  let _earnedToday = 0;
-  const fake = {
-    __setBalance: (v: number) => { _balance = v; },
-    __setEarnedToday: (v: number) => { _earnedToday = v; },
-    __reset: () => { _balance = 0; _seen.clear(); _txs.length = 0; _earnedToday = 0; },
-    __txs: () => _txs,
-
-    getBalance: () => _balance,
-    listTransactions: () => _txs,
-    hasTransactionForSession: (userId: string, sid: number) =>
-      _seen.has(`${userId}:${sid}`),
-    coinsEarnedSince: () => _earnedToday,
-    startOfTodayMs: () => 0,
-    recordTransaction: (args) => {
-      const signed = args.kind === 'earn' ? args.amount : -args.amount;
-      _balance += signed;
-      if (args.sourceSessionId !== null) _seen.add(`${args.userId}:${args.sourceSessionId}`);
-      if (args.kind === 'earn') _earnedToday += args.amount;
-      _txs.unshift({ ...args, ts: Date.now() });
-      return _balance;
-    },
-  };
-  return fake;
-});
+jest.mock('../design', () => ({
+  useTheme: () => ({ lime: '#C6F560', text: '#FFFFFF' }),
+}));
 ```
 
-**Mock conventions when one is needed:**
-- Underscored private state (`_balance`, `_seen`) plus underscored test-only escape hatches (`__setBalance`, `__reset`, `__txs`). The double-underscore prefix marks "test-only, never call from prod."
-- A single `__reset()` is called from `beforeEach`. This is the only setup hook needed.
-- Cast through `as unknown as { ... }` to get a typed handle on the mock's escape hatches: `const repoMock = repo as unknown as { __reset(): void; __txs(): Array<...>; };` (`walletStore.test.ts:50`).
-
-**Adapter mocks — Mock as a real class implementation:**
-
-The preferred mocking strategy is NOT `jest.mock`. It's a concrete class that implements the adapter interface and lives in the source tree:
-
-| Interface | Mock implementation | Usage |
-|-----------|---------------------|-------|
-| `RealtimeAdapter` | `apps/mobile-rn/src/realtime/adapters/MockRealtimeAdapter.ts` | Direct `new MockRealtimeAdapter()` in test. Exposes test-only `emit(e)` to simulate incoming events. |
-| `HealthAdapter` | `apps/mobile-rn/src/health/MockHealthAdapter.ts` | Drop-in for integration / dev. |
-
-Reference test `apps/mobile-rn/src/__tests__/realtimeAdapter.test.ts:4`:
+Navigation + map mocks for snapshot tests (`__tests__/RunDetailsScreen.snapshot.test.tsx:34-52`):
 ```typescript
-describe('MockRealtimeAdapter', () => {
-  it('connect → status transitions idle → connected', async () => {
-    const a = new MockRealtimeAdapter();
-    const states: RealtimeStatus[] = [];
-    a.onStatus((s) => states.push(s));
-    await a.connect();
-    expect(states).toContain('connected');
-    expect(a.isConnected()).toBe(true);
-  });
+const mockGoBack: jest.Mock = jest.fn();
+const mockPopToTop: jest.Mock = jest.fn();
+const mockNavReplace: jest.Mock = jest.fn();
 
-  it('emit() dispatches к listeners', () => {
-    const a = new MockRealtimeAdapter();
-    const received: RealtimeEvent[] = [];
-    a.on((e) => received.push(e));
-    a.emit({ event: 'message.new', ... } as RealtimeEvent);
-    expect(received).toHaveLength(1);
-  });
-});
+jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({ goBack: mockGoBack, popToTop: mockPopToTop, replace: mockNavReplace }),
+  useRoute: () => ({ params: { sessionId: '1' } }),
+}));
+jest.mock('../map', () => ({
+  HistoryTerritoryLayer: () => null,
+  LocationPuckLayer: () => null,
+  MapboxView: ({ children }: any) => children ?? null,
+  TrackLayer: () => null,
+  ZoneLayer: () => null,
+}));
 ```
 
-**`LocationAdapter` and `MapAdapter` have no Jest tests yet.** The location adapter is exercised only through manual field tests (`tests/FIELD_PROTOCOL.md`); the map layer relies on the architectural rule (`no-restricted-imports`) plus the `MapboxView` boundary. The pipeline tests cover the GPS data path independently of the location adapter — they construct `Point` fixtures directly.
+**Zustand-mock pattern** (`__tests__/RunDetailsScreen.snapshot.test.tsx:11-14`):
+- Module-level `mockState` + `getState()` returns the same `mockState`. Mock-names MUST begin with `mock` (verbatim string prefix) to pass Jest's hoist-guard for `jest.mock` factories. Pattern is canonized in Plan 02 SUMMARY.
+
+**Fake timers** (`__tests__/Toast.test.tsx:18-24`):
+```typescript
+beforeEach(() => { jest.useFakeTimers(); });
+afterEach(() => { jest.useRealTimers(); });
+// ... in test:
+act(() => { jest.advanceTimersByTime(3500); });
+```
+
+**TZ-stable snapshots** (`__tests__/RunDetailsScreen.snapshot.test.tsx:20-24`):
+```typescript
+const originalToLocaleString = Date.prototype.toLocaleString;
+Date.prototype.toLocaleString = function (this: Date, _locale?: string | string[]): string {
+  return this.toISOString().replace('T', ', ').replace(/\.\d{3}Z$/, ' (UTC)');
+};
+```
+
+**Backend — interface seams + in-memory implementations, no gomock:**
+
+- Test seams are **interfaces declared at the consumer**, not mock-generated stubs. Example: `FeatureFlagChecker` in `services/backend/pkg/observability/debug_session_middleware.go:51-56` is satisfied in tests by a tiny `stubFFStore` struct (`debug_session_middleware_test.go:30-38`):
+  ```go
+  type stubFFStore struct {
+      enabled bool
+      calls   atomic.Int32
+  }
+  func (s *stubFFStore) IsTesterDebugEnabled(_ context.Context, _ string) bool {
+      s.calls.Add(1)
+      return s.enabled
+  }
+  ```
+- For repository-layer tests, `services/backend/identity/internal/repository/memory/memory.go` provides thread-safe in-memory implementations of `UserRepo` / `RefreshTokenRepo` used by service-layer tests.
+- Postgres-backed tests gate on `PG_TEST_URL` env and `t.Skip` when unset (`featureflags_test.go` comment `RESEARCH.md §Pitfalls #1`).
 
 **What to mock:**
-- SQLite-backed repositories (the only path that requires native loading).
-- HTTP / `fetch` — only when absolutely necessary (e.g. testing rate-limit parser). The current suite does NOT exercise `apiClient` directly; sync modules are tested indirectly through stores with mocked repos.
+- External SDKs at the adapter boundary (Mapbox, navigation, design system / MMKV-backed theme).
+- Native modules unavailable under `jest-expo` (SQLite — via `__mocks__/expo-sqlite.ts`; MMKV — stubbed per-test via `jest.mock('../design', ...)`).
+- Time (`jest.useFakeTimers`), date-locale (`Date.prototype.toLocaleString` stub).
+- Backend external dependencies: signer (used as real instance with test secret), feature-flag store (stub), repositories (in-memory).
 
 **What NOT to mock:**
-- Pure domain functions (currency, walletDomain, records, streak, importPlan, importSanity, calories, areaCalculator, pipeline filters, geo helpers). They are tested directly with synthetic inputs.
-- Time. Tests use deterministic timestamps (`1_700_000_000_000`, fixed `Date` objects passed in: `const today = new Date(2026, 4, 11);`). Don't reach for `jest.useFakeTimers()` unless a new feature genuinely depends on wall-clock behaviour.
-- `console.warn` / `console.error` — leave them noisy. Treats logs as test output you may want to read.
-- `expo-*` modules other than `expo-sqlite`. Native modules referenced only inside adapters; adapter implementations themselves are not tested with Jest.
+- Pure domain code (`AreaCalculator`, `Pipeline` filters, `ClosureDetector`, `gpx` serializer) — tested with real inputs against real outputs.
+- The pipeline `Filter` chain and `SessionManager`'s state machine — tested as integrated units with mock `SessionRepo` only.
 
 ## Fixtures and Factories
 
-**Inline builders are the standard.** Every test file declares its own `function p(...)` / `function w(...)` / `function makePoint(...)` / `function msg(...)` near the top. There is no shared `fixtures/` or `factories/` folder.
+**Mobile — `function makePoint(opts)` pattern** (no `factory.ts` module):
+- Each test file declares its own constructor at top of file. Slight variants: `pipeline.test.ts:9-20` vs `SessionManager.test.ts:16-27` vs `AreaCalculator.test.ts:3-14` (which uses `p(latitude, longitude)` for terseness).
+- `RawPoint` vs `Point` distinction handled by separate helpers (`makeRaw` / `makePoint` in `SessionManager.test.ts:16-39`).
 
-**Test data conventions:**
-- Stable timestamps: `1_700_000_000_000` for arbitrary "now"; explicit `new Date(2026, 4, 11)` for date-dependent logic.
-- Fixed Moscow / Berlin-ish coordinates: `lat: 50, lon: 10` for synthetic GPS tracks; `baseLat: 55.7558, baseLon: 37.6173` (Moscow) in `records.test.ts`.
-- Helpers that build geometry (`squareAround`, `buildLineTrack`) live alongside the tests that need them — duplicate rather than DRY across files until a real shared utility emerges.
+**Lint-failure fixtures** (intentional ESLint trip-wires):
+- `apps/mobile-rn/src/__fixtures__/` — excluded from default ESLint runs via `ignores: ['src/__fixtures__/**']` in `eslint.config.js:29`.
+- Exercised in CI via `npx eslint --no-ignore -- src/__fixtures__/...` to verify the token-secret guard (PHASE1-13 / D-33) actually fires on `EXPO_PUBLIC_*_SECRET` and `sk\..*` literals.
 
-Example helper for geometry (`apps/mobile-rn/src/__tests__/AreaCalculator.test.ts:18`):
-```typescript
-function squareAround(centerLat: number, centerLon: number, sideM: number): RawPoint[] {
-  const dLat = sideM / 2 / 111320;
-  const dLon = sideM / 2 / (111320 * Math.cos((centerLat * Math.PI) / 180));
-  return [/* 4 corners */];
-}
-```
+**Backend — no `testdata/` directories in active modules.** Test data is inlined as string literals (JWT secrets, test emails, etc.).
 
 ## Coverage
 
-**Coverage targets (from `CLAUDE.md`):**
-- **80%+** for domain and pipeline (`src/domain/**`, `src/pipeline/**`).
-- **90%+** for area calculation (`src/domain/AreaCalculator.ts` + `src/util/{geo,selfIntersection,douglasPeucker}.ts`).
+**Mobile (`apps/mobile-rn/coverage/`):**
+- `npm run test:coverage` produces `coverage/lcov.info`, `coverage/clover.xml`, `coverage/coverage-final.json`, `coverage/lcov-report/` (HTML).
+- `collectCoverageFrom` in `jest.config.js:8-12` includes `src/**/*.{ts,tsx}`, excludes `*.d.ts` and `index.ts` barrels.
+- No coverage threshold enforced in `jest.config.js`. Targets (per `CLAUDE.md` §Что НЕ делать никогда):
+  - **80%+ general.**
+  - **90%+ for `src/pipeline/` and `src/domain/AreaCalculator.ts`** (the two units called out by name in `CLAUDE.md`).
+- No CI enforcement step yet — coverage is informational.
 
-**Current state (per `STATUS.md` 2026-05-06):** 435/435 tests passing. Coverage artifacts present in `apps/mobile-rn/coverage/` (`lcov.info`, `clover.xml`). No CI gate enforces the percentage threshold yet — it's a soft target.
-
-**View coverage:**
-```bash
-cd apps/mobile-rn
-npm run test:coverage
-open coverage/lcov-report/index.html
-```
-
-**Heavily tested (deep cases, edge cases, mathematical tolerances):**
-
-| Area | File(s) | What's covered |
-|------|---------|----------------|
-| GPS pipeline | `pipeline.test.ts` (18 cases) | AccuracyFilter, JumpFilter, MinSegmentFilter, KalmanFilter (RMSE assertion < 1.5m over 50 noisy points), PauseDetector (auto-paused / auto-resumed thresholds), Pipeline orchestration, `reset()`. |
-| Area calculation | `AreaCalculator.test.ts` | 200×200m square (±5%), FIFA football field 7140 m² (±5%), 32-point circle πr² (±5%), self-intersecting bowtie → `shoelace_with_warning`, < 3 points → `too-few-points`. |
-| Currency / antifraud | `currency.test.ts`, `walletDomain.test.ts`, `walletStore.test.ts` | MET formula, daily cap (`coinsEarnedToday`), antifraud reasons (`session_too_short`, `kcal_too_low`, `pace_too_fast`, `hr_out_of_range`, `computed_zero`, `daily_cap_reached`), `InsufficientBalanceError` shape, idempotency by `sessionId`. |
-| Health import | `importPlan.test.ts`, `importSanity.test.ts`, `importAward.test.ts` | `planWorkout` decision matrix (insert / duplicate / reject), sanity checks (duration_zero, duration_too_long, distance_invalid, pace_too_fast, speed_too_fast, hr_out_of_range), cross-source dedup by `(source, sourceUuid)`. |
-| Calories | `calories.test.ts` (8 cases), `caloriesExt.test.ts` (15 cases) | MET clamping (min/max), HR Keytel fallback, weight/duration/pace combinations. |
-| Records & streak | `records.test.ts`, `streak.test.ts` | best-pace-for-distance with synthetic line tracks, longest-distance, consecutive-day computation, heatmap intensity. |
-| Permissions matrix | `permissions.test.ts` (34 cases) | Mirrors Go `pkg/permissions/check_test.go`. ban gate, role escalation, chat-role hierarchy. Drift between Go and TS = both suites fail. |
-| Moderation domain | `moderation.test.ts` (12 cases) | Constants (`REPORT_BODY_MAX_LENGTH`, `REPORT_REASONS`), union exhaustiveness (`ReportTargetKind`, `ReportStatus`, `ResolutionAction`, `ReportReason`), `validateReportBody`. |
-| Social / chat domain | `social.test.ts` | `lastMessagePreview`, `canDeleteMessage`, `isAdminRole`. |
-| BLE sensors | `sensors.test.ts` | `parseHeartRateMeasurement` byte parsing (uint8 / uint16 flag, malformed input), `associateHrToPoints`. |
-| Training plan | `training.test.ts` (38 cases), `planGenerator.test.ts` (25 cases) | Training plan domain logic. |
-| Realtime adapter | `realtimeAdapter.test.ts` | `MockRealtimeAdapter` lifecycle, subscribe/unsubscribe, event dispatch. |
-| Stats / splits / metrics | `stats.test.ts`, `splits.test.ts`, `metrics.test.ts`, `hrZoneBreakdown.test.ts` |  |
-| Format helpers | `format.test.ts` (22 cases) | Distance, pace, duration formatters. |
-| Design tokens | `design.test.ts` | Theme tokens / color contrast. |
-| Athlete / GPX / Geo | `athlete.test.ts`, `gpx.test.ts`, `geo.test.ts`, `health.test.ts`, `lap.test.ts`, `workoutSession.test.ts` |  |
-
-**Not tested (gaps):**
-
-| Gap | Files | Risk |
-|-----|-------|------|
-| Repositories | `src/storage/*.ts` | High — SQL queries, migrations, indices have only manual / smoke coverage. Can't load `expo-sqlite` under Jest; integration tests deferred to "Round 4+". |
-| Real adapters | `ExpoLocationAdapter`, `WebSocketRealtimeAdapter`, `HealthKitAdapter`, `HealthConnectAdapter`, `StravaAdapter`, `ExpoNotificationsAdapter` | Medium — depends on native modules; covered by manual field tests (`tests/FIELD_PROTOCOL.md`) and backend smoke scripts. |
-| API sync layer | `src/auth/apiClient.ts`, `src/modules/*/sync/*.ts` | Medium — token refresh, 429 handling, DTO mapping are not unit-tested. The `parseRateLimit` helper has no direct test. |
-| Map components | `src/map/components/*.tsx` | Low — thin wrappers around `LineLayer / ShapeSource`; correctness verified visually. |
-| UI screens / React components | `src/ui/**/*.tsx`, `src/modules/*/ui/*.tsx` | Medium — `@testing-library/react-native` is installed but unused. No `*.test.tsx` files exist yet despite `testMatch` allowing `.tsx`. |
-| End-to-end | None | High for backend — but backend has Python smoke scripts (`services/backend/scripts/smoke_*.py`) invoked manually. No mobile E2E framework (Detox / Maestro) installed. |
-| Logout cleanup cascade | `src/state/auth.ts:217-251` | Low — dynamic-imported `clearAll()` calls are not asserted as a chain. |
+**Backend (`services/backend/`):**
+- Per-service `go test -coverprofile=coverage.out ./...` in CI (`.github/workflows/backend-ci.yml:54`). Result piped to `$GITHUB_STEP_SUMMARY` via `go tool cover -func=coverage.out | tail -1`.
+- Local: `make test-coverage` writes `coverage-pkg.out`, `coverage-identity.out`, `coverage-activity-sync.out` at backend root (`services/backend/Makefile:66-73`).
+- No coverage threshold gate — informational only.
 
 ## Test Types
 
-**Unit tests (the vast majority):**
-- Pure functions, no I/O, deterministic inputs/outputs.
-- Mathematical tolerances for floating-point comparisons (`toBeGreaterThan(expected * 0.93)`, `toBeLessThan(expected * 1.02)`).
-- Discriminated-union narrowing via `if (plan.decision === 'insert')`.
+**Unit tests:**
+- Domain pure-logic: pipeline filters, area calculator, closure detector, GPX serializer, splits, streaks, records, gamification, calories, training plan generator, wallet domain, social moderation.
+- Go service-layer business logic (Auth Register/Login/Refresh/Logout) against in-memory repos.
 
-**Integration-ish tests:**
-- `walletStore.test.ts` — store + mocked repository. Covers idempotency, daily cap accumulation, zero-decision short-circuit, `clearAll()` semantics. The only test that crosses the domain/state/storage boundary.
+**Integration tests:**
+- HTTP-level via `httptest.NewServer(h.Routes())` exercising full handler chain (`identity/internal/handler/http_test.go`, `activity-sync/internal/handler/http_test.go`).
+- Middleware chains tested end-to-end with stub deps: `debug_session_middleware_test.go` boots a signer + stub FF store + real `httptest.NewRecorder`.
+- Postgres-backed featureflag store tests run against a real Postgres if `PG_TEST_URL` is set; `t.Skip` otherwise.
 
-**Smoke tests (Python, backend):**
-- Located at `services/backend/scripts/smoke_*.py` (`smoke_posts.py`, `smoke_moderation.py`, `smoke_realtime_feed.py`, `smoke_realtime_stories.py`, `smoke_ratelimit.py`).
-- Invoked manually against staging (`148-253-214-156.sslip.io`). Not in CI.
-- Mobile equivalent: `tests/FIELD_PROTOCOL.md` — manual on-device protocol for GPS / pipeline / battery / background tracking.
+**Snapshot tests:**
+- `RunDetailsScreen.snapshot.test.tsx` is the canonical example. Establishes the pattern for future screen tests (Plans 06/07 — RegionPickerScreen etc.). Heavy reliance on inline `jest.mock` for design barrel, navigation, map components.
 
-**No E2E framework** (no Detox, no Maestro). UI testing relies on tsc + ESLint + manual verification.
+**Hook tests:**
+- `useClosureFeedback`, `useLayerVisibility`, `useTrackerCamera`, `usePauseUI` — render a tiny consumer via `@testing-library/react-native` and exercise the hook.
+
+**Smoke tests (release signing):**
+- `.planning/phases/06-release-signing/evidence/smoke-*.sh` verify operational invariants (keystore SHA-256 captured to evidence file with two bands; SOPS decrypt → base64 → keytool round-trip preserves SHA-256; ASC API key parses as EC private key).
+- Run manually during phase execution; not in CI yet (Phase 6 still mid-execution per `STATE.md`).
+
+**E2E tests:**
+- None. The closed-beta scope explicitly excludes E2E (per ADR-0011 lean-scope reset).
 
 ## Common Patterns
 
-**Async testing:**
+**Async testing (TS):**
 ```typescript
-// apps/mobile-rn/src/__tests__/realtimeAdapter.test.ts:5
-it('connect → status transitions idle → connected', async () => {
-  const a = new MockRealtimeAdapter();
-  const states: RealtimeStatus[] = [];
-  a.onStatus((s) => states.push(s));
-  await a.connect();
-  expect(states).toContain('connected');
+it('start() запускает adapter и подписывается на updates', async () => {
+  await manager.start('run');
+  expect(adapter.startCalls).toBe(1);
 });
 ```
-- `async / await` directly in `it`.
-- No `.then`/`.catch` chains in tests.
-- Promise-returning store actions: `await useWalletStore.getState().awardForSession(...)` — but most actions in current suite are synchronous after the mock substitution.
 
-**Error testing:**
-```typescript
-// apps/mobile-rn/src/__tests__/walletDomain.test.ts:27
-it('spend > balance — InsufficientBalanceError', () => {
-  const err = validateTransaction({ userId: u, kind: 'spend', amount: 150 }, 100);
-  expect(err).toBeInstanceOf(InsufficientBalanceError);
-  if (err instanceof InsufficientBalanceError) {
-    expect(err.need).toBe(150);
-    expect(err.have).toBe(100);
-    expect(err.userId).toBe(u);
-  }
-});
-```
-- Use `toBeInstanceOf` then narrow with `if (err instanceof XError)` to read subclass-specific public fields.
-- For thrown errors: `expect(() => fn()).toThrow(Error)` (not heavily used; most errors are returned as values).
-
-**Numerical tolerance:**
-```typescript
-// apps/mobile-rn/src/__tests__/AreaCalculator.test.ts:42
-expect(r.areaM2).toBeGreaterThan(38_000);
-expect(r.areaM2).toBeLessThan(42_000);
-
-// apps/mobile-rn/src/__tests__/pipeline.test.ts:111
-expect(rmse).toBeLessThan(1.5);
-```
-- Bracket the expected value (`> low` AND `< high`) rather than asserting equality with `toBeCloseTo`. Makes tolerances explicit in test names ("tolerance 5%").
-- For Kalman/statistical filters, assert summary stats (RMSE, drift) not point-by-point values.
-
-**Discriminated-union narrowing:**
-```typescript
-// apps/mobile-rn/src/__tests__/importPlan.test.ts:21
-const plan = planWorkout(w(), 'health-connect', new Set());
-expect(plan.decision).toBe('insert');
-if (plan.decision === 'insert') {
-  expect(plan.row.sessionId).toBe(w().startedAt);
+**Error testing (Go):**
+```go
+_, _, err := s.Register(ctx, "a@b.com", "password456", "", "")
+if !errors.Is(err, domain.ErrEmailAlreadyExists) {
+    t.Errorf("expected ErrEmailAlreadyExists, got %v", err)
 }
 ```
 
-**Time injection:**
-```typescript
-// apps/mobile-rn/src/__tests__/streak.test.ts:24
-const today = new Date(2026, 4, 11); // 11 May 2026, fixed.
-const r = computeStreak([sess(0, 5000, today)], today);
+**HTTP status assertions (Go):**
+```go
+if resp.StatusCode != http.StatusUnauthorized {
+    t.Errorf("expected 401 without auth header, got %d", resp.StatusCode)
+}
 ```
-Domain functions accept a `now` / `today` parameter rather than calling `Date.now()` internally — makes them trivially testable. Apply this pattern to any new time-dependent function.
 
-**Antifraud / decision matrix testing:**
-- Drive the function across every `reason` it can return; assert both `coins === 0` and `reason === '<expected>'`.
-- See `currency.test.ts` for the model.
+**Tolerance / range assertions (TS — physical-units tests):**
+```typescript
+expect(r.areaM2).toBeGreaterThan(38_000);
+expect(r.areaM2).toBeLessThan(42_000);   // ±5% tolerance on 200×200m square
+```
 
-**Module-level state in pure tests:**
-- Avoid. If a function needs setup (Kalman state, PauseDetector window), construct a fresh instance inside each `it` rather than reusing across cases.
+**Smoke regex banding** (assert evidence-file structure rather than the value itself):
+```bash
+must "sha256-colon-band-present" "1" "$(grep -cE '^[A-F0-9]{2}(:[A-F0-9]{2}){31}$' "$F")"
+must "sha256-bare-band-present"  "1" "$(grep -cE '^[A-F0-9]{64}$' "$F")"
+must "sha256-length-95" "95" "${#SHA_FROM_EVIDENCE}"
+```
+
+## CI Integration
+
+**Workflows (`.github/workflows/`):**
+- `backend-ci.yml` — PR + push-to-main pipeline for the Go backend. Jobs (each name is a verbatim contract for `Plan 04-05` branch-protection JSON, including em-dash U+2014):
+  - `Test (Go 1.25)` — matrix over 9 services, `go test -race -coverprofile=coverage.out`.
+  - `Lint (golangci-lint v2)` — per-module loop with shared `.golangci.yml`.
+  - `SAST (gosec)` — `gosec -severity high`, fail on HIGH.
+  - `Vuln (govulncheck)` — per-module.
+  - `SAST (semgrep)` — `p/golang` + `p/owasp-top-ten`, `--severity ERROR`.
+  - `Secrets (gitleaks + trufflehog — PR diff)` — only on `pull_request`. Full-history scan runs in `secret-scan-full.yml` cron.
+  - `Docker build (no push, verify)` — matrix build + Trivy image scan (`HIGH,CRITICAL`, `exit-code: '1'`).
+  - `Guard (no :latest)` — negative grep over `.github/workflows/*.yml` + `docker-compose.prod.yml` (excluding comment lines).
+  - `PII Audit (slog grep)` — runs `bash scripts/pii_audit.sh` per D-12 / D-14.
+  - `Cardinality Probe (Prom labels)` — boots services via docker-compose, runs `scripts/cardinality_probe.py` to assert no forbidden labels + ≤1000 series per metric family.
+- `backend-cd.yml` — backend deployment pipeline.
+- `android-release.yml` — tag-triggered EAS build (Phase 7 / BUILD-01).
+- `secret-scan-full.yml` — full-history gitleaks + trufflehog cron.
+
+**Mobile CI:** No dedicated workflow yet — mobile tests run locally via `npm test` + `npm run lint` + `npm run typecheck`. Wiring planned in subsequent phases.
+
+**Branch protection:** Required checks reference job `name:` strings verbatim (including em-dash characters) — see comment at `.github/workflows/backend-ci.yml:1-6`.
+
+## Smoke-Test Conventions
+
+**Where:** `.planning/phases/<phase>/evidence/smoke-*.sh`. Current Phase 6 set in `.planning/phases/06-release-signing/evidence/`:
+- `smoke-roundtrip.sh` — umbrella runner. `set -uo pipefail` (NOT `-e`) so it can collect all child results. Returns `0` only if all sub-smokes are green; returns `2` if any sub-smoke is still in stub state; returns `1` if any sub-smoke failed.
+- `smoke-keystore-generated.sh` — asserts `keystore-sha256.txt` evidence file structure (two bands: colon-form `XX:XX:...`, bare-form 64-hex).
+- `smoke-sops-roundtrip.sh` — decrypts SOPS `.secrets/prod/mobile-signing.yaml`, base64-decodes `android.keystore_base64`, runs `keytool -list`, confirms SHA-256 matches the evidence file. Uses `mktemp -d` + `trap 'rm -rf "$TMP"; unset VER_PASS' EXIT` for cleanup.
+- `smoke-sha256-captured.sh` — internal consistency: file exists, both bands present, bare form ≡ colon-form with colons stripped.
+- `smoke-ios-cert-roundtrip.sh`, `smoke-ios-provprofile.sh`, `smoke-asc-api-key.sh` — Wave-0 stubs (exit `2`, awaiting Plan 06-02 implementation).
+
+**Conventions:**
+- Header docstring cites phase, plan, task, validation row (e.g. `# Phase 6 / Plan 06-01 Task 3 — smoke: SOPS → base64 → keystore round-trip`, `# Verifies VALIDATION row 06-01-02.`).
+- Document exit-code contract in header.
+- Prerequisite check loop before any work: `for bin in sops yq keytool base64 awk grep; do command -v "$bin" >/dev/null || { echo "❌ pre-req missing: $bin"; exit 2; }; done`.
+- Hand-roll the `must` helper at top — never shared, never refactored (deliberate per-script self-containment for `bash <file>` standalone runs).
+- Output emojis as status: `❌`, `✓`, `🎉`, `⏳` (umbrella pending banner).
+- Exit `2` for both prerequisite missing and stub-not-implemented — the umbrella runner classifies these separately from real failures.
 
 ---
 
-*Testing analysis: 2026-05-14*
+*Testing analysis: 2026-05-23*

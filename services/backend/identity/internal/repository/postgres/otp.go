@@ -12,13 +12,13 @@ import (
 
 // OtpCode — row из auth_otp_codes.
 type OtpCode struct {
-	ID         string
-	Email      string
-	Code       string
-	ExpiresAt  time.Time
-	UsedAt     *time.Time
-	Attempts   int
-	CreatedAt  time.Time
+	ID        string
+	Email     string
+	Code      string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	Attempts  int
+	CreatedAt time.Time
 }
 
 type OtpRepo struct {

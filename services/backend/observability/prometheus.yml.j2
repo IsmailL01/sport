@@ -1,0 +1,37 @@
+{# Phase 5 / OBS-05 / D-19 + D-34 — Jinja2 шаблон для Ansible role.
+
+   Plan 05-06 рендерит этот файл в /opt/observability-stack/prometheus.yml
+   на srv1561293 (sentry VPS). Substituted variables (из group_vars/sentry.yml
+   per Plan 05-06):
+
+     prod_vps_ip      = 148.253.214.156           # IP прод-VPS
+     services_ports   = OrderedDict of name → port:
+       identity      = 8081
+       activity-sync = 8082
+       messaging     = 8083
+       social-graph  = 8084
+       feed          = 8085
+       media         = 8086
+       notifications = 8087
+       realtime-gw   = 8090
+
+   Cardinality budget (D-18) применяется как в dev (см. prometheus.yml),
+   но env label = 'prod'. CI cardinality-probe job всё ещё нужен для
+   защиты merge'ов (Plan 05-04 Task 3).
+#}
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: 'prod'
+
+scrape_configs:
+  - job_name: 'sport-backend'
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          {% for svc, port in services_ports.items() %}
+          - '{{ prod_vps_ip }}:{{ port }}'   # {{ svc }}
+          {% endfor %}
+        labels:
+          env: 'prod'

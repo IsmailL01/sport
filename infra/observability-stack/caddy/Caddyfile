@@ -1,0 +1,85 @@
+# Phase 5 / Plan 05-07 v2 / D-35 / D-36 / D-37 — Caddy on srv1561293:8443
+# Self-signed TLS via `tls internal` (Caddy's local CA — no Let's Encrypt for v1.0).
+# Existing system nginx on :80/:443 untouched — niko-prod no-touch invariant.
+#
+# 3 reverse-proxy paths:
+#   /grafana/*       → 127.0.0.1:3000 (basicauth)
+#   /prometheus/*    → 127.0.0.1:9090 (basicauth)
+#   /loki/api/v1/*   → 127.0.0.1:3100 (@allowed_loki matcher per D-36)
+#
+# Env vars from /etc/caddy/secrets.env (EnvironmentFile in observability-caddy.service):
+#   GRAFANA_ADMIN_PASSWORD_BCRYPT — basicauth hash for admin user
+#   LOKI_PUSH_ALLOWED_SOURCE      — prod VPS IP/32 (e.g., 148.253.214.156/32)
+
+{
+    admin off
+    # auto_https disable_redirects keeps internal cert issuance (tls internal)
+    # while skipping the :80 → :443 redirect we don't want (we're on alt port).
+    # `auto_https off` would disable EVERYTHING including cert issuance — broken.
+    auto_https disable_redirects
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# Bind to sslip.io hostname (resolves to 82.25.71.215) per Phase 3 D-18 pattern.
+# tls internal can issue certs for DNS names but not IP literals; sslip.io
+# is the established workaround in this repo.
+82-25-71-215.sslip.io:8443 {
+    tls internal
+
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+
+    # Loki: health endpoints (/ready, /metrics) open to anyone for monitoring;
+    # push + query API restricted to prod VPS source IP per D-36 allowlist.
+    # Matcher checks pre-handle_path path (the prefix is still /loki/api/v1/push at match time).
+    @loki_push_from_other {
+        path /loki/api/v1/push*
+        not remote_ip {$LOKI_PUSH_ALLOWED_SOURCE}
+    }
+    handle @loki_push_from_other {
+        respond "403 Forbidden — Loki push restricted to prod VPS source IP" 403
+    }
+
+    handle_path /loki/* {
+        reverse_proxy 127.0.0.1:3100
+    }
+
+    # Grafana UI (basicauth) — port 3030 (3000 owned by niko-prod-frontend)
+    handle_path /grafana/* {
+        basic_auth {
+            # bcrypt hash loaded from file — avoids systemd EnvironmentFile $-escaping bug
+            # File written 0600 by deploy script; raw $2y$14$... no escaping needed.
+            admin {file./etc/caddy/bcrypt.hash}
+        }
+        reverse_proxy 127.0.0.1:3030 {
+            header_up Host {http.request.host}
+        }
+    }
+
+    # Prometheus UI / API (basicauth — rarely used; Grafana is primary consumer)
+    handle_path /prometheus/* {
+        basic_auth {
+            # bcrypt hash loaded from file — avoids systemd EnvironmentFile $-escaping bug
+            # File written 0600 by deploy script; raw $2y$14$... no escaping needed.
+            admin {file./etc/caddy/bcrypt.hash}
+        }
+        reverse_proxy 127.0.0.1:9090
+    }
+
+    # Root / health-check
+    handle / {
+        respond "observability-stack :8443 — see docs/RUNBOOKS/sentry-ops.md §7+" 200
+    }
+
+    # Catch-all 404
+    handle {
+        respond "404 Not Found" 404
+    }
+}

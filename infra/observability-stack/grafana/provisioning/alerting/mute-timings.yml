@@ -1,0 +1,18 @@
+# Phase 5 / Plan 05-07 v2 / D-26 — night-mute for severity=warning
+# Per CONTEXT.md §D-26: "No paging at night (00:00–07:00 MSK) для warnings — only criticals page at any hour."
+# MSK = UTC+3, so 00:00-07:00 MSK = 21:00-04:00 UTC.
+
+apiVersion: 1
+
+muteTimes:
+  - orgId: 1
+    name: night-mute-msk
+    time_intervals:
+      # Two time ranges to cover the 21:00–04:00 UTC window
+      # (single ranges can't cross midnight in Grafana's parser).
+      # 'weekdays' omitted — applies all days, which is what D-26 specifies.
+      - times:
+          - start_time: "21:00"
+            end_time: "23:59"
+          - start_time: "00:00"
+            end_time: "04:00"

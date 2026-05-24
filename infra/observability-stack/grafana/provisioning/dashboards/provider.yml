@@ -1,0 +1,17 @@
+# Phase 5 / Plan 05-07 v2 / D-34 + key_link to Plan 05-04
+# Auto-loads dashboard JSONs from /etc/grafana/provisioning/dashboards/files/
+# (deploy script rsyncs from services/backend/observability/dashboards/ at deploy time)
+
+apiVersion: 1
+
+providers:
+  - name: 'sport-dashboards'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards/files
+      foldersFromFilesStructure: false

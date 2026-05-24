@@ -1,0 +1,30 @@
+# .trivyignore.yaml
+# Source: trivy.dev/docs/latest/configuration/filtering/ (YAML format, stable in 0.55+)
+# Note: requires `--ignorefile .trivyignore.yaml` flag (does NOT auto-load — RESEARCH
+#       §State of the Art line 1171). backend-ci.yml passes `trivyignores:` input to
+#       aquasecurity/trivy-action@master which translates к the flag.
+# Trivy version: 0.55+ (YAML ignore-file support)
+
+vulnerabilities: []
+# Format for new ignores:
+#   - id: CVE-YYYY-NNNNN
+#     statement: <rationale — why this is OK to ignore>
+#     expired_at: YYYY-MM-DD          # MUST set expiry — forces revisit
+#     paths:                          # optional — limit scope
+#       - "usr/local/lib/..."
+#     purls:                          # optional — limit к specific packages
+#       - "pkg:deb/debian/libssl"
+
+misconfigurations: []
+secrets: []
+licenses: []
+
+# Process for adding an ignore entry (block-on-fix-unavailable per RESEARCH §Open Q 2):
+# 1. Identify CVE from Trivy CI output.
+# 2. Verify NO fix is available upstream (pkg.go.dev/vuln/CVE-... or CVE database).
+# 3. Verify CVE is irrelevant к our threat model (e.g., CVE в test-only dep,
+#    CVE в base-image we can't upgrade yet).
+# 4. Add entry с rationale + expired_at = +90 days from today.
+# 5. Submit PR с link к upstream fix-tracking issue в commit message.
+# 6. Reviewer (or solo-dev self-review per D-20) verifies rationale soundness.
+# 7. When expired_at hits, CI re-fails → re-evaluate (fix arrived? threat changed?).

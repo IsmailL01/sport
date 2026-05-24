@@ -219,9 +219,9 @@ func (s *Service) CommentOnPost(
 	}
 	if s.nc != nil {
 		payload, _ := json.Marshal(map[string]any{
-			"event":     "feed.post.commented",
-			"postId":    postID,
-			"commentId": c.ID,
+			"event":        "feed.post.commented",
+			"postId":       postID,
+			"commentId":    c.ID,
 			"postAuthorId": post.AuthorID,
 			"commenterId":  authorID,
 			"body":         c.Body,

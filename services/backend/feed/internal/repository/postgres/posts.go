@@ -74,9 +74,9 @@ func (r *PostRepo) SoftDelete(ctx context.Context, id string) error {
 // без ограничения видимости.
 //
 // Сортировка:
-//   1) own_or_followee DESC (1 = свой/подписан, 0 = чужой)
-//   2) created_at DESC
-//   3) id DESC (tiebreaker)
+//  1. own_or_followee DESC (1 = свой/подписан, 0 = чужой)
+//  2. created_at DESC
+//  3. id DESC (tiebreaker)
 //
 // Cursor encodes (own_or_followee, created_at, id) для стабильной пагинации.
 // Пока используем простой созданный_at|id cursor — followee-приоритет

@@ -1,0 +1,151 @@
+---
+# Plan 04-04 Wave 4 — image transfer via save/scp/load (no GHCR pull on prod).
+#
+# Flow per service (loop):
+#   (a) Controller-side `docker pull` from GHCR (controller has gh-token auth)
+#   (b) Controller-side `gh attestation verify` against IsmailL01 / sport repo
+#       (uses GitHub TSA — works without Rekor; supports private OCI packages
+#       provided controller is authenticated)
+#   (c) Controller-side `docker save | gzip` → /tmp/sport-stack-images-<tag>/<svc>.tar.gz
+#   (d) `ansible.posix.synchronize` push to remote /opt/sport-stack/images/<tag>/
+#   (e) Remote `docker load -i <file>` (no network)
+#   (f) Optional: rm controller-side stage dir
+#
+# Activation: when `sport_stack_tag` is supplied via `-e`. Otherwise the
+# whole block skips (steady-state config-only re-deploys).
+#
+# Tag-name normalization: CD emits both `v1.0.0-rc.test-a` (raw tag) AND
+# `1.0.0-rc.test-a` (semver-stripped via metadata-action `pattern={{version}}`).
+# We pull the SEMVER form because that's what the metadata-action publishes,
+# but accept either form as input and strip the leading 'v' if present.
+# docker-compose.prod.yml uses `${SPORT_STACK_TAG}` env so the env-var value
+# set in /run/sport.env is the canonical one — must match whichever form
+# Ansible pulled (we set it to the semver-stripped form below).
+
+- name: "[transfer] Compute normalized GHCR tag (strip leading 'v' for semver-stripped CD output)"
+  ansible.builtin.set_fact:
+    _sport_image_tag: "{{ sport_stack_tag | regex_replace('^v', '') }}"
+  tags: [sport-stack, transfer-images]
+
+- name: "[transfer] Show transfer parameters"
+  ansible.builtin.debug:
+    msg: |
+      Image transfer — tag={{ _sport_image_tag }} ({{ sport_services_with_image | length }} services)
+      Local stage: {{ sport_image_local_stage_dir }}
+      Remote dir:  {{ sport_image_remote_dir }}/{{ _sport_image_tag }}
+      Verify gate: {{ sport_image_verify_enabled }}
+  tags: [sport-stack, transfer-images]
+
+- name: "[transfer] Ensure controller-side stage dir exists"
+  ansible.builtin.file:
+    path: "{{ sport_image_local_stage_dir }}"
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+  tags: [sport-stack, transfer-images]
+
+- name: "[transfer] Ensure remote image dir exists ({{ sport_image_remote_dir }}/{{ _sport_image_tag }})"
+  ansible.builtin.file:
+    path: "{{ sport_image_remote_dir }}/{{ _sport_image_tag }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: '0755'
+  tags: [sport-stack, transfer-images]
+
+# Controller pulls each image with explicit linux/amd64 platform (prod VPS is amd64;
+# Docker Desktop on arm64 controllers needs --platform to fetch the right manifest).
+- name: "[transfer] Pull {{ _sport_image_tag }} images from GHCR (controller-side)"
+  ansible.builtin.command:
+    argv:
+      - docker
+      - pull
+      - "--platform={{ sport_image_platform }}"
+      - "{{ sport_image_registry }}/{{ item }}:{{ _sport_image_tag }}"
+  loop: "{{ sport_services_with_image }}"
+  delegate_to: localhost
+  become: false
+  changed_when: true
+  tags: [sport-stack, transfer-images]
+
+# gh attestation verify gate — uses GitHub TSA (no Rekor required, works for
+# bundle-format signatures produced by attest-build-provenance@v2).
+- name: "[transfer] Verify GitHub attestation for each image (controller-side)"
+  ansible.builtin.command:
+    argv:
+      - gh
+      - attestation
+      - verify
+      - --owner
+      - IsmailL01
+      - "oci://{{ sport_image_registry }}/{{ item }}:{{ _sport_image_tag }}"
+  loop: "{{ sport_services_with_image }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  when: sport_image_verify_enabled | bool
+  tags: [sport-stack, transfer-images]
+
+# docker save → gzip → file. argv-list avoids shell quoting issues; uses
+# bash -c only because we need a pipe.
+- name: "[transfer] docker save + gzip → {{ sport_image_local_stage_dir }}/<svc>.tar.gz (controller-side)"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    out="{{ sport_image_local_stage_dir }}/{{ item }}.tar.gz"
+    if [ -f "$out" ]; then
+      echo "skip: $out already exists"; exit 0
+    fi
+    docker save "{{ sport_image_registry }}/{{ item }}:{{ _sport_image_tag }}" | gzip -1 > "$out"
+    ls -lh "$out"
+  args:
+    executable: /bin/bash
+  loop: "{{ sport_services_with_image }}"
+  delegate_to: localhost
+  become: false
+  changed_when: true
+  tags: [sport-stack, transfer-images]
+
+# Synchronize (rsync over SSH) — copies only missing/changed files.
+# NOTE: macOS-bundled rsync 2.6.9 lacks `--info=progress2`; no extra rsync_opts.
+- name: "[transfer] Sync {{ _sport_image_tag }} tarballs to remote {{ sport_image_remote_dir }}/{{ _sport_image_tag }}/"
+  ansible.posix.synchronize:
+    src: "{{ sport_image_local_stage_dir }}/"
+    dest: "{{ sport_image_remote_dir }}/{{ _sport_image_tag }}/"
+    delete: false
+  become: false
+  tags: [sport-stack, transfer-images]
+
+# docker load on the host — loads each tarball into local docker daemon.
+- name: "[transfer] docker load each tarball on host"
+  ansible.builtin.command:
+    argv:
+      - docker
+      - load
+      - "-i"
+      - "{{ sport_image_remote_dir }}/{{ _sport_image_tag }}/{{ item }}.tar.gz"
+  loop: "{{ sport_services_with_image }}"
+  changed_when: true
+  tags: [sport-stack, transfer-images]
+
+# Verify each image now exists in local docker daemon (post-load check).
+- name: "[transfer] Verify image present in local docker daemon"
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - "{{ sport_image_registry }}/{{ item }}:{{ _sport_image_tag }}"
+  loop: "{{ sport_services_with_image }}"
+  changed_when: false
+  tags: [sport-stack, transfer-images]
+
+# Optional cleanup of controller-side stage dir.
+- name: "[transfer] Remove controller-side stage dir (sport_image_keep_local_stage=false)"
+  ansible.builtin.file:
+    path: "{{ sport_image_local_stage_dir }}"
+    state: absent
+  delegate_to: localhost
+  become: false
+  when: not (sport_image_keep_local_stage | bool)
+  tags: [sport-stack, transfer-images]

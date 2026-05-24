@@ -16,7 +16,7 @@ import (
 type createReportRequest struct {
 	TargetKind string  `json:"targetKind"` // message|post|comment|story|user
 	TargetID   string  `json:"targetId"`
-	Reason     string  `json:"reason"`     // spam|harassment|nudity|violence|illegal|other
+	Reason     string  `json:"reason"` // spam|harassment|nudity|violence|illegal|other
 	Body       *string `json:"body,omitempty"`
 }
 

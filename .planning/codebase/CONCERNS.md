@@ -1,380 +1,416 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-05-14
+**Analysis Date:** 2026-05-23
 
-Scope: mobile (`apps/mobile-rn/`) + backend (`services/backend/`). Built on top of two existing internal audit documents — `docs/AUDIT.md` and `docs/REVIEW_ROUNDS_1-3.md` — extended with fresh inspection of state after Phase 8 / M9–M10 (feed ranking, people search, tracking stats, SQLite relations cache, realtime/comments fixes, R1–R8 review fixes) per `STATUS.md`.
+This document is the consolidated risk register for Milestone v1.0 Closed Beta (Android-only). Scope is limited to debt that affects shipping Plan 07-01 → Phase 9 to 5-10 Android testers via the self-hosted Caddy manifest. Items explicitly scope-cut by ADR-0011 (and its four amendments) are catalogued under §"Deferred to v1.0.1" with the residual risk and the backlog ID that tracks them.
 
-R-numbers (R1–R18) in this document map to the codified findings in `docs/REVIEW_ROUNDS_1-3.md`. Most R1–R8 are listed as **resolved** in `STATUS.md` and `CHANGELOG.md`; what is captured below are residual / not-yet-addressed items + new concerns discovered during this audit.
-
----
-
-## Tech Debt
-
-**Orphaned backend Feed / Stories service (ADR-0004 «do-nothing»):**
-- Issue: Mobile Feed and Stories were ripped out in Round 1 (`src/modules/feed/`, `src/modules/stories/`, all `screens/feed/*`, push deep-links, realtime event dispatch removed). Backend `feed` service still ships and runs in prod, with NATS subjects `feed.*` registered.
-- Files: `services/backend/feed/cmd/server/main.go`, `services/backend/feed/internal/handler/posts.go`, `services/backend/feed/internal/service/posts.go`, `services/backend/feed/internal/repository/postgres/posts.go`, `services/backend/feed/internal/repository/postgres/stories.go`, migrations `services/backend/migrations/0016_stories.up.sql`, `services/backend/migrations/0017_feed_posts.up.sql`. Mobile residual: SQLite migrations v11 (`stories`, `story_views`) and v12 (`feed_posts`, `feed_comments`) in `apps/mobile-rn/src/storage/database.ts:258-344` remain deprecated-but-present.
-- Impact: Unauthenticated attack surface on prod (mobile no longer calls these endpoints, but they remain reachable behind Caddy / gateway). CI builds and tests a dead service. Postgres tables consume backup space.
-- Fix approach: When ADR-0004 triggers fire (90 days, security audit, resource pressure, or decision to abandon Feed for good), create ADR-0005, back up Postgres tables to S3/MinIO, drop NATS subjects, remove `feed` service from `services/backend/docker-compose.prod.yml`, then DROP TABLE with 7-day wait between deploy phases (rollback safety) per ADR-0004 §«Когда пересмотреть».
-
-**Deferred Guest mode (ADR-0002):**
-- Issue: Spec requires «Гостевой режим с локальным хранением», not implemented. ADR-0002 documents the design (local anonymous user with `isGuest=true` flag, sessions written with `guest-<uuid>` user_id, sync engine short-circuits). UI button «Без регистрации» is NOT in `AuthStack`.
-- Files: `docs/DECISIONS/0002-guest-mode.md`, `apps/mobile-rn/src/state/auth.ts` (no `isGuest` field on `AuthUser`), `apps/mobile-rn/src/navigation/AuthStack.tsx` (no guest button), `apps/mobile-rn/src/sync/syncEngine.ts` (no guest short-circuit).
-- Impact: Spec gap. Users without email/SMS access cannot use the app. Multi-tenant invariant in `CLAUDE.md` is enforced by absence of feature.
-- Fix approach: Round 4+. Need: (a) add `isGuest: boolean` to `AuthUser`; (b) `guest-<uuid>` generator with MMKV persist; (c) gate social features (`feed/chats/realtime/notifications`) behind `!isGuest`; (d) migration path `UPDATE … SET user_id = ?` for all tables — must touch `wallet_transactions`, `wallet_balance`, `sessions`, `personal_records` (see R18 below — schema flaw), `social_relations`.
-
-**Deferred OAuth Google/Apple (ADR-0003):**
-- Issue: `AuthProvider` interface plus stub-safe `GoogleAuthProvider` and `AppleAuthProvider` shipped in Round 3 but neither completes a real sign-in. Google `signIn()` throws «Google sign-in реализация — Round 4+». Apple gets through `expo-apple-authentication` but caller can't exchange `identityToken` (Alert «backend ещё не подключён»). Apple is App Store release blocker.
-- Files: `apps/mobile-rn/src/auth/authProviders.ts:71` (TODO Round 4 comment), `apps/mobile-rn/src/auth/authProviders.ts:118-145` (Apple provider, half-working), `apps/mobile-rn/src/ui/AuthScreen.tsx` (Alert stub).
-- Impact: No iOS App Store release possible without «Sign in with Apple» if app offers third-party auth. Currently OK because Apple+Google buttons are hidden when `availableProviders()` is empty.
-- Fix approach: Backend `/auth/oauth/google/exchange` and `/auth/oauth/apple/exchange` endpoints needed in `services/backend/identity/`; mobile finishes flow with `apiClient.identity()`; tokens go through normal `saveTokens()` path. Estimate Round 4.
-
-**TODO/FIXME density (low, expected for current phase):**
-- Mobile: 3 markers in `src/` (`apps/mobile-rn/src/auth/authProviders.ts:71`, `apps/mobile-rn/src/health/HealthAdapter.ts:13`, `apps/mobile-rn/src/domain/types.ts:37`). All three are intentional «next-phase» pointers, not debt-of-shame.
-- Backend: 3 markers (`services/backend/realtime-gw/internal/gw/connection.go:105-106` for typing forwarding and ack persistence; `services/backend/notifications/internal/service/svc.go:73` for Expo Push collapse). All are clearly scoped to «Phase B+».
-- Impact: Healthy for a project this young.
-- Fix approach: Track these against actual Phase IDs in `STATUS.md`.
-
-**Sync push does not carry `activityType` / `laps` (R10):**
-- Issue: `syncEngine.listPendingSessions` selects `activity_type` correctly, but server schema / DTO are not aware of laps or activity type. When the backend catches up, mobile sync DTO needs version bump to v2.
-- Files: `apps/mobile-rn/src/sync/syncEngine.ts:330-372`, mobile SQLite migration v17 (`activity_type`) and v18 (`laps`) in `apps/mobile-rn/src/storage/database.ts:443-473`.
-- Impact: Server-side history will lack activity type and lap data for any future cross-device sync. Client-only for now → tolerable.
-- Fix approach: When backend `activity-sync` migration adds these fields, bump `sessions/upload` DTO version; ensure server INSERT honors UPSERT idempotency on `(user_id, started_at)`.
-
-**`useActivityStore` is becoming a god-store (R9):**
-- Issue: ~466 LOC in `apps/mobile-rn/src/state/activity.ts`. Handles pipeline ingestion, pause detection, closure detection, area recompute, sensor aggregation, calories, records, wallet award, and lap finalization in a single store.
-- Files: `apps/mobile-rn/src/state/activity.ts`.
-- Impact: Tests for individual concerns become heavy to mock. New contributors must understand the entire store to change one slice.
-- Fix approach: Split into `useActivityStore` (lifecycle) + `useLapTracking` + `useSessionFinalization` + `useAreaTracking`. Domain pure helpers already exist (`domain/lap.ts`, `domain/AreaCalculator.ts`, `domain/records.ts`, `domain/calories.ts`) so the split is mostly mechanical.
-
-**Mock-only tests, no integration tests with real SQLite:**
-- Issue: Jest 435/435 pass, but all storage tests run against in-memory mocks or pure-domain code paths. `walletRepository`, `lapRepository`, `socialRepository`, `pointRepository`, `recordsRepository`, `relationsRepository` are not exercised against a real `expo-sqlite` instance.
-- Files: `apps/mobile-rn/src/__tests__/` (no `*repository*.test.ts` against real DB), `apps/mobile-rn/jest.config.js`.
-- Impact: Bugs in JSON-meta-blob serialization, migration ordering, CHECK violations, transaction atomicity will not surface until runtime on a real device. R5 (added in Round 3) explicitly called out this gap.
-- Fix approach: Add `better-sqlite3` as `devDependency`, configure jest to swap `expo-sqlite` → `better-sqlite3` for tests, write smoke `migrations.test.ts` (run all 19 migrations on fresh DB) and `walletRepository.integration.test.ts` (CHECK constraint trigger, ON CONFLICT semantics, transaction rollback on partial failure).
-
-**Legacy wrappers in chat navigation:**
-- Issue: `apps/mobile-rn/src/navigation/screens/chats/ChatScreen.tsx` and `apps/mobile-rn/src/navigation/screens/chats/CreateChatScreen.tsx` are «thin wrappers» around `src/ui/social/ChatScreen.tsx` (562 LOC, the legacy implementation).
-- Files: `apps/mobile-rn/src/navigation/screens/chats/ChatScreen.tsx`, `apps/mobile-rn/src/navigation/screens/chats/CreateChatScreen.tsx`, `apps/mobile-rn/src/ui/social/ChatScreen.tsx`.
-- Impact: Two surfaces for chat behavior. The legacy file is the real implementation; the new screens just import and forward. Confuses navigation.
-- Fix approach: Move the body from `src/ui/social/ChatScreen.tsx` into `navigation/screens/chats/ChatScreen.tsx`, delete the legacy file. Same for `CreateChatScreen`.
-
-**`DevPreviewScreen` still rooted in UI:**
-- Issue: After RunCard/StoryRing deletion (R4 fix), `DevPreviewScreen` exists as a dev-only component playground. Not gated behind `__DEV__`.
-- Files: `apps/mobile-rn/src/ui/DevPreviewScreen.tsx` (R16 in review docs).
-- Impact: Dev-only screen ships in production bundle.
-- Fix approach: Wrap export in `if (__DEV__) {…}` or remove from default route registry.
-
-**No CI test enforcement of permission matrix sync:**
-- Issue: Phase 8/K introduced parallel Go (`services/backend/pkg/permissions`) and TypeScript (`apps/mobile-rn/src/modules/permissions/`) RBAC matrices that must stay in sync. Unit tests verify each independently (16 Go + 29 TS as per STATUS.md). No test asserts the two stay aligned.
-- Files: `services/backend/pkg/permissions/`, `apps/mobile-rn/src/modules/permissions/`.
-- Impact: A new capability added on one side without the other will silently allow / deny actions that the other side enforces oppositely. Authorization drift bug.
-- Fix approach: Either (a) generate one side from the other via a code-gen step, or (b) add a CI step that diffs the YAML/JSON capability list extracted from both packages.
+Source-of-truth references: `docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md` (scope cut + 4 amendments), `docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md` (P0 keystore-password leak + self-inflicted re-incident), `docs/DECISIONS/0010-sentry-saas-and-colocation.md` + amendment D-38 (Sentry deferred), `.planning/ROADMAP.md` §"v1.0.1 Backlog", `.planning/STATE.md`.
 
 ---
 
-## Known Bugs
+## Tech Debt — explicitly dropped from v1.0 per ADR-0011 amendments
 
-**`personal_records` has no `user_id` column (R18, still unresolved):**
-- Symptoms: All users on a device share the same `personal_records` rows; logout calls `clearAllRecords()` which wipes for everyone. If you log out user A and log in user B, B sees a clean slate but A's records are gone permanently.
-- Files: `apps/mobile-rn/src/storage/recordsRepository.ts:1-69`, `apps/mobile-rn/src/storage/database.ts:370-388` (migration v14 — primary key is `kind` only, no user scoping).
-- Trigger: Multi-user-on-device scenario; logout → re-login; future guest→real migration (ADR-0002).
-- Workaround: Today, only one user uses the app per device. Symptoms manifest only if a second account is added.
-- Fix approach: SQLite migration v20 — add `user_id TEXT NOT NULL` column with composite PRIMARY KEY (`user_id`, `kind`); update all `recordsRepository.*` to filter by `user_id`; backfill existing rows with current logged-in user from `useAuthStore`.
+Each row = work that the 21-phase enterprise-hardening scope mandated, now retired. "Residual risk" is the concrete failure mode that becomes visible during closed beta if the dropped phase's gap fires. "Tracks" = the v1.0.1 backlog row that will re-open it.
 
-**`importRepo.importFromAdapter` uses `startedAt` as session PK (R14, still unresolved):**
-- Symptoms: Two imported workouts that happen to share `startedAt` (Date.now ms-level) get the same primary key. `INSERT OR IGNORE` silently swallows the second one as duplicate. Wrong dedup outcome — `result.duplicates++` even though `external_uuid` differs.
-- Files: `apps/mobile-rn/src/health/importRepo.ts:52` (`const sessionId = w.startedAt`), `apps/mobile-rn/src/storage/sessionRepository.ts:111` (sessions ordered by `started_at` so collision is silent).
-- Trigger: Extremely rare in practice (concurrent timestamp at ms precision). Likeliest on bulk import of historical workouts from HealthKit / Strava if source rounded to seconds.
-- Workaround: None at runtime; affected user re-imports and the second workout is permanently lost.
-- Fix approach: Generate `sessionId = max(Date.now(), startedAt + N×1)` where N counts duplicates seen in this batch; or switch sessions to a separate AUTOINCREMENT PK and demote `startedAt` to a regular indexed column.
+### 1. Edge protection — `/auth/*` rate-limit gap (dropped Phase 6 EDGE-01..05)
 
-**Strava OAuth implementation is incomplete (R1 partial fix):**
-- Symptoms: `client_secret` was removed from device per R1, but `requestPermissions` is a stub: `[Strava] requestPermissions: stub (no UI yet)` console.warn, returns `false`. Backend `/integrations/strava/exchange` and `/integrations/strava/refresh` endpoints do not exist. `isAvailable()` returns false in standard builds because `EXPO_PUBLIC_API_BASE` is unused (apiClient uses `EXPO_PUBLIC_API_URL`).
-- Files: `apps/mobile-rn/src/health/StravaAdapter.ts:58-70` (stubbed `requestPermissions`), `apps/mobile-rn/src/health/StravaAdapter.ts:42` (`EXPO_PUBLIC_API_BASE` reference), `apps/mobile-rn/src/auth/apiClient.ts:13` (uses `EXPO_PUBLIC_API_URL`). No backend file under `services/backend/*` named `strava` exists.
-- Trigger: User attempts Strava connect from any UI surface (none exists yet).
-- Workaround: Strava integration not currently surfaced; adapter is dormant.
-- Fix approach: Round 4 — implement `expo-auth-session` PKCE flow + `crypto.subtle.digest` SHA-256 code_challenge; build backend `POST /integrations/strava/{exchange,refresh}` using existing identity infra; unify env var naming (rename `EXPO_PUBLIC_API_BASE` → `EXPO_PUBLIC_API_URL` or document both).
+- **Files:** `services/backend/identity/internal/handler/http.go` lines 68 + 73 (`POST /auth/login` and `POST /auth/login-with-code` handlers — no rate limiter middleware in the chain); `services/backend/identity/cmd/server/main.go` line 174 (root middleware chain has DebugSession → Promhttp → SentryRecovery → OtelHTTP → clientversion → mux; **no rate limiter**).
+- **Residual risk:** Brute-force or credential-stuffing against `/auth/login` is unmitigated. SOPS dev-mode disable was already closed (SEC-05 Plan 02-02 commit `27ad27f`), so the only remaining auth attack surface is online-guessing through the production endpoint.
+- **Closed-beta mitigation:** Blast radius = 5-10 friend testers; private repo + `srv1561293` is not advertised. Mitigation does not generalize past beta.
+- **Tracks:** `AUTH-RATELIMIT` in `.planning/ROADMAP.md` §"v1.0.1 Backlog".
 
-**`AppleAuthProvider.signIn` returns null `email` if user denies sharing (R8 partial fix):**
-- Symptoms: After R8 fix for displayName, `email` can still be `null` because Apple privacy policy only returns `email` on first sign-in. App may not realize this means the user must already exist server-side.
-- Files: `apps/mobile-rn/src/auth/authProviders.ts:130-137`.
-- Trigger: Second sign-in attempt by same Apple user, or user denies sharing email.
-- Workaround: Cache email on first success per Apple's documentation; key off `idToken.sub` as primary identity.
-- Fix approach: On backend exchange, derive `sub` from the `identityToken` JWT claims and treat that as the stable identity; email is supplementary. Document this in ADR-0003.
+### 2. No pgBackRest restore drill (dropped Phase 7)
 
-**`HealthKitAdapter.grantedScopes()` always reports full scope set after init (R12, documented as accepted limitation):**
-- Symptoms: If user later revokes access in iOS Settings, `grantedScopes()` still returns the full list. App tries to read samples, gets denied, fails silently or logs a warning.
-- Files: `apps/mobile-rn/src/health/HealthKitAdapter.ts:113-118` (per CHANGELOG citation; the comment notes Apple HealthKit privacy policy forbids readback).
-- Trigger: User toggles HealthKit permission off in Settings → Privacy → Health.
-- Workaround: Detect via failed read; show «Permissions revoked — re-grant in Settings» banner.
-- Fix approach: Catch read errors in `importRepo` and surface a user-facing «Reconnect HealthKit» prompt.
+- **Files:** `services/backend/Makefile` `make rollback v=N` + `infra/ansible/` migration playbooks (rollback drill scaffolding retained per ADR-0011 §"What stays as-shipped"); 9990/9991 drill migrations preserved.
+- **Residual risk:** Recovery from a prod DB corruption event is `pg_dump` snapshot + WAL replay, untested under pressure. No proof that the snapshot is restorable to a fresh PostgreSQL container.
+- **Closed-beta mitigation:** Pre-migration `pg_dump` (already in `docs/RUNBOOKS/deploy.md §6.4`); reconstruction from snapshot is feasible by hand at 10-user × few-sessions data scale.
+- **Tracks:** No v1.0.1 backlog row — re-expansion is triggered by "beta passes >50 users" per ADR-0011 §"Re-expansion triggers".
 
-**Pause detection toggles `isPaused` but does not pause the live UI dim correctly when phone is stationary:**
-- Symptoms: Per `STATUS.md`/AUDIT, «map dim on pause» was added in Round 2 to satisfy spec §3, but auto-pause from `PauseDetector` interacts oddly with manual pause from the Pause/Stop button.
-- Files: `apps/mobile-rn/src/pipeline/filters/PauseDetector.ts`, `apps/mobile-rn/src/state/activity.ts:112-117`, `apps/mobile-rn/src/navigation/screens/record/TrackerLiveScreen.tsx`.
-- Trigger: Long stand-still during a recording, then resume.
-- Workaround: Stop and start a new session.
-- Fix approach: Separate `manualPause` from `autoPaused` flags; map dim should be tied to whichever is true.
+### 3. No load profile or chaos drills (dropped Phase 8)
 
----
+- **Files:** None — `k6/` directory was never created; chaos playbooks (`infra/chaos/`) never authored.
+- **Residual risk:** First user-load surprise lands in production. No baseline for "what RPS does identity-svc handle before connections exhaust." No proof that NATS JetStream consumer-groups survive a broker restart.
+- **Closed-beta mitigation:** 5-10 testers × ~3 sessions over 2 weeks ≈ ~30 sessions total — does not stress rate limits, DB pool, or NATS.
+- **Tracks:** No backlog row; ADR-0011 re-expansion trigger §1 (`>50 users`) covers this.
 
-## Security Considerations
+### 4. Mapbox SDK 11.x migration deferred (dropped old Phase 13)
 
-**Token storage uses native keystore (good):**
-- Files: `apps/mobile-rn/src/auth/tokenStorage.ts:1-30`.
-- Status: ✅ Compliant with `CLAUDE.md` rule. Uses `expo-secure-store` (Keychain on iOS, EncryptedSharedPreferences on Android). Access and refresh tokens are stored via `SecureStore.setItemAsync`. Recommendations: none.
+- **Files:** `apps/mobile-rn/package.json` (`@rnmapbox/maps@^10.3`); `apps/mobile-rn/android/app/proguard-rules.pro` keeps still target `com.mapbox.**` 10.x classes; `apps/mobile-rn/app.json` plugin `RNMapboxMapsImpl: "mapbox"`.
+- **Residual risk:** No known native crashes at 10.3 today. New 11.x bug fixes (e.g., MapView memory leaks during long sessions) inaccessible. ADR-0008 was scheduled for this and was never written.
+- **Closed-beta mitigation:** Stay pinned at 10.3; defer until 11.x bug-fix backlog forces the upgrade.
+- **Tracks:** No backlog row — re-open only on a Mapbox 10.3 bug that affects closed beta.
 
-**Identity service defaults to DEV mode (`IDENTITY_DEV_MODE=true` by default):**
-- Risk: In `services/backend/identity/cmd/server/main.go:47`, `devMode := envOr("IDENTITY_DEV_MODE", "true") == "true"`. If the operator forgets to set `IDENTITY_DEV_MODE=false` in production, two dangerous behaviors fire:
-  - `/auth/request-code` returns the OTP code in the JSON response (`services/backend/identity/internal/handler/otp.go:46`).
-  - `/auth/login-with-code` accepts any 6-digit code without a matching active OTP row (`services/backend/identity/internal/service/otp.go:106-138`, «dev-bypass: no active code, accepting»).
-- Files: `services/backend/identity/cmd/server/main.go:45-73`, `services/backend/identity/internal/handler/otp.go:40-61`, `services/backend/identity/internal/service/otp.go:89-138`.
-- Current mitigation: Comment in source reminds operator to flip the flag.
-- Recommendations: **(P0)** Flip the default to `false`; require explicit `IDENTITY_DEV_MODE=true` opt-in for local development. Refuse to start if `ENV=production && DEV_MODE=true` (fail-closed safety).
+### 5. arm64-v8a only — no 16 KB page-size validation for Android 15+ (dropped old Phases 14-15)
 
-**No rate limiting on `/auth/*` endpoints:**
-- Risk: `pkg/ratelimit` (Phase 8/I) wires sliding-window Redis limits on `feed POST /posts`, `feed POST /posts/{id}/comments`, `feed POST /stories`, `social-graph POST /follows/{id}`, `social-graph POST /reports`, `messaging POST /conversations/{id}/messages`. Identity service is unprotected: `/auth/request-code`, `/auth/login-with-code`, `/auth/register`, `/auth/login`, `/auth/refresh`.
-- Files: `services/backend/identity/internal/handler/http.go`, `services/backend/identity/internal/handler/otp.go`. No `ratelimit.Allow(...)` calls anywhere in `identity/`.
-- Current mitigation: OTP service caps attempts at 5 per code (`services/backend/identity/internal/service/otp.go:36` `MaxOtpAttempts = 5`) and uses `subtle.ConstantTimeCompare` for the comparison.
-- Recommendations: **(P0 before public release)** Wire `pkg/ratelimit` for `/auth/request-code` (5/hr per email, 30/hr per IP), `/auth/login-with-code` (10/min per email), `/auth/register` (3/hr per IP), `/auth/login` (10/min per email). Without this, an attacker can credential-stuff or DOS the OTP issuance pipeline.
+- **Files:** `apps/mobile-rn/android/gradle.properties` `reactNativeArchitectures=arm64-v8a`; `apps/mobile-rn/android/app/build.gradle` `defaultConfig.ndk.abiFilters 'arm64-v8a'`.
+- **Residual risk:** A tester on Android 15+ with 16 KB page-size kernel may hit an unaligned native library and fail to launch. Mapbox/MMKV/Hermes JNI loads are the likely failure points.
+- **Closed-beta mitigation:** Closed-beta testers self-report device + Android version on issue; v1.1 if it surfaces.
+- **Tracks:** No backlog row; ADR-0011 re-expansion trigger §2 covers (P0 incident on Android 15+).
 
-**Strava client_secret rule documented but enforcement is implicit (R1 follow-up):**
-- Risk: `docs/INTEGRATIONS.md §9 «Безопасность OAuth»` and ADR-0003 prohibit «никаких provider secrets на устройстве». No lint rule, no runtime check enforces this. If a developer adds `EXPO_PUBLIC_STRAVA_CLIENT_SECRET` to `.env`, Metro will bundle it without complaint.
-- Files: `apps/mobile-rn/src/health/StravaAdapter.ts`, `docs/INTEGRATIONS.md`, `apps/mobile-rn/.eslintrc.json`.
-- Current mitigation: `client_secret` is no longer referenced in `StravaAdapter.ts:36-46`.
-- Recommendations: Add ESLint `no-restricted-syntax` rule rejecting any `EXPO_PUBLIC_*_SECRET` reference. Add CI grep guard: `git grep "EXPO_PUBLIC_.*SECRET" -- 'apps/mobile-rn/**'` → must return empty.
+### 6. Background reliability scoped to 2 OEMs (partial drop of old Phase 16)
 
-**WebSocket access-token in URL query string:**
-- Risk: `apiClient.wsURL` puts `token=<accessToken>` and `device_id=<deviceID>` in the URL query, which gets logged by Caddy / reverse-proxy / WAF / any intermediate access log. Tokens are short-lived, but copies persist in log retention.
-- Files: `apps/mobile-rn/src/auth/apiClient.ts:88-96`, `apps/mobile-rn/src/realtime/index.ts:13`.
-- Current mitigation: Short access-token TTL means tokens expire before forensics typically need them.
-- Recommendations: Configure Caddy access-log redaction (drop query string for `/ws` paths); migrate to WebSocket subprotocol-based auth (`Sec-WebSocket-Protocol: bearer.<token>`); or first-message auth handshake (server reads first frame as auth, then transitions).
+- **Files:** `apps/mobile-rn/src/session/SessionManager.ts` (`recoverLast()` exists from pre-v1.0 baseline); Phase 7 Plan 07-03 will add MIUI + One UI auto-start dialog; HyperOS + EMUI + low-end Doze NOT scripted.
+- **Residual risk:** A HyperOS/EMUI/budget-device tester hits a vendor-specific Doze kill mid-session, no in-app auto-start dialog, `recoverLast()` does or does not fire — outcome empirically unknown.
+- **Closed-beta mitigation:** Solo dev validates on Pixel only (no second device); MIUI + One UI dialogs ship; rest = monitor + user reports.
+- **Tracks:** No backlog row — re-open only on tester report.
 
-**SQL injection: dynamic WHERE clause in `sensorRepository`:**
-- Risk: `apps/mobile-rn/src/storage/sensorRepository.ts:43-46` builds the `WHERE` clause via string concatenation:
-  ```ts
-  const where = type
-    ? `WHERE session_id = ? AND type = ? ORDER BY ts ASC`
-    : `WHERE session_id = ? ORDER BY ts ASC`;
-  ```
-  The string is a literal, no user input is interpolated, and values still go through parameterized `?` placeholders. **Not a real injection vector**, but the pattern is fragile — any future contributor copy-pasting this style with user-controlled input creates a vulnerability.
-- Files: `apps/mobile-rn/src/storage/sensorRepository.ts:38-57`.
-- Current mitigation: Code review.
-- Recommendations: Refactor to two named functions (`loadAllReadings` / `loadReadingsByType`) instead of dynamic SQL composition. Add ESLint rule against template literals containing `INSERT/UPDATE/DELETE/SELECT` that mix `${...}` with raw column names.
+### 7. No mobile crash reporting (dropped old Phase 17)
 
-**Multi-tenant gaps (RLS-style not applicable to SQLite — but user_id discipline is uneven):**
-- `personal_records` table has no `user_id` (see R18 / Known Bugs above). Other tables consistently include `user_id`:
-  - ✅ `wallet_balance.user_id` PK (`apps/mobile-rn/src/storage/database.ts:391`)
-  - ✅ `wallet_transactions.user_id` indexed (`apps/mobile-rn/src/storage/database.ts:411`)
-  - ✅ `social_relations.viewer_id` part of PK (`apps/mobile-rn/src/storage/database.ts:361`)
-  - ✅ `chats / messages / stories / feed_posts` — scoped by membership / authorship
-  - ❌ `personal_records` — no `user_id` (R18 unresolved)
-  - ⚠️ `sessions` — no `user_id` column either (single-user-on-device assumed). `apps/mobile-rn/src/storage/database.ts:74-90`. Same risk class as `personal_records`.
-- Files: `apps/mobile-rn/src/storage/database.ts`.
-- Current mitigation: Single-user-per-device assumption.
-- Recommendations: Add `user_id` to `sessions` and `personal_records` before Guest mode lands. Without it, the ADR-0002 «UPDATE … SET user_id = ?» migration step cannot fix orphaned rows.
+- **Files:** `services/backend/pkg/observability/sentry_init.go` (backend SDK wired but dormant per D-38 — empty DSN guard); **no mobile-side Sentry SDK installed**; `apps/mobile-rn/package.json` has no `@sentry/react-native`.
+- **Residual risk:** Mobile crashes surface via tester chat reports only. No stack-trace symbolication, no crash-rate metric, no breadcrumbs. MTTR depends on tester being able to describe what they were doing when the crash happened.
+- **Closed-beta mitigation:** Backend Sentry SDK is "flip on by populating SOPS DSN" — already in place if a backend-side panic spike happens. Mobile crashes route to `scripts/debug-tail.sh <user-id>` over Loki (backend logs around the crash time) + tester verbal report.
+- **Tracks:** No backlog row; ADR-0010 amendment D-38 + ADR-0011 cover Sentry activation criteria.
 
-**`/admin/` HTML dashboard served as plain HTML/JS through Caddy:**
-- Risk: `services/backend/gateway/admin/index.html` is mounted via Caddy with no CSRF protection. Login form posts directly to identity, then the resolve actions hit `/admin/reports/{id}/resolve`. Cookies for session, no SameSite check documented.
-- Files: `services/backend/gateway/admin/index.html`, `services/backend/gateway/Caddyfile` (look up for `/admin/` route config).
-- Current mitigation: Admin access is gated server-side by `profiles.global_role IN ('moderator','admin')`. Admin tokens are JWT bearer, not cookies — passed via `Authorization` header from JS. Reduces CSRF surface significantly.
-- Recommendations: Document that admin tokens are bearer (not cookie). Add Caddy header rule `Strict-Transport-Security: max-age=63072000` and `Content-Security-Policy` for `/admin/*`.
+### 8. No 8-device matrix (dropped old Phase 20)
 
-**OTP code logged in stdout (`slog.InfoContext`):**
-- Risk: `services/backend/identity/internal/service/otp.go:69-73` logs the OTP code with `slog.InfoContext`. Production-level stdout logs persist in container log aggregation (journald, Docker logs, Loki). Whoever has log access can replay a code within its 10-min TTL.
-- Files: `services/backend/identity/internal/service/otp.go:57-78`.
-- Current mitigation: Comment claims «Dev-mode logging only. В production не логируем code» but the log line is unconditional — only the response body redaction is gated by `devMode`.
-- Recommendations: Gate the `slog.InfoContext(ctx, "otp issued", "code", code)` line behind `if devMode`. Production should log only `email` and `expires_at`.
+- **Files:** None — `tests/FIELD_PROTOCOL.md` (541 lines, pre-v1.0 baseline) exists but is no longer the v1.0 acceptance gate.
+- **Residual risk:** Vendor-specific failures on devices the dev doesn't own are discovered by testers, not by structured QA.
+- **Closed-beta mitigation:** Solo dev runs Plan 07-03 on Pixel only (1h pocket-walk); testers act as the device matrix.
+- **Tracks:** No backlog row.
+
+### 9. No 48-hour staging soak / no on-call (dropped old Phase 21)
+
+- **Files:** No `infra/staging/` (staging environment was never provisioned); no on-call rotation tooling.
+- **Residual risk:** No multi-day stress validation of the full stack under continuous tester traffic before "launch." Phase 9 is "ship-then-watch with a 72-hour window".
+- **Closed-beta mitigation:** Tag → release → 72h tester window; hotfix tag if a P0 surfaces.
+- **Tracks:** No backlog row.
+
+### 10. Lean key custody — single SOPS-on-workstation copy (Amendment 4 of ADR-0011)
+
+- **Files:** `.secrets/prod/mobile-signing.yaml` (single SOPS-encrypted PKCS12 keystore + passwords); `~/.config/sops/age/keys.txt` (single age key for DEV_A, 1Password sealed backup per Phase 2 D-04); `.sops.yaml` (DEV_A + CI recipients — see §"Environment risks" #6 for the single-DEV_A bus-factor caveat); no cloud sync, no USB, no `RECOVERY-CARD.md`, no `cloud-backup-log.txt`.
+- **Residual risk:** Loss of dev workstation = re-generate keystore + re-release under new package name + DM 10 testers. The keystore is regenerable; the age key (load-bearing) has 1Password sealed backup.
+- **Closed-beta mitigation:** Time Machine on the dev workstation covers disk-loss incidentally. ~30-45 min total recovery.
+- **Tracks:** `KEYSTORE-CLOUD-BACKUP` (single-cloud backup) + `PROD-LAUNCH-PREP` (bank-grade 2-USB ≥5 km) in v1.0.1 backlog.
+
+### 11. iOS work deferred (Amendment 3 of ADR-0011)
+
+- **Files:** `.planning/phases/06-release-signing/06-02-PLAN.md` (Apple Dev enrollment) — exists on disk, marked DEFERRED in `.planning/ROADMAP.md`; `apps/mobile-rn/eas.json` `production.ios` block (untouched — kept for re-activation without re-edit); `apps/mobile-rn/app.json` `ios:` block (kept; `NSLocationWhenInUseUsageDescription` + `UIBackgroundModes` already set); no `07-02-PLAN.md` (will be authored on re-trigger); no `08-02-PLAN.md`.
+- **Residual risk:** Closed beta is Android-only. iOS testers cannot be invited until Apple Developer enrollment completes (2-7+ weeks SLA per RESEARCH §1) AND iOS sub-plans are written + executed.
+- **Closed-beta mitigation:** Acceptable — Android beta is the v1.0 acceptance gate.
+- **Tracks:** SIGN-02 / BUILD-02 / DIST-02 marked DEFERRED in `.planning/REQUIREMENTS.md`.
 
 ---
 
-## Performance Concerns
+## Active Bugs — TODO/FIXME in code
 
-**Large GPS traces re-allocate full point array on every accept:**
-- Problem: Every accepted GPS point triggers `set((s) => ({ points: [...s.points, point], ...}))` in `apps/mobile-rn/src/state/activity.ts:355-358`. After 5000 points, that's 5000 array copies, each O(N). `useMemo(() => pointsToLineString([...points]), [points])` in `TrackLayer.tsx:26` re-converts to GeoJSON on every `points` identity change. ZoneLayer and CorridorLayer have similar patterns.
-- Files: `apps/mobile-rn/src/state/activity.ts:351-367`, `apps/mobile-rn/src/map/components/TrackLayer.tsx:20-41`, `apps/mobile-rn/src/map/components/CorridorLayer.tsx`, `apps/mobile-rn/src/map/components/ZoneLayer.tsx`.
-- Cause: React reactivity model — Zustand triggers a re-render whenever the array identity changes. GeoJSON re-allocation is per-render.
-- Improvement path:
-  - Throttle UI subscriptions: separate raw collection (push to internal mutable buffer at full rate) from UI snapshot (update via setInterval at 1Hz).
-  - Use ring buffer for last N points and store cumulative simplified track separately.
-  - For TrackLayer specifically, apply Douglas-Peucker (`@turf/simplify` already a dep) to keep render <500 vertices when track exceeds threshold. This is exactly `P1-D-04` per `STATUS.md` (deferred to runtime FPS measurement).
+### `apps/mobile-rn/app.json` — placeholder EAS projectId blocks Plan 07-01 Task 6
 
-**Pipeline cost on every raw point:**
-- Problem: Each raw GPS event runs through AccuracyFilter → JumpFilter → MinSegmentFilter → KalmanFilter (2D predict + update) sequentially in `apps/mobile-rn/src/pipeline/Pipeline.ts`. Then PauseDetector observes. Then `acceptPoint` triggers React re-render with the closure detector recompute. For long tracks the closure detector re-scans many recent segments.
-- Files: `apps/mobile-rn/src/pipeline/Pipeline.ts`, `apps/mobile-rn/src/pipeline/filters/KalmanFilter.ts`, `apps/mobile-rn/src/pipeline/filters/PauseDetector.ts`, `apps/mobile-rn/src/domain/ClosureDetector.ts`.
-- Cause: Synchronous chain on JS thread. Closure detector runs per-point.
-- Improvement path: Throttle closure detector to once per 10 points or every 5s; pre-allocate Kalman matrices instead of `new Array(...)` on each step.
+- **File:** `apps/mobile-rn/app.json` line 74 — `"projectId": "TODO-eas-project-id-after-eas-init"`.
+- **Symptoms:** `eas build` fails to map the project to the Expo organization; `gh workflow view android-release.yml` may succeed but the downstream EAS Cloud queue submission rejects the build because the project is unknown.
+- **Trigger:** Any `eas build` invocation against this `app.json`.
+- **Blocks:** Phase 7 Plan 07-01 Task 6 (first build smoke on `v1.0.0-beta.0` tag). Currently halted on this.
+- **Fix approach:** `EAS-PROJECT-INIT` v1.0.1 backlog item — log into `expo.dev` from the dev workstation (`npx eas login`), run `npx eas init` from `apps/mobile-rn/`, copy the issued UUID into `app.json` `extra.eas.projectId`, commit.
 
-**Map render perf — `useMemo` keyed on points array:**
-- Problem: `useMemo(() => pointsToLineString([...points]), [points])` (`TrackLayer.tsx:26`) recomputes whenever the array identity changes. With 5000 points × 1Hz updates, that is 5000 GeoJSON FeatureCollection allocations per minute, each cloning the array. `HistoryTerritoryLayer` similar pattern.
-- Files: `apps/mobile-rn/src/map/components/TrackLayer.tsx:26`, `apps/mobile-rn/src/map/components/HistoryTerritoryLayer.tsx`, `apps/mobile-rn/src/util/geojson.ts`.
-- Cause: React render model + immutable updates.
-- Improvement path: Memoize on length, not identity (`useMemo(..., [points.length])`); subscribe with selector to only the relevant slice (last point); maintain ShapeSource via imperative `setNativeProps` like Mapbox's source.update.
+### `apps/mobile-rn/src/auth/authProviders.ts:71` — round 4 TODO
 
-**SQLite query hot paths:**
-- Problem: `flushBuffer` runs `INSERT INTO points` inside a transaction every 10 points (~10s). On long sessions (hours), this is fine. But `aggregateHrForSession` at session end runs `AVG/MAX/COUNT` over a session that may contain thousands of HR readings without an index covering `(session_id, type)`.
-- Files: `apps/mobile-rn/src/storage/sensorRepository.ts:68-85`, `apps/mobile-rn/src/storage/database.ts:128-137` (index is `(session_id, ts)` not `(session_id, type)`).
-- Cause: Composite index does not include `type`. SQLite must scan all readings of the session and filter by `type='hr'`.
-- Improvement path: Add `CREATE INDEX idx_sensor_readings_session_type ON sensor_readings (session_id, type, ts);` in a v20 migration. For typical 1-hour runs (~3600 HR readings) the impact is small; for ultra runs it matters.
+- **File:** `apps/mobile-rn/src/auth/authProviders.ts` line 71 — `// TODO Round 4:`.
+- **Symptoms:** OAuth provider stub awaits round 4 work (per pre-v1.0 baseline review rounds).
+- **Trigger:** OAuth path is not load-bearing in v1.0 closed beta (HEALTH-04 Strava deferred per ADR-0011).
+- **Fix approach:** Not in scope for v1.0; v1.1 if Strava read-only OAuth re-enters scope.
 
-**Realtime subscriptions can multiply:**
-- Problem: `useRealtimeStore.connect` clears its previous `unsubEvents` / `unsubStatus` listeners before registering new ones, but if `connect` is called concurrently (e.g., during fast logout/login), there's a window where two listeners could be active. `RealtimeAdapter.on` returns an unsubscribe function but the adapter keeps a `Set<RealtimeListener>` (`apps/mobile-rn/src/realtime/adapters/WebSocketRealtimeAdapter.ts:23-25`).
-- Files: `apps/mobile-rn/src/state/social/useRealtimeStore.ts:22-94`, `apps/mobile-rn/src/realtime/adapters/WebSocketRealtimeAdapter.ts:19-71`.
-- Cause: `connect` is `async` but the listener teardown is synchronous before await.
-- Improvement path: Idempotency token (increment counter, only the latest counter's listener stays active); or assert at construction time that no other connect is in flight.
+### `apps/mobile-rn/src/health/HealthAdapter.ts:13` — Health adapter stub
 
-**Feed ranking / people search server load (Phase 8/M9.7–M9.8):**
-- Problem: Feed ranking and trigram people search query Postgres on every refresh. No mention of Redis caching for these queries in `STATUS.md`. Cursor pagination exists, but the ranking compute (chronological merge of self+followees with secondary sort) is O(N×followee_count) per request.
-- Files: `services/backend/feed/internal/service/posts.go`, `services/backend/feed/internal/handler/posts.go`, `services/backend/social-graph/` (people search).
-- Cause: Naive merge query.
-- Improvement path: Materialize per-user feed via NATS fanout on publish (fan-in-on-write). Or cache the merge result in Redis for 30s TTL. Track latency in Prometheus.
+- **File:** `apps/mobile-rn/src/health/HealthAdapter.ts` line 13 — `// HealthKitAdapter / HealthConnectAdapter — TODO Phase 7.1`.
+- **Symptoms:** Stub adapter; no HealthKit / HealthConnect integration.
+- **Trigger:** Not exercised in v1.0 — HEALTH-* requirements deferred per ADR-0011.
+- **Fix approach:** v1.1 milestone.
+
+### `apps/mobile-rn/src/domain/types.ts:37` — state machine extension TODO
+
+- **File:** `apps/mobile-rn/src/domain/types.ts` line 37 — `TODO: расширить под полную state-машину когда понадобится pause/discard разделение`.
+- **Symptoms:** Session state machine lacks discrete `pause` vs `discard` states.
+- **Trigger:** Closed-beta tester pauses then discards a session — current code may conflate the two transitions.
+- **Fix approach:** Defer until tester-report surfaces a UX glitch.
+
+### `services/backend/realtime-gw/internal/gw/connection.go:106-107` — typing + ack stubs
+
+- **File:** `services/backend/realtime-gw/internal/gw/connection.go` lines 106-107 — `// typing (TODO Phase B+: …)` + `// ack {lastEventId} (TODO: …)`.
+- **Symptoms:** Realtime gateway accepts typing + ack frames but does not propagate or persist.
+- **Trigger:** Not exercised in closed beta (no chat UI in v1.0 scope).
+- **Fix approach:** Out of scope; Phase B = post-v1.0 social features.
+
+### `services/backend/notifications/internal/service/svc.go:73` — Expo push collapse TODO
+
+- **File:** `services/backend/notifications/internal/service/svc.go` line 73 — `// Отправить через Expo Push API (collapse от same conversation 30s — TODO Phase B)`.
+- **Symptoms:** No collapse-key dedup; same-conversation notifications can flood.
+- **Trigger:** Not exercised in v1.0 (no chat notifications in scope).
+- **Fix approach:** Phase B post-v1.0.
+
+### `services/backend/pkg/observability/otel_init.go:25,104` — PII scrub coverage TODOs
+
+- **File:** `services/backend/pkg/observability/otel_init.go` lines 25 + 104.
+- **Symptoms:** Per-call-site discipline + grep audit comment; span attribute scrub coverage gap noted at line 104 ("проходят НЕ scrubbed (см. TODO в Plan 05-06)").
+- **Trigger:** A new service author adds a span attribute that contains PII without going through `piiScrubProcessor`.
+- **Fix approach:** Already partially closed via Plan 05-05 `piiScrubProcessor`; remaining audit work is included in the existing pre-commit `pii_live_probe.py` runtime smoke (Plan 05-06).
+
+---
+
+## Security
+
+### S1. CI-side secret leak via `$GITHUB_ENV` writes — root cause closed, hardening backlog open (ADR-0012 Phase A)
+
+- **Files:** `.github/workflows/android-release.yml` lines 82-93 (patched form); `docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md` (incident record).
+- **Root cause:** `echo "VAR=$value" >> "$GITHUB_ENV"` does NOT auto-mask in GitHub Actions step logs. Only `${{ secrets.X }}` references are registered with the runner's log masker at template-resolution time. A decrypted SOPS secret propagated via `$GITHUB_ENV` is, from the runner's perspective, just data.
+- **Mitigation in place:** Workflow now does `STORE_PASS=$(yq -r ...)` then `echo "::add-mask::$STORE_PASS"` BEFORE `echo "RUNNING_ECO_RELEASE_STORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"`. Pattern is reusable; comment at line 28 of the workflow links back to ADR-0012.
+- **Remaining gap:** No automated detection — a future workflow change could re-introduce the anti-pattern. `CI-MASK-LINT` v1.0.1 backlog item tracks a pre-commit / `actionlint` rule for `echo "X=$value" >> $GITHUB_ENV` without a preceding `::add-mask::` line. Generalize to `$GITHUB_OUTPUT` + `$GITHUB_STEP_SUMMARY`.
+- **Tracks:** `CI-MASK-LINT` + `SECRETS-LEAK-PLAYBOOK-AMEND` + `SOPS-VERIFY-HARDENING` + `CI-WORKFLOW-REGISTRY-AUDIT` in v1.0.1 backlog.
+
+### S2. Self-inflicted re-incident — `xxd` byte-dump of credential in agent chat (ADR-0012 Amendment 2026-05-22)
+
+- **Files:** `docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md` §"Amendment 2026-05-22 — Re-rotation after self-inflicted chat leak".
+- **Root cause:** During post-rotation verification, an `xxd | tail -3` diagnostic was used to investigate a fingerprint discrepancy between two shell-pipeline forms (`yq -r ... | shasum` vs `P=$(yq -r ...); printf '%s' "$P" | shasum`). `xxd` rendered the credential bytes in hex+ASCII into the agent tool-result stream → AI vendor (Anthropic) conversation logs.
+- **Mitigation in place:** Re-rotated via the same `keytool -storepasswd` flow (commit `21b992c`). Phase A discipline rules now codified in ADR-0012 Amendment:
+  1. Single canonical fingerprint form — use `printf '%s' "$VAR" | shasum -a 256 | cut -c1-12` exclusively.
+  2. No byte-level inspection of values — never `xxd`, `od -c`, `hexdump`, `${VAR:0:N}` etc.
+  3. Length is acceptable; bytes are not — `echo "len=${#PASS}"` OK; `echo "first=${PASS:0:1}"` not OK.
+  4. Fingerprint discrepancies are a shape problem, not a value problem — reproduce on a known-good test value before touching the real secret.
+- **Remaining gap:** Rules are documented in the ADR amendment but not codified in `docs/SECRETS.md` yet; no pre-commit grep rule for `xxd .*\$[A-Z_]+` patterns.
+- **Tracks:** `CRED-DIAG-DISCIPLINE` in v1.0.1 backlog.
+
+### S3. `SOPS_AGE_KEY_FILE`-unset diagnostic blind spot
+
+- **Files:** `.planning/phases/06-release-signing/evidence/smoke-sops-roundtrip.sh` lines 22-23 (defensive default `: "${SOPS_AGE_KEY_FILE:=$HOME/.config/sops/age/keys.txt}"`); ADR-0012 §"False-positive sub-incident".
+- **Root cause:** When `SOPS_AGE_KEY_FILE` is unset and the macOS-default `~/Library/Application Support/sops/age/keys.txt` is empty (key actually lives at XDG path `~/.config/sops/age/keys.txt`), `sops -d` silently fails to find an age identity. `yq -r '.path'` on the empty/partial pipe returns the literal string `null`. `shasum -a 256` on the string `null` produces sha256 prefix `74234e98` — a "valid" but meaningless fingerprint. This caused a real incident to be dismissed as a false positive during ADR-0012 STEP 2 audit.
+- **Mitigation in place:** `smoke-sops-roundtrip.sh` defaults `SOPS_AGE_KEY_FILE`; ADR-0012 §"Lesson" mandates verifying decrypted value length > 0 before hashing + checking `sops -d` exit code.
+- **Remaining gap:** Only `smoke-sops-roundtrip.sh` enforces the default. Other ad-hoc verification scripts in `evidence/` and `scripts/` don't all check decrypt shape before downstream processing.
+- **Tracks:** `SOPS-VERIFY-HARDENING` in v1.0.1 backlog — every verification script must (a) require `SOPS_AGE_KEY_FILE` explicitly, (b) check `sops -d` exit code, (c) validate decrypted value shape (length, schema) before downstream processing.
+
+### S4. PKCS12 invariant — `key_pass` MUST equal `store_pass`
+
+- **Files:** `.secrets/prod/mobile-signing.yaml` `android.keystore_password` + `android.key_password` (single-alias convention — same value); `.planning/phases/06-release-signing/06-01-SUMMARY.md` Task 3 ("`key_password` = same as keystore_password (single-alias convention per CONTEXT D-08)").
+- **Root cause:** PKCS12 stores the private key under a KEK derived from the store password — there is no separate key password layer (unlike JKS). `keytool -keypasswd` is not supported on PKCS12 keystores (only `-storepasswd`). The two YAML fields exist for downstream compatibility (Gradle expects both), but they MUST hold the same value or `keytool` / Gradle signing will fail with a misleading "cannot recover key" error.
+- **Mitigation in place:** ADR-0012 §"Решение" STEP 3 explicitly documents the invariant; rotation procedure uses `-storepasswd` only.
+- **Remaining gap:** Schema does not enforce the invariant. A future SOPS edit that sets `key_password` to a different value than `keystore_password` would silently break the build. `smoke-sops-roundtrip.sh` verifies the keystore decrypts but does not assert `key_password == keystore_password`.
+- **Tracks:** No backlog row — fold into `SOPS-VERIFY-HARDENING` audit pass.
+
+### S5. Pre-rotation backups left on `/tmp`
+
+- **Files:** `/tmp/mobile-signing.pre-rotation.1779397205.yaml` + `/tmp/mobile-signing.pre-rerotation.1779404090.yaml` (rollback artifacts from ADR-0012 STEP 3 + Amendment re-rotation).
+- **Root cause:** macOS does not purge `/tmp` until reboot; the rollback artifacts contain the pre-rotation SOPS-encrypted YAML (still encrypted, but with the old passwords visible to anyone with the age key).
+- **Mitigation in place:** ADR-0012 §"Negative consequences" notes the artifacts must be `rm -P /tmp/mobile-signing.pre-rotation.*.yaml`-d after a few days of confidence in the rotation.
+- **Remaining gap:** No automated cleanup; relies on the dev remembering.
+- **Tracks:** No backlog row — one-shot `rm -P` after rotation confidence builds. **Note:** macOS `shred` is unavailable and `rm -P` is documented as ineffective on APFS (see Fragile Areas §F4). Operational guidance is "trust APFS encryption-at-rest + reboot/purge."
+
+### S6. Treat-as-compromise reasoning carry-over from ADR-0006 (Mapbox)
+
+- **Files:** `docs/DECISIONS/0006-mapbox-token-incident.md`; `docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md` §"Treat-as-compromise rationale (carry-over from ADR-0006)".
+- **Pattern:** Any time a credential is observable in a log pipe outside the dev's own process (GitHub Actions logs, Anthropic chat transcripts, Mapbox dashboard), the standing rule is "rotate even if monitoring shows no abuse — chain of custody is unverifiable past the leak point." Applied twice now (Mapbox tokens in ADR-0006, keystore password in ADR-0012 main + Amendment).
+- **Mitigation in place:** Doctrine is consistent across both incidents; rotation is cheap (~5 min for keystore password, ~10 min for Mapbox tokens).
+- **Remaining gap:** No checklist or playbook codifies the doctrine outside of the ADRs themselves. A future incident with a credential family that has higher rotation cost (e.g., DB master password, MinIO root key) may tempt a "monitor instead of rotate" decision under time pressure.
+- **Tracks:** `SECRETS-LEAK-PLAYBOOK-AMEND` v1.0.1 backlog (codifies the corrected step-order: verify → audit → delete → rotate → patch → document, NOT delete-first as happened in ADR-0012 STEP 1).
+
+### S7. `IDENTITY_DEV_MODE=true` default — closed
+
+- **Files:** `services/backend/identity/cmd/server/main.go`.
+- **Status:** CLOSED in Phase 2 SEC-05 (Plan 02-02, commit `27ad27f`). Kept in this register as a historical anchor — was a P0 before Phase 2.
+
+### S8. OTP unconditional log — closed
+
+- **Files:** `services/backend/identity/internal/service/otp.go`.
+- **Status:** CLOSED in Phase 5 OBS-04 (Plan 05-03, commit `320975c`). Span-attribute scrub also closed via Plan 05-05 `piiScrubProcessor`.
+
+---
+
+## Performance
+
+### P1. No load profile — old Phase 8 dropped per ADR-0011
+
+- **Files:** No `k6/` directory; no synthetic load script.
+- **Problem:** Unknown ceiling for any service. identity-svc connection-pool sizing, NATS JetStream consumer-group sizing, PostgreSQL `max_connections`, Caddy file-server signed-URL request rate — all set by configuration default, not by measurement.
+- **Closed-beta mitigation:** 5-10 testers × ~3 sessions = ~30 sessions; will not stress any of the above.
+- **Improvement path:** Re-open old Phase 8 when ADR-0011 re-expansion trigger §1 fires (>50 users). Author `k6/` directory; baseline identity + activity-sync + realtime-gw under 100 RPS sustained.
+
+### P2. No chaos drills — old Phase 8 dropped per ADR-0011
+
+- **Files:** No `infra/chaos/` playbooks; no toxiproxy / pumba scripting.
+- **Problem:** Unknown blast radius when NATS broker restarts, PostgreSQL primary fails over, or `srv1561293` reboots mid-session. SessionManager `recoverLast()` handles client-side mid-session recovery, but server-side mid-flight request handling under broker restart is untested.
+- **Closed-beta mitigation:** Single VPS, no broker HA, no fail-over needed at this scale.
+- **Improvement path:** Pair with P1 re-open; toxiproxy in front of NATS + PostgreSQL.
+
+### P3. No Mapbox 10.3 long-session memory characterization
+
+- **Files:** `apps/mobile-rn/package.json` `@rnmapbox/maps@^10.3`; 1-hour Pixel pocket-walk in Plan 07-03 is the only soak test.
+- **Problem:** MapView memory growth across a 1-hour session is not profiled. If a hidden leak exists, the OS may kill the app at the 30-40 min mark on memory-constrained devices.
+- **Closed-beta mitigation:** Pixel + flagship Galaxy (S20+) have ≥6 GB RAM; closed-beta tester device class is flagship.
+- **Improvement path:** v1.0.1 if a tester reports a recorder crash mid-session; pair with Mapbox 11.x migration.
 
 ---
 
 ## Fragile Areas
 
-**OAuth flow (Apple half-implemented, Google placeholder):**
-- Files: `apps/mobile-rn/src/auth/authProviders.ts:107-145` (Apple), `:58-78` (Google).
-- Why fragile: Apple part will silently fail without backend exchange endpoint. The `Alert` stub will mislead testers into thinking the path is wired. Google `signIn()` is a throw.
-- Safe modification: Do not enable buttons in UI until both backend endpoint and Apple/Google config plugin are in EAS development build. Currently buttons hidden via `availableProviders()`.
-- Test coverage: Provider matrix has 0 tests (R5 noted «Auth providers: stub-safe behavior»). Add `authProviders.test.ts` with `isAvailable` matrix: iOS+native+env / iOS+native+no-env / Android / Web.
+### F1. Tag-triggered workflows must be registered on default branch first
 
-**Strava import dedup (multi-source race):**
-- Files: `apps/mobile-rn/src/health/importRepo.ts:34-92`, `apps/mobile-rn/src/health/importSanity.ts`, `apps/mobile-rn/src/health/importPlan.ts`.
-- Why fragile: Uses `INSERT OR IGNORE` keyed on `(source, external_uuid)` unique index (migration v16). Same workout pulled from both HealthKit and Strava has different `external_uuid` → both inserted as separate sessions. Dedup is per-source, not cross-source.
-- Safe modification: After insert, run cross-source merge query that flags overlapping `[startedAt, endedAt]` windows from different sources.
-- Test coverage: `importPlan.test.ts` covers single-source dedup (6 tests). Cross-source merge edge case is enumerated in R5 but no test exists.
+- **Files:** `.github/workflows/android-release.yml` (lives on `feat/cursona-redesign`); `main` branch does NOT have it yet.
+- **Why fragile:** GitHub Actions registers workflows only when they exist on the default branch (`main`). Pushing a tag from a feature branch will NOT trigger a workflow that lives only on that feature branch. Discovered during Phase 7 Stage A' diagnostic 2026-05-21. Same quirk also explains why `backend-cd.yml` appears in the active workflow registry but is absent from `main` (it lives only on `feat/cursona-redesign`) — registry retains stale entries.
+- **Safe modification:** Before tagging `v1.0.0-beta.0` (Plan 07-01 Task 6), cherry-pick `android-release.yml` to `main` first; verify via `gh workflow view android-release.yml --repo IsmailL01/sport` returns the registered workflow; THEN tag from `feat/cursona-redesign` and the workflow fires.
+- **Test coverage:** None — `gh workflow view` is a manual check at execution time.
+- **Tracks:** `CI-WORKFLOW-REGISTRY-AUDIT` v1.0.1 backlog (audit + reconcile registry vs `main`).
 
-**Lap state machine (race-fixed in R7, but still subtle):**
-- Files: `apps/mobile-rn/src/state/activity.ts:443-456` (markLap), `apps/mobile-rn/src/domain/lap.ts` (lapFromRange), `apps/mobile-rn/src/storage/lapRepository.ts` (atomic DELETE+INSERT).
-- Why fragile: R7 fix used functional `set((s) => ...)` to close the read-write race with `acceptPoint`. But the closure detector callback (`apps/mobile-rn/src/state/activity.ts:119-130`) also mutates state during render; rapid Stop+markLap can still interleave. The stop() path also finalizes a trailing lap (`apps/mobile-rn/src/state/activity.ts:287-302`) and the «lap from points[lapStartIdx..end]» calculation can include fewer than 2 points if user immediately stops after markLap.
-- Safe modification: Defensive `if (points.length - lapStart >= 2)` guard already present (line 292). Recommend disabling lap button in UI for 500ms after Stop is pressed to make the race invisible.
-- Test coverage: `lap.test.ts` covers `lapFromRange` (7 tests). No test for `markLap` action under rapid taps or stop-during-mark.
+### F2. `sops set --value-file` is broken in SOPS 3.13.1 (silent fail, exit 0)
 
-**Wallet transaction atomicity:**
-- Files: `apps/mobile-rn/src/storage/walletRepository.ts:46-97`, `apps/mobile-rn/src/state/wallet.ts:73-116`, `apps/mobile-rn/src/domain/walletDomain.ts` (validation + InsufficientBalanceError).
-- Why fragile: `recordTransaction` runs INSERT tx + UPDATE balance in one SQLite transaction. CHECK (coins >= 0) (migration v19) guards balance underflow. The pre-flight `validateTransaction` reads balance, then writes — a race exists between read and transaction start (only relevant if there are concurrent JS callers, which currently is not the case in RN single-threaded JS, but `useWalletStore.awardForSession` could be called from multiple stop() paths if user double-taps Stop).
-- Safe modification: Idempotency via `hasTransactionForSession` (UNIQUE INDEX `idx_wallet_tx_session_unique` on `(user_id, source_session_id)`, migration v15) protects against double-credit per session. The wallet store check at `useWalletStore.awardForSession`:75 reads `hasTransactionForSession` before writing.
-- Test coverage: `walletDomain.test.ts` (11) and `walletStore.test.ts` (6) added in R5. Integration test against real SQLite still missing.
+- **Files:** `.planning/phases/06-release-signing/06-01-SUMMARY.md` Task 3 (notes the swap to value-stdin form); `.planning/phases/06-release-signing/06-RESEARCH.md` line 11 (still recommends `--value-file`, predates the discovery).
+- **Why fragile:** `sops set --value-file /path/to/b64.txt '["android"]["keystore_base64"]' …` exits 0 silently in SOPS 3.13.1 without writing the value. Workaround: pipe via `sops set --value-stdin` with `jq -Rs` JSON-encoded payload to avoid shell escaping issues with multi-line base64. Pattern actually used in ADR-0012 STEP 3 rotation and Phase 6 Plan 06-01 Task 3.
+- **Safe modification:** Always prefer `cat /path/b64.txt | sops set --value-stdin …` or `jq -Rs . < /path/b64.txt | sops set --value-stdin …` over `--value-file`. Round-trip-verify (`sops -d | yq -r .path | base64 -d | shasum`) after every write.
+- **Test coverage:** `evidence/smoke-sops-roundtrip.sh` catches it post-write; nothing catches the bug pre-write.
 
-**Recording / pause state machine:**
-- Files: `apps/mobile-rn/src/state/activity.ts:178-465`, `apps/mobile-rn/src/pipeline/filters/PauseDetector.ts`, `apps/mobile-rn/src/navigation/screens/record/TrackerLiveScreen.tsx`.
-- Why fragile: Three orthogonal axes — `state: 'idle' | 'recording' | 'stopped'`, `isPaused: boolean` (auto-pause from PauseDetector), and the implicit "manual Pause" button which currently maps onto `isPaused` directly. Closure can fire while paused; markLap is disabled on pause but `acceptPoint` still pushes if pipeline accepts.
-- Safe modification: Type `state` as a full state machine — `idle | recording | auto-paused | manually-paused | stopped`. Use XState-like discriminated union; reject point ingestion in `paused-*` states.
-- Test coverage: Pipeline (93%) and area (95%) are well-tested. Full state machine including pause transitions has no dedicated test.
+### F3. `yq -r` trailing-newline inconsistency vs `printf '%s'` capture form
 
-**Crash recovery (`recoverLast`):**
-- Files: `apps/mobile-rn/src/state/activity.ts:405-441`, `apps/mobile-rn/src/storage/sessionRepository.ts:121-128` (`findActiveSession` — picks most recent session with `ended_at IS NULL`).
-- Why fragile: If a session was never finalized (app killed mid-recording), `findActiveSession` returns it. But `recoverLast` sets `state: 'stopped'` (not `'recording'`) — the user must explicitly resume or discard. There's no resume path implemented; only «view as if stopped». This was deferred per `P1-J-05` in `STATUS.md`.
-- Safe modification: Add an explicit «Resume recording» button on the recovery dialog; alternatively auto-finalize with `ended_at = lastPoint.ts` on recovery.
-- Test coverage: No `recoverLast.test.ts`. Manual P1-M field tests pending.
+- **Files:** ADR-0012 §"Amendment 2026-05-22" — direct evidence; `evidence/smoke-sha256-captured.sh` line 22 (uses `printf '%s'` capture form correctly).
+- **Why fragile:** Two pipelines that look equivalent are not:
+  - Form A (`sops -d ... | yq -r '.path' | shasum`) — `yq -r` appends `\n`; `shasum` hashes value+newline.
+  - Form B (`P=$(sops -d ... | yq -r '.path'); printf '%s' "$P" | shasum`) — `$()` strips trailing newlines; `printf '%s'` adds none; `shasum` hashes value-only.
+  Both produce "valid" sha256 outputs that differ. Treating the difference as evidence of corruption was the trigger for the ADR-0012 Amendment re-incident.
+- **Safe modification:** Single canonical form: `printf '%s' "$VAR" | shasum -a 256 | cut -c1-12`. Do not mix forms across a single audit.
+- **Test coverage:** No automated check; codified as discipline rule #1 in ADR-0012 Amendment Phase A.
 
-**Phone-E.164 validation is loose (R11, documented):**
-- Files: `apps/mobile-rn/src/state/settings.ts:147` (`normalizePhoneE164`).
-- Why fragile: Accepts `1234567` → `+1234567`. Real validation requires libphonenumber. Loose validation OK because phone field is local-only (used as UX hint for «my number» comparison in chat search).
-- Safe modification: Add libphonenumber-js (~140KB gzipped) if/when phone-based contact discovery ships; for current scope it's fine.
-- Test coverage: None for the validator.
+### F4. macOS `shred` unavailable; `rm -P` ineffective on APFS
 
----
+- **Files:** `.planning/phases/06-release-signing/06-RESEARCH.md` lines 114 + 396 + 644.
+- **Why fragile:** macOS does not ship `shred`. BSD `rm -P` overwrites the file's data extents but APFS copy-on-write + SSD wear leveling defeat the overwrite — old extents persist until garbage-collected. Worse, `srm` was removed from macOS Sierra (2016). Documented as RESEARCH Pitfall 11.
+- **Safe modification:** For ephemeral keystore generation, use a RAM disk (`hdiutil attach -nomount ram://…` → `diskutil eraseVolume APFS …`); RAM disk evaporates on unmount with zero SSD trace. For already-on-disk artifacts (e.g., `/tmp/mobile-signing.pre-rotation.*.yaml`), trust APFS encryption-at-rest + reboot.
+- **Test coverage:** Plan 06-01 Task 2 procedure used the RAM-disk pattern (`evidence/smoke-keystore-generated.sh` verifies the generated PKCS12 fingerprint).
 
-## Scaling Limits
+### F5. `hdiutil attach -nomount ram://...` returns device path with trailing whitespace
 
-**Mobile SQLite point storage:**
-- Current capacity: ~50K points per session before query latency degrades (no benchmark — extrapolation).
-- Limit: SQLite scales to millions of rows without trouble; the limit is JS-side memory when `loadPointsForSession` returns the full array.
-- Scaling path: Page point load by ts ranges; for map preview, sample at zoom-appropriate density.
+- **Files:** `.planning/phases/06-release-signing/06-RESEARCH.md` §Pattern 1 (Plan 06-01 Task 2 procedure).
+- **Why fragile:** `hdiutil attach -nomount ram://20480` prints the new device path followed by trailing whitespace (e.g., `/dev/disk7         \n`). Naive capture (`DEV=$(hdiutil attach -nomount ram://20480)`) preserves the whitespace; downstream `diskutil eraseVolume APFS SIGN_RAM "$DEV"` fails with `Could not find disk: /dev/disk7         `.
+- **Safe modification:** Strip whitespace explicitly: `DEV=$(hdiutil attach -nomount ram://20480 | tr -d ' ')` OR use `awk '{print $1}'` to take the first whitespace-delimited token.
+- **Test coverage:** None — silent failure if not stripped.
 
-**Realtime WebSocket fanout:**
-- Current capacity: Phase 8/H ships with `cap=1000` followers per story (celebrity-pull beyond that goes through refresh). Backend `feed.story.published` does N×SQL fetch.
-- Limit: For a high-follow user (>10K followers), realtime delivery degrades to «check on next refresh».
-- Scaling path: Push fanout to a worker pool with rate-limited send to NATS; have notifications service handle delivery throttling.
+### F6. `keytool -keypasswd` unsupported on PKCS12 (use `-storepasswd` only)
 
-**Backend rate limits already calibrated for Phase 8 traffic:**
-- See `pkg/ratelimit` settings in STATUS.md Phase I — these are conservative defaults. Re-tune as traffic data arrives.
+- **Files:** ADR-0012 §"Решение" STEP 3 (rotation procedure); `.planning/phases/06-release-signing/06-01-SUMMARY.md` Task 3.
+- **Why fragile:** PKCS12 stores keys under a KEK derived from the store password — there is no separate key-password layer. `keytool -keypasswd` on PKCS12 silently no-ops (or exits with a confusing error depending on JDK version). Rotating "both passwords" actually means rotating the single store password via `keytool -storepasswd`; the `key_password` field in `mobile-signing.yaml` is a downstream-compatibility artifact (Gradle expects both fields) and must mirror `keystore_password`.
+- **Safe modification:** Use `keytool -storepasswd` only. Update both YAML fields with the same new value.
+- **Test coverage:** `evidence/smoke-sops-roundtrip.sh` verifies the keystore decrypts post-rotation; nothing asserts `key_password == keystore_password` programmatically.
 
----
+### F7. `expo/expo-github-action@v8` transient PATH dependency
 
-## Dependencies at Risk
+- **Files:** `.github/workflows/android-release.yml` lines 100-101 (post-fix); ADR-0012 §"Положительные" (line 109).
+- **Why fragile:** The original workflow used `expo/expo-github-action@v8` + `npx eas build`. `npx eas` relies on the transient PATH set by the action wrapper; CI run `26245775886` failed with `npm error could not determine executable to run` — root cause was action-vs-shell PATH disagreement, exposed by an unrelated rerun in a slightly different runner environment.
+- **Safe modification:** Replaced action wrapper with explicit `npm install -g eas-cli` + bare `eas build` (line 101). EXPO_TOKEN passed via step env. Removes the transient-PATH coupling.
+- **Test coverage:** None pre-merge; relies on the next tag-push smoke (Plan 07-01 Task 6) re-firing the workflow against the patched form.
 
-**Mapbox SDK pinned to `^10.3` (`@rnmapbox/maps`):**
-- Risk: Major version upgrade required when SDK 11 lands; API changes around layer style props and OfflineManager (per typical Mapbox release cadence).
-- Impact: Visual regressions on TrackLayer / ZoneLayer / CorridorLayer; offline pack manager API may change shape.
-- Migration plan: All Mapbox usage is contained in `apps/mobile-rn/src/map/` (per CLAUDE.md ESLint rule). Upgrade is a one-package change confined to ~10 files.
+### F8. CI age key creates an implicit second SOPS copy
 
-**`expo-sqlite` migrating to «new architecture»:**
-- Risk: Expo SDK 54+ uses the new architecture; legacy sync API (`getFirstSync`, `runSync`, `withTransactionSync`) used throughout `apps/mobile-rn/src/storage/*` may receive breaking changes.
-- Impact: All repository files would need to adopt async equivalents.
-- Migration plan: Wrap all `getDatabase()` calls in an internal adapter; introduce async variants gradually behind feature flag.
-
-**`expo-file-system/legacy`:**
-- Files: `apps/mobile-rn/src/sync/mediaUpload.ts:15`, `apps/mobile-rn/src/media/adapters/ExpoMediaAdapter.ts:6`.
-- Risk: «legacy» suffix telegraphs deprecation. Expo SDK is moving to the unified `expo-file-system` API.
-- Impact: Build fails when legacy export is removed (Expo SDK 55+).
-- Migration plan: Switch to new API in the same release cycle as Expo SDK upgrade.
+- **Files:** `.sops.yaml` (two age recipients — DEV_A + CI); GitHub Actions secret `SOPS_AGE_KEY_CI`; `.planning/phases/07-release-builds-mobile-stability/07-CONTEXT.md` D-04 "Note".
+- **Why fragile:** Phase 7 Plan 07-01 Task 1 added a CI age key as a second SOPS recipient and pushed the private half to `SOPS_AGE_KEY_CI`. This implicitly creates a second copy of the keystore (encrypted by CI key, stored in GitHub Actions secret state). ADR-0011 Amendment 4 PM said "single SOPS copy on dev workstation" — the CI copy is a real second copy, though access-scoped to GitHub Actions runners.
+- **Safe modification:** Acknowledged in 06-01-SUMMARY follow-up note; does NOT promote `KEYSTORE-CLOUD-BACKUP` because the CI age key is rotatable separately + not a backup channel. If GitHub Actions is compromised, rotate `SOPS_AGE_KEY_CI` via `sops updatekeys` against a fresh recipient.
+- **Test coverage:** `evidence/smoke-sops-multi-recipient.sh` verifies both recipients decrypt; nothing checks for "the CI key never sees plaintext outside the runner."
 
 ---
 
-## Missing Critical Features
+## Deferred to v1.0.1 (the backlog)
 
-**Lap support in field-tested run (P1-M is open):**
-- Problem: Lap UI shipped Round 2 but field testing (`P1-M-01..15` in `STATUS.md`) on iPhone / Pixel / Chinese-Android pending.
-- Blocks: Phase 1 acceptance per ТЗ §3.15.
+Tracked in `.planning/ROADMAP.md` §"v1.0.1 Backlog". One-line summary per item — the ROADMAP has the full triggering conditions.
 
-**Resume from crash:**
-- Problem: `recoverLast` shows recovered session in `stopped` state. No «Resume» path.
-- Blocks: Spec §3 «фоновая запись GPS» robustness story.
+| ID | Item | Source |
+|---|---|---|
+| `AUTH-RATELIMIT` | `/auth/*` rate-limit (was old Phase 6 EDGE-01). Mitigated by closed-beta blast radius; revisit before public launch. | CONCERNS.md P0 |
+| `KEYSTORE-CLOUD-BACKUP` | Cloud backup of `.secrets/prod/mobile-signing.yaml` + age key (Plan 06-01 Tasks 5+6 — preserved in plan body). Trigger: Play Store submission / >50 users / explicit production-asset decision. | ADR-0011 Amendment 4 PM |
+| `EMERGENCY-RUNBOOK` | Codify the "what to tell testers" + recovery procedure when keystore is lost (ADR-0011 D-15 scenario b). | ADR-0011 Amendment 4 |
+| `CI-MASK-LINT` | Pre-commit / `actionlint` rule that flags `echo "X=$value" >> $GITHUB_ENV` without a preceding `::add-mask::`. Generalize to `$GITHUB_OUTPUT` + `$GITHUB_STEP_SUMMARY`. | ADR-0012 Phase C |
+| `SECRETS-LEAK-PLAYBOOK-AMEND` | Finalize the corrected leak-response playbook in `docs/SECRETS.md` — verify → audit → delete → rotate → patch → document. Reverse of the order used in ADR-0012 STEP 1 (which deleted-first). | ADR-0012 Phase B |
+| `SOPS-VERIFY-HARDENING` | Every verification script in `evidence/` + `scripts/` must require `SOPS_AGE_KEY_FILE` explicitly, check `sops -d` exit code, validate decrypted value shape before downstream. | ADR-0012 Phase C |
+| `CRED-DIAG-DISCIPLINE` | Codify the four credential-diagnostics rules in `docs/SECRETS.md` (single canonical fingerprint form; no byte inspection; length-only; shape vs value). Add pre-commit grep for `xxd .*\$[A-Z_]+`. | ADR-0012 Amendment Phase C |
+| `CI-WORKFLOW-REGISTRY-AUDIT` | Audit + reconcile GH Actions workflow registry vs `main` branch contents. `backend-cd.yml` present in registry but absent from `main` (lives on `feat/cursona-redesign` only). New workflows register only when present on default branch. | Phase 7 Stage A' diagnostic 2026-05-21 |
+| `DEBUG-MIDDLEWARE-ENV` | Refactor `services/backend/pkg/observability/DebugSessionMiddleware` to read `DEBUG_SESSIONS_FOR_USER` env-allowlist. Current 3-gate (header ∧ JWT.is_tester ∧ featureflag) is unusable for solo dev (no admin UI for featureflag flips). | ADR-0011 OBS-08 amendment |
+| `EAS-PROJECT-INIT` | Run `eas init` from `apps/mobile-rn/`; replace `app.json` `extra.eas.projectId: "TODO-eas-project-id-after-eas-init"` with the issued UUID. Currently blocking Plan 07-01 Task 6. | Plan 07-01 Task 0 USER ACTION |
+| `PROD-LAUNCH-PREP` | Bank-grade key custody — re-backup `.secrets/prod/mobile-signing.yaml` to 2 encrypted-DMG USB sticks at ≥5 km separation + laminated paper RECOVERY-CARDs + 1Password sealed DMG entry. Trigger: beta passes 50 users. | ADR-0011 Amendment 2 PM |
+| `GHCR-PULL-AUTH` | Direct GHCR pull on prod (replace save/scp/load). Inherited from Phase 4 Plan 04-04. | Plan 04-04 D-04-04-A |
+| `MIGRATE-RSYNC-DELETE` | `rsync --delete` for migrations subtree only. | Plan 04-04 |
+| `METADATA-RAW-TAG` | `metadata-action pattern={{raw}}` for semver — CD strips `v` prefix. | Plan 04-04 |
+| `CD-SMOKE-VERIFY` | Fix `cosign-verify-smoke` job — UNAUTHORIZED on private packages. | Plan 04-04 |
+| `DIGEST-PINNING` | SHA256 digest-pin compose images. | Plan 04-03a/04 |
+| `SECRETS-ROTATE` | Rotate `POSTGRES_PASSWORD`, `JWT_SECRET`, MinIO creds (pasted in chat during Phase 3 SOPS-fill 2026-05-17). | Phase 3 chat leak |
 
-**Offline tile cap (Mapbox 6000 tiles per pack):**
-- Problem: `apps/mobile-rn/src/map/offline.ts` downloads zoom 12-16 over 10×10 km. No explicit cap enforcement.
-- Blocks: Long-distance users (trail runners crossing multiple regions).
+---
 
-**Push notifications for non-message events:**
-- Problem: Per ADR-0004 / Phase 8/J, push deep-links handle `message.new`, `feed.post.{liked,commented}` (orphan), `feed.story.published` (orphan). No push for `user.xp.changed`, no toast for new records.
-- Blocks: User retention features.
+## Environment Risks
 
-**Backend `activity-sync` upload v2 schema (laps + activity_type):**
-- See R10 above. Server cannot ingest the new columns yet.
+Workstation-state assumptions that have caused real friction during Phase 6/7 execution and that the next executor will hit again without explicit setup.
+
+### E1. `SOPS_AGE_KEY_FILE` not in shell profile
+
+- **What:** macOS SOPS default search path is `~/Library/Application Support/sops/age/keys.txt`. The actual key lives at the XDG path `~/.config/sops/age/keys.txt`. `SOPS_AGE_KEY_FILE` must be exported per-invocation OR every script must default it via `: "${SOPS_AGE_KEY_FILE:=$HOME/.config/sops/age/keys.txt}"`.
+- **Risk:** Silent decrypt failure → `yq -r` returns the literal `null` → downstream pipelines hash meaningless input → false-positive on credential integrity checks. Triggered the ADR-0012 STEP 2 false-positive.
+- **Mitigation:** `evidence/smoke-sops-roundtrip.sh` defaults it; pending follow-up #6 in `.planning/STATE.md` ("Add `~/.envrc` (direnv) or shell-rc snippet to auto-export `SOPS_AGE_KEY_FILE`").
+- **Tracks:** Pending follow-up #6 in `.planning/STATE.md` + `SOPS-VERIFY-HARDENING` in v1.0.1 backlog.
+
+### E2. Expo CLI not logged in locally
+
+- **What:** `npx eas` requires a logged-in Expo account. The dev workstation has `npx eas` installed but no recorded `eas login` session as of Phase 7 entry.
+- **Risk:** Plan 07-01 Task 0 USER ACTION ("Generate EXPO_TOKEN at expo.dev") cannot complete without a logged-in account; even after EXPO_TOKEN is pushed to GitHub Actions secrets, local invocations (`eas build:list`, `eas build:download`) needed during Plan 07-01 Task 6 will require `EXPO_TOKEN=… npx eas …` or an interactive `npx eas login`.
+- **Mitigation:** Plan 07-01 Task 0 prompts the user to log in via the web flow + generate the token; document `EXPO_TOKEN` as a shell-export for local dev convenience.
+- **Tracks:** Folded into `EAS-PROJECT-INIT` v1.0.1 backlog.
+
+### E3. No `EXPO_TOKEN` in dev shell env
+
+- **What:** `EXPO_TOKEN` is pushed as a GitHub Actions secret (CI-side) but not exported in the dev workstation shell. Local `npx eas` invocations during Plan 07-01 Task 6 (`eas build:list`, `eas build:download`) will prompt for login interactively.
+- **Risk:** Friction during Plan 07-01 Task 6; possible interactive prompt that the autonomous executor cannot answer.
+- **Mitigation:** Document `EXPO_TOKEN=...` shell-export in 07-01-SUMMARY follow-up; the executor pastes the token into a 1Password "Expo CLI personal token" entry for reproducibility.
+- **Tracks:** Folded into `EAS-PROJECT-INIT`.
+
+### E4. Single age recipient in DEV_A position — no DEV_B yet
+
+- **What:** `.sops.yaml` recipient list has DEV_A (`age1ph7d4a62n9...`) + CI (`age19ysu774h4c...`). No DEV_B. Phase 2 D-04 mandated a second human recipient; CONTEXT D-04 acknowledged the gap (`TODO(DEV_B)`).
+- **Risk:** Single point of failure for bus factor (T-02-04 per Phase 2 CONTEXT). If DEV_A workstation + 1Password sealed-entry both lose the age key simultaneously, all `.secrets/<env>/*.yaml` become permanently unrecoverable. CI key is access-scoped to GitHub Actions runners and is not a backup channel (F8).
+- **Mitigation:** Phase 2 D-04 1Password sealed-entry backup of the DEV_A age key is the load-bearing recovery path. Cloud-provider replication of 1Password gives ≥2 data-center geographic redundancy.
+- **Tracks:** Pending follow-up #8 in `.planning/STATE.md` ("DEV_B age pubkey — `.sops.yaml` TODO; run `sops updatekeys` once provided") — solo-dev status means this stays open until team grows.
+
+### E5. macOS-specific tooling assumptions throughout `evidence/` scripts
+
+- **What:** Smoke scripts assume `hdiutil`, `diskutil`, `security`, BSD `awk`/`grep`/`shasum`. CI runners are Ubuntu (GNU coreutils); cross-platform script portability is not guaranteed.
+- **Risk:** Phase 7 Plan 07-01 Task 5 workflow (`.github/workflows/android-release.yml`) is hand-rolled to call `sops` + `yq` + `base64 -d` on the Ubuntu runner; it does not re-use the `evidence/` smoke scripts. If a future workflow tries to run `evidence/smoke-sops-roundtrip.sh` directly on Ubuntu, expect divergences.
+- **Mitigation:** Acknowledged separation: `evidence/` scripts = dev workstation; `.github/workflows/` = CI runner. Both verify SOPS round-trips independently.
+- **Tracks:** None — accepted separation for closed beta.
+
+### E6. `/tmp` not auto-purged on macOS
+
+- **What:** macOS `/tmp` (actually `/private/tmp` linked) is not purged between reboots in some configurations. Pre-rotation backups from ADR-0012 STEP 3 + Amendment re-rotation remain there.
+- **Risk:** Aged plaintext-encrypted-by-old-password SOPS bundles persist on disk indefinitely until manual cleanup.
+- **Mitigation:** Manual `rm -P /tmp/mobile-signing.pre-rotation.*.yaml /tmp/mobile-signing.pre-rerotation.*.yaml` after confidence in the rotation. Trust APFS encryption-at-rest in the interim (see F4 — `rm -P` is not a real scrub).
+- **Tracks:** None — operational discipline.
 
 ---
 
 ## Test Coverage Gaps
 
-**Storage repositories (no real-DB integration tests, R5 still open):**
-- What's not tested: `walletRepository` against real SQLite, `lapRepository`, `recordsRepository`, `relationsRepository`, `socialRepository`, `pointRepository`, `sensorRepository`. All have pure-domain unit tests but no migration test, no transaction rollback test, no CHECK-violation test.
-- Files: `apps/mobile-rn/src/__tests__/` lacks `*.integration.test.ts` files.
-- Risk: Migration ordering bugs, ON CONFLICT semantics, CHECK constraint surprises only surface at runtime on a real device.
-- Priority: High. R5 identified this gap; not yet closed.
+### TC1. No mobile crash reporting → no automated crash detection
 
-**Auth flows (R5):**
-- What's not tested: `useAuthStore.{register, login, requestCode, loginWithCode, hydrate, logout}`. No mocks for `apiClient`. No test for token refresh on 401. No test for the auto-logout when refresh fails.
-- Files: `apps/mobile-rn/src/state/auth.ts`, `apps/mobile-rn/src/auth/apiClient.ts`.
-- Risk: Auth bugs are user-visible and security-sensitive.
-- Priority: Medium-High.
+- **What's not tested:** Any client-side crash, ANR, JS exception, native bridge failure.
+- **Files:** `apps/mobile-rn/package.json` (no `@sentry/react-native`); no `apps/mobile-rn/src/crash/` directory.
+- **Risk:** Phase 9 watchlist depends entirely on tester verbal reports + Loki backend-side log tails (`scripts/debug-tail.sh <user-id>`). Closed beta is small enough that this is acceptable.
+- **Priority:** Low for closed beta; High before public launch.
 
-**State machine for recording / pause / lap:**
-- What's not tested: `useActivityStore.{start, stop, markLap, recoverLast, reset}` under realistic sequences (rapid stop, double-tap, pause during lap, etc.).
-- Files: `apps/mobile-rn/src/state/activity.ts`.
-- Risk: Race conditions like R7 (now fixed) lurk where state transitions interleave.
-- Priority: Medium.
+### TC2. R8 + ProGuard verification via device smoke only (no unit test)
 
-**Realtime adapters:**
-- What's not tested: `WebSocketRealtimeAdapter` reconnect backoff, jitter, ping/pong, message ordering, late event arrival, deduplication via `messageId`.
-- Files: `apps/mobile-rn/src/realtime/adapters/WebSocketRealtimeAdapter.ts`.
-- Risk: Subtle reconnect bugs surface as «missed messages» — hard to debug after the fact.
-- Priority: Medium.
+- **What's not tested in CI:** ProGuard stripping of Mapbox JNI, MMKV native, expo-task-manager, Hermes runtime, react-native-reanimated keeps.
+- **Files:** `.planning/phases/07-release-builds-mobile-stability/07-CONTEXT.md` D-08 ("ProGuard verification strategy = smoke test on a real device after the first signed release APK is built, NOT unit tests (no unit test can verify R8 stripping)"); Plan 07-01 Task 6 = 7-step device smoke.
+- **Risk:** First release build can crash on launch if a keep is missing. Verified at execution time via the Pixel smoke; no regression test for future ProGuard rule additions.
+- **Priority:** Medium — extend ProGuard keeps with new packages → smoke on Pixel; document deltas.
 
-**Permission matrix sync (Go ↔ TS):**
-- What's not tested: Cross-language assertion that the Go RBAC matrix in `services/backend/pkg/permissions` matches TypeScript matrix in `apps/mobile-rn/src/modules/permissions`. Phase 8/K added 16 Go + 29 TS tests covering each side independently.
-- Files: `services/backend/pkg/permissions/`, `apps/mobile-rn/src/modules/permissions/`.
-- Risk: Authorization drift bug.
-- Priority: Medium.
+### TC3. 1-hour soak is the only stability test (Plan 07-03 Task N)
 
-**E2E mobile + backend smokes:**
-- What's not tested: Mobile-driven end-to-end (register → record session → publish post → comment → moderate). Backend has 9 Python smoke scripts (`services/backend/scripts/smoke_*.py`) but none drive the actual RN app.
-- Files: `services/backend/scripts/` directory.
-- Risk: API contract mismatches between mobile DTO and server DTO.
-- Priority: Low until external testers join.
+- **What's not tested:** Multi-hour sessions (2h, 4h, full marathon). 24-hour idle behavior. Multiple sequential sessions across a single app launch.
+- **Files:** `.planning/phases/07-release-builds-mobile-stability/07-CONTEXT.md` §"1-hour Pixel pocket-walk validation".
+- **Risk:** Mid-marathon GPS recorder failure undiscovered; multiple-session-day testers may hit accumulated state issues.
+- **Priority:** Acceptable for closed beta; tracked by tester reports.
+
+### TC4. No PII regression test for new span attributes
+
+- **What's not tested:** A new service author adding a span attribute that smuggles PII past the `piiScrubProcessor`.
+- **Files:** `services/backend/pkg/observability/otel_init.go` lines 25 + 104 TODOs; `pii_live_probe.py` (Plan 05-06) runs at deploy time but not per-PR.
+- **Risk:** PII leak via OTel spans → Tempo → Loki correlated logs.
+- **Priority:** Medium; pre-commit grep audit + `pii_live_probe.py` cover the common case but a per-PR gate would be safer.
+
+### TC5. No reproducible-build verification (dropped per ADR-0011)
+
+- **What's not tested:** Two CI runs of the same tag → byte-identical artifacts (modulo signature).
+- **Files:** Hard Rules in `.planning/ROADMAP.md` still mention "Release APK/IPA must be reproducible" but no test enforces it.
+- **Risk:** Tag → re-tag of same code produces different APK → tester sees a "different build" with no code changes.
+- **Priority:** Low for closed beta; revisit pre-public.
 
 ---
 
-*Concerns audit: 2026-05-14*
+*Concerns audit: 2026-05-23*
