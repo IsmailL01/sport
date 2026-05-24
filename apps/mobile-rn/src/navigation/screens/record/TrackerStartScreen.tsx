@@ -28,6 +28,7 @@ import { useHistoryStore } from '../../../state/history';
 import { useSettingsStore } from '../../../state/settings';
 import { aggregateSessions } from '../../../domain/stats';
 import { formatDistance, formatDuration, formatPace } from '../../../ui/format';
+import { AutostartDialog } from '../../../vendor/AutostartDialog';
 import type { RecordStackParamList } from '../../types';
 
 type PermStatus = 'pending' | 'granted' | 'denied';
@@ -335,6 +336,13 @@ export function TrackerStartScreen() {
           {starting ? 'СТАРТ…' : 'НАЧАТЬ ЗАБЕГ'}
         </Button>
       </View>
+
+      {/* Phase 7 / Plan 07-03 Task 4: one-shot autostart dialog for MIUI + One UI.
+          Renders Modal portal-style above this screen only on first launch of
+          a vendor whose foreground-service killer is known to bite. Generic +
+          Huawei vendors → no-op. After first dismissal (either button), MMKV
+          flag prevents re-show. */}
+      <AutostartDialog />
     </View>
   );
 }
