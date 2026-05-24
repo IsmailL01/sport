@@ -1,97 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: AndroidClosedBeta
+milestone_name: Closed Beta
 status: executing
-stopped_at: |
-  Phase 7 Plan 07-01 CLOSED 2026-05-24 (commit 5e2a8a6 — 07-01-SUMMARY).
-  Plan 07-03 (foreground service + MIUI/One UI mitigations + 1h Pixel
-  pocket-walk) remains the only open plan in Phase 7; device-blocked
-  until physical Pixel acquired. With Plan 07-01 closed, Phase 7 is
-  partially done (1 of 2 active plans complete); the entire phase
-  blocks on the Pixel device.
-
-  Plan 07-01 Stage A' validation arc spanned 4 CI iterations:
-  (1) 26245775886 v1.0.0-beta.0 — DELETED per ADR-0012 STEP 1 (leaked
-      plaintext keystore_password); triggered full 5-step incident
-      response + ADR-0012 + self-inflicted re-incident + ADR-0012
-      amendment.
-  (2) 26258849328 v1.0.0-beta.1 — security PASS (::add-mask:: + explicit
-      eas-cli verified working); failed on `Invalid UUID appId` because
-      app.json had literal TODO placeholder for extra.eas.projectId.
-  (3) 26362716928 v1.0.0-beta.2 — after `eas init` populated real UUID
-      a9f8e26f-bd3f-4296-b67e-21909721132c; all 14 workflow steps PASS;
-      but EAS Cloud used auto-managed remote credentials ("Using remote
-      Android credentials (Expo server)" + "Created keystore"), NOT our
-      SOPS-bundled runningecosystem-release keystore.
-  (4) 26362961267 v1.0.0-beta.3 — after `credentialsSource: "local"` in
-      eas.json + credentials.json generation in workflow: ALL 14 STEPS
-      PASS + "Using local Android credentials (credentials.json)"
-      confirmed; EAS build 9e243e59-525f-42d1-89e2-894a62716cba queued
-      + signed with runningecosystem-release keystore (cert SHA-256
-      C6:33:47:6C:63:11:40:3F:5D:19:E2:3A:07:3A:15:F6:EA:BC:D6:40:FB:7F:F5:49:A5:B1:C3:A5:18:30:D7:BB).
-
-  EAS Cloud build 9e243e59 currently running on Expo dashboard (the
-  workflow uses --no-wait; GH Actions completes once eas-cli queues the
-  build). Build outcome not yet observed; success would empirically
-  validate the R8 keep rules in proguard-rules.pro hold during the
-  production R8 pass. Failure would only affect Plan 07-03 prerequisite
-  list (a fresh APK), not Plan 07-01 acceptance criteria.
-
-  Next: user acquires physical Pixel → /gsd-execute-phase 7 to run Plan
-  07-03. In parallel, /gsd-discuss-phase 8 can start (Closed-beta
-  distribution doesn't depend on Plan 07-03; only on Plan 07-01 which
-  is CLOSED).
-
-  P0 security incident OPENED + CLOSED 2026-05-21..22 during Stage A'
-  initial fire (CI run 26245775886 leaked keystore_password plaintext in
-  step env blocks because bare `echo "VAR=$value" >> $GITHUB_ENV` does
-  NOT auto-mask — only `${{ secrets.X }}` refs do). 5-step playbook
-  executed: (1) delete leaked run, (2) audit other runs (0 matches), (3)
-  rotate keystore password via keytool -storepasswd (PKCS12 invariant;
-  cert SHA-256 preserved → existing-install invalidation = none), (4)
-  patch workflow with ::add-mask:: + replace `npx eas` with explicit
-  install + cherry-pick to main, (5) write ADR-0012. Self-inflicted
-  re-incident 2026-05-22: rotated password leaked into agent chat via
-  `xxd | tail -3` diagnostic; re-rotated (commit 21b992c); ADR-0012
-  amendment 0a206a0 codifies 4 credential-diagnostics discipline rules.
-  Old keystore_password fingerprints `e54d3cfbb4ab` (original) +
-  `8ff4b15a2e2c` (first rotation) both DESTROYED; current live fingerprint
-  held only in SOPS bundle. Pre-rotation backups on /tmp (delete after
-  confidence period via `rm -P`).
-
-  Active scope for v1.0 Android closed beta (Phase 6 done; Phase 7
-  mid-flight; Phases 8-9 not yet started):
-    Phase 7 → Plan 07-01 Task 6 awaiting eas init (security-validated);
-              Plan 07-03 awaiting Pixel device for 1h pocket-walk
-    Phase 8 → Plan 08-01 only (Caddy manifest + signed-URL APKs) — pending
-    Phase 9 → 09-01 + 09-02 Android-only (LAUNCH-01..02) — pending
-
-  Next: `eas init` (user-action) to unblock Plan 07-01 Task 6, then
-  `/gsd-execute-phase 7` for Task 6 → Task 7 closeout. Plan 07-03 still
-  device-blocked until physical Pixel available.
-
-  v1.0.1 backlog newly populated from ADR-0012 amendment: CI-MASK-LINT,
-  SECRETS-LEAK-PLAYBOOK-AMEND, SOPS-VERIFY-HARDENING, CRED-DIAG-DISCIPLINE,
-  EAS-PROJECT-INIT, CI-WORKFLOW-REGISTRY-AUDIT.
-last_updated: "2026-05-24T15:45:00.000Z"
+stopped_at: Phase 8 context gathered (autonomous mode — 25 decisions D-01..D-25 captured; ready to plan via /gsd-plan-phase 8)
+last_updated: "2026-05-24T16:02:54.491Z"
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 6
+  completed_phases: 0
+  total_plans: 4
   completed_plans: 2
-  percent: 33
-  active_phase: 7
-  active_plans_in_phase: 1
-  deferred_plans_in_phase: 0
-  notes: |
-    `total_phases: 4` reflects ADR-0011 lean closed-beta scope (Phases 6-9).
-    Phases 1-5 already shipped (pre-lean baseline; see PROJECT.md). Plan
-    counts here count only active v1.0 plans (Phase 6: 06-01 done, 06-02
-    deferred per Amendment 3; Phase 7: 07-01 mid-flight, 07-02 deferred per
-    Amendment 3, 07-03 not started; Phases 8-9 unplanned). Re-rotation
-    commits (f35b4c6 + 21b992c) are incident artifacts on top of Plan 06-01,
-    not separate plans.
+  percent: 0
 ---
 
 # Project State
@@ -197,6 +116,7 @@ Recent / load-bearing decisions affecting current work:
 - **2026-05-15 — Milestone v1.0 redefinition** (now superseded by ADR-0011 above): pre-ADR-0011 21-phase scope was redefined at this point; ADR-0011 retired it 5 days later.
 
 **Future ADRs (TBD):**
+
   - `0008-mapbox-sdk-11-migration.md` — would document `@rnmapbox/maps` 10.x→11.x breaking changes. **DROPPED per ADR-0011** (stay on 10.3 for closed beta). Will re-trigger if Mapbox forces an upgrade or v1.1 needs new 11.x features.
 
 ### Pending Todos
@@ -259,11 +179,11 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-05-23T17:00:00.000Z (this update)
+Last session: 2026-05-24T16:02:54.470Z
 
-Stopped at: Plan 07-01 Task 6 awaiting user-action `eas init` to unblock the final EAS Cloud build step. P0 incident response complete (original + self-inflicted re-incident both closed). Codebase map refreshed for phases 5-7. STATE.md reconciliation in progress.
+Stopped at: Phase 8 context gathered (autonomous mode — 25 decisions D-01..D-25 captured; ready to plan via /gsd-plan-phase 8)
 
-Resume file: `.planning/phases/07-release-builds-mobile-stability/07-01-PLAN.md` (Tasks 0-5 done; Task 6 = Stage A' R8 device smoke; Task 7 = closeout SUMMARY).
+Resume file: .planning/phases/08-closed-beta-distribution/08-CONTEXT.md
 
 **User-action checkpoint (Plan 07-03 Tasks 5 + 6) — required to close Phase 7:**
 
@@ -297,8 +217,10 @@ Plan 07-01 + the code portion of Plan 07-03 are closed. Remaining work needs a p
    # 3) Relaunch → verify recoverLast() restored session + points + adaptive sampling resumed
    # Record outcome in evidence/recoverLast-pre-walk-attestation.txt
    ```
+
 2. **Task 6 — 1h Pixel pocket-walk (LOAD-BEARING for Phase 8/9, ~60 min walking):**
    Per CONTEXT D-18 5-sub-check matrix in 07-03-PLAN:
+
    - ≥95% expected GPS points (~1710 of ~1800 at 0.5Hz)
    - Foreground service notification visible at end (RU template Task 2)
    - Battery drain <15%
