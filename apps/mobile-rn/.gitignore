@@ -54,7 +54,10 @@ yarn-error.*
 /android/app/build/
 /android/app/release/
 /android/app/.cxx/
-/android/app/debug.keystore
+# debug.keystore: tracked in git (standard Android debug keystore, password
+# 'android' is public knowledge per android.com docs). Same cert SHA-256
+# across local + CI ensures Mapbox dev-token works in android-debug-apk.yml
+# artifact. Was auto-gitignored by `npx expo prebuild`; we override that.
 # release.keystore: prod signing keystore lives in SOPS at
 # .secrets/prod/mobile-signing.yaml; the CI workflow writes it ephemerally at
 # build time. Never commit. (Belt-and-suspenders: root .gitignore also has
