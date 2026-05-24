@@ -70,6 +70,31 @@ jobs:
         working-directory: apps/mobile-rn
         run: npm ci
 
+      - name: Create .env (public backend URLs)
+        # apiClient.ts reads EXPO_PUBLIC_IDENTITY_URL / EXPO_PUBLIC_SYNC_URL at
+        # bundle time via @expo/cli export:embed. Without them, fallback is
+        # http://10.0.2.2:8081 (Android emulator loopback) which doesn't
+        # resolve on physical Pixel/BlueStacks → "не удалось связаться с
+        # сервером" during registration. Backend host is sslip.io public
+        # (also shown in SettingsScreen "Backend" row); not a secret.
+        #
+        # Mapbox tokens deliberately omitted: pk.* runtime token is cert-pinned
+        # per ADR-0006 and won't match this debug build's cert SHA-256 — map
+        # tiles will be blank. Re-enable separately when needed (either via
+        # unrestricted dev token in a GitHub secret, or by adding the debug
+        # keystore cert SHA-256 to the Mapbox dashboard allowlist).
+        #
+        # EXPO_PUBLIC_UPDATE_MANIFEST_URL left unset on purpose — ADR-0011
+        # Amendment 5 gate stays closed (state:'disabled' early return).
+        working-directory: apps/mobile-rn
+        run: |
+          cat > .env <<'EOF'
+          EXPO_PUBLIC_IDENTITY_URL=https://148-253-214-156.sslip.io
+          EXPO_PUBLIC_SYNC_URL=https://148-253-214-156.sslip.io
+          EOF
+          echo "Created .env:"
+          cat .env
+
       - name: Build debug APK (universal ABI + JS bundle embedded)
         working-directory: apps/mobile-rn/android
         run: |
