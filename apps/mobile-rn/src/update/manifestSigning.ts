@@ -12,12 +12,14 @@
 // exercises Go-sign → Node-verify on a known payload to catch drift.
 
 import * as ed25519 from '@noble/ed25519';
-import { sha512 } from '@noble/hashes/sha2';
+import { sha512 } from '@noble/hashes/sha2.js';
 
-// Wire SHA-512 backend (RESEARCH Pitfall 4 — @noble/ed25519 v2+ requires
-// explicit hash; injection happens at module load).
-ed25519.etc.sha512Sync = (...m: Uint8Array[]) =>
-  sha512(ed25519.etc.concatBytes(...m));
+// Wire SHA-512 backend at module load (RESEARCH Pitfall 4 — @noble/ed25519
+// requires explicit hash injection). API changed in v3.x: assign to
+// `ed.hashes.sha512` directly (older v2.x examples used
+// `ed.etc.sha512Sync` — that field no longer exists). The `.js` suffix on
+// the @noble/hashes import is required by the package's v2.x exports map.
+ed25519.hashes.sha512 = sha512;
 
 /**
  * Embedded manifest-signing public key (32-byte Ed25519, base64).
