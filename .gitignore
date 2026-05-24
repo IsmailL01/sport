@@ -91,8 +91,10 @@ yarn-error.log*
 **/ios/Runner/GeneratedPluginRegistrant.*
 **/android/.gradle
 **/android/captures/
-**/android/gradlew
-**/android/gradlew.bat
+# gradlew + gradlew.bat: previously ignored under the Flutter prototype's
+# convention; now REQUIRED in repo for the bare Expo Android workflow (Plan
+# 07-03 fix 2026-05-24 — EAS Cloud needs ./gradlew to exist in the project
+# archive). See apps/mobile-rn/.gitignore for the per-app authoritative rules.
 **/android/local.properties
 **/android/**/GeneratedPluginRegistrant.java
 **/android/key.properties
