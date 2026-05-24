@@ -152,10 +152,13 @@ temp/
 
 # ===== Phase 7 / Plan 07-01 — keystore artifacts =====
 # CI writes these at build time from SOPS-decrypted .secrets/prod/mobile-signing.yaml;
-# they must never be committed. Note: `*.keystore` at top of file already covers this,
-# but kept explicit for clarity + defense-in-depth.
+# they must never be committed. Note: `*.keystore` at top of file already covers
+# release.keystore, but kept explicit for clarity + defense-in-depth.
 apps/mobile-rn/android/app/release.keystore
-# credentials.json: Path A keystore injection (RESEARCH §0) does NOT write this file,
-# but Expo's classic indirection would have — gitignored defensively in case anyone
-# ever runs `eas credentials` locally.
+# credentials.json: REQUIRED by `credentialsSource: "local"` in apps/mobile-rn/eas.json
+# (added 2026-05-24 after Stage A' beta.2 CI run revealed EAS Cloud defaults to
+# remote/managed Android credentials, ignoring our SOPS-bundled keystore. Path A
+# original design said this file would NOT exist; updated to "generated at CI time
+# from SOPS-decrypted passwords with ::add-mask:: log protection"). Contains
+# plaintext keystorePassword + keyPassword fields — gitignored to prevent commit.
 apps/mobile-rn/credentials.json

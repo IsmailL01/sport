@@ -91,6 +91,27 @@ jobs:
           echo "::add-mask::$KEY_PASS"
           echo "RUNNING_ECO_RELEASE_STORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
           echo "RUNNING_ECO_RELEASE_KEY_PASSWORD=$KEY_PASS" >> "$GITHUB_ENV"
+          # Generate apps/mobile-rn/credentials.json required by EAS Cloud when
+          # eas.json `production.android.credentialsSource: "local"` is set.
+          # Without this, EAS Cloud falls back to remote/managed credentials and
+          # signs the APK with its own auto-generated keystore (observed in CI
+          # run 26362716928 / build 9b8ec55c on tag v1.0.0-beta.2). credentials.json
+          # is git-ignored; file lives only on the ephemeral runner + the EAS
+          # Cloud build environment for the lifetime of this job.
+          jq -n \
+            --arg pass "$STORE_PASS" \
+            --arg keypass "$KEY_PASS" \
+            '{
+              android: {
+                keystore: {
+                  keystorePath: "android/app/release.keystore",
+                  keystorePassword: $pass,
+                  keyAlias: "runningecosystem-release",
+                  keyPassword: $keypass
+                }
+              }
+            }' > apps/mobile-rn/credentials.json
+          chmod 600 apps/mobile-rn/credentials.json
           rm -f /tmp/mobile-signing.yaml
 
       - name: Install dependencies
