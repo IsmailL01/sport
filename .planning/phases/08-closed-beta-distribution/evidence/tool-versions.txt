@@ -1,0 +1,54 @@
+# Phase 8 / Plan 08-01 — tool versions audit (Task 0 / Wave 0)
+# Captured: 2026-05-24
+# Source: macOS dev workstation (build 25C56 / macOS 26.2)
+# Plan 07-01 evidence inherited where applicable; new tools added below.
+
+# === SOPS / age (inherited from Phase 2 / Plan 06-01 / Plan 07-01) ===
+sops: 3.13.1
+yq:   4.53.2
+openssl: 3.0.18 30 Sep 2025
+
+# === Mobile build chain (inherited from Plan 07-01) ===
+node: v22.19.0
+npm:  10.9.3
+java: openjdk 23.0.2 (Plan 07-01 Stage A' validated with this; Pitfall 13 satisfied — bundletool 1.18.x needs Java 11+; this is 23)
+keytool: built-in /usr/bin/keytool
+
+# === NEW for Plan 08-01 ===
+go: 1.22.3 darwin/arm64
+  # Used by scripts/sign-manifest.go + scripts/verify-manifest.go (Task 3).
+  # GitHub-hosted ubuntu-latest runners have go preinstalled (verify with `go version` in workflow).
+
+# === Locally NOT INSTALLED (CI installs them; user-action required if local Task 7 verification wanted) ===
+mc:         NOT installed
+  # MinIO client. CI installs via:
+  #   curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
+  # Local: `brew install minio/stable/mc` if Task 7 requires local APK upload/presign for cross-verification.
+
+bundletool: NOT installed
+  # Per Plan 07-01 evidence already-flagged "missing"; CI installs via:
+  #   curl -sSL https://github.com/google/bundletool/releases/download/1.18.1/bundletool-all-1.18.1.jar -o /usr/local/bin/bundletool.jar
+  # Local: `brew install bundletool` for Task 7 cert verification.
+
+apksigner: NOT installed (locally)
+  # Part of Android SDK Build Tools. Task 7 step 6 requires it for cert SHA-256 verification:
+  #   apksigner verify --print-certs sport-v1.0.0-beta.5.apk
+  # Local: install via Android Studio SDK Manager OR `brew install --cask android-platform-tools`.
+
+# === Workflow runner expectations ===
+# GitHub-hosted ubuntu-latest provides:
+#   - node 20 (workflow setup-node@v4 pins this)
+#   - java 17 (workflow setup-java@v4 pins this; satisfies bundletool 1.18.x Java 11+ requirement per RESEARCH §3 Pitfall 13)
+#   - go 1.22+ (preinstalled at /usr/bin/go)
+#   - curl, unzip, jq, awk, sed, grep, sha256sum (GNU coreutils)
+#   - SOPS_VERSION=3.13.1 (Plan 07-01 Task 5 installs this)
+#   - yq from mikefarah/yq (Plan 07-01 Task 5 installs this)
+# Workflow itself installs (Plan 08-01 Task 4 step 2):
+#   - bundletool 1.18.1 (jar form for version pinning + reproducibility)
+#   - mc (latest MinIO client release)
+
+# === Round-trip discipline (per ADR-0012 Amendment §"Credential diagnostics") ===
+# Plan 08-01 Task 1 + 7 use only the canonical fingerprint form:
+#   printf '%s' "$VAR" | shasum -a 256 | cut -c1-12
+# NEVER xxd / od / hexdump / ${VAR:0:N} / wc -c paired with sample display.
+# SOPS_AGE_KEY_FILE explicitly exported per Rule 5.
