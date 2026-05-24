@@ -74,7 +74,7 @@ stopped_at: |
   v1.0.1 backlog newly populated from ADR-0012 amendment: CI-MASK-LINT,
   SECRETS-LEAK-PLAYBOOK-AMEND, SOPS-VERIFY-HARDENING, CRED-DIAG-DISCIPLINE,
   EAS-PROJECT-INIT, CI-WORKFLOW-REGISTRY-AUDIT.
-last_updated: "2026-05-24T14:00:00.000Z"
+last_updated: "2026-05-24T15:45:00.000Z"
 progress:
   total_phases: 4
   completed_phases: 1
@@ -103,7 +103,7 @@ See: `.planning/MILESTONES.md` (milestone history + per-milestone phase progress
 
 **Milestone:** v1.0 Android Closed Beta — IN PROGRESS, **REDEFINED 2026-05-20** per [ADR-0011](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md) (was 21-phase enterprise-hardening, retired), **AMENDED 2026-05-20 PM** per [ADR-0011 Amendment 3](../docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md#amendment-3-2026-05-20-pm--android-first-launch-ios-deferred) to Android-first launch (iOS deferred to post-Android-beta milestone). Closed beta = solo dev shipping to 5-10 Android friend testers via self-hosted Caddy manifest. Target close: tag `v1.0.0-beta.1` published + 72h watchlist clean (no P0). No formal soak gate.
 **Core value:** Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи.
-**Current focus:** Phase 7 Plan 07-01 **CLOSED 2026-05-24** (commit `5e2a8a6` — 07-01-SUMMARY with Tasks 0-7 closeout). CI-side Stage A' validation complete (CI run 26362961267 ✓ `✔ Using local Android credentials`; EAS build 9e243e59 queued + signed with our `runningecosystem-release` keystore). Plan 07-03 (foreground service + 1h Pixel pocket-walk) remains device-blocked.
+**Current focus:** Phase 7 Plan 07-01 **CLOSED 2026-05-24** (commit `5e2a8a6` — 07-01-SUMMARY with Tasks 0-7 closeout). Plan 07-03 Tasks 1-4 (code) **COMPLETE 2026-05-24** (commits `01d567f` + `9131904` + `79cb767` + `4df65d8`). Plan 07-03 Task 5+6 (device) remain device-blocked. **Stage A' end-to-end empirically proven 2026-05-24 18:43 UTC**: EAS Cloud build `052a2e92-ef79-4f82-aaa2-542f4fb26806` (tag `v1.0.0-beta.4`, commit `f09e729`) finished after 11m 39s; .aab artifact `CZseoc8Nac3ouY86QqPU3.aab` signed with our `runningecosystem-release` keystore (cert SHA-256 preserved). This empirically validates the R8/ProGuard keep rules for closed-beta scope (Mapbox + MMKV + expo-task-manager + Hermes don't strip).
 
 **Brownfield note:** Codebase remains on `feat/cursona-redesign` (35 commits of pre-v1.0 territory-core refactors + Phases 1-5 of v1.0 hardening + Phase 6 + Phase 7 Wave 0-5 on top). Old planning artifacts archived to `.planning/phases/_archive/pre-v1.0-territory-refactors/`. 21-phase scope archive at `.planning/phases/_archive/superseded-21-phase-v1.0/`.
 
@@ -117,10 +117,10 @@ Last completed: **Plan 07-01 SUMMARY** (commit `5e2a8a6`). Plan 07-03 (foregroun
 
 **Pending user-actions (concrete next steps):**
 
-1. **Physical Pixel device** (Plan 07-03 unblocker): 1h pocket-walk acceptance per STAB-01 success criterion 7. Until available, Plan 07-03 stays in "planned" state — the entire Phase 7 closeout sits behind this.
-2. **Optional:** clean up 5 duplicate `android.permissions` entries in `apps/mobile-rn/app.json` left by `eas init` (harmless; Android dedupes at manifest-merge time).
-3. **Optional:** clean up `/tmp/mobile-signing.pre-{rotation,rerotation}.*.yaml` backups via `rm -P` after enough confidence in the rotated keystore.
-4. **Track:** EAS Cloud build [9e243e59](https://expo.dev/accounts/qqweasdf/projects/running-ecosystem-mobile/builds/9e243e59-525f-42d1-89e2-894a62716cba) outcome — if it completes successfully, that's empirical R8 keep-rule validation (rules in `proguard-rules.pro` survive the production R8 pass).
+1. **Physical Pixel device** (Plan 07-03 Task 5+6 unblocker): pre-walk smoke + 1h pocket-walk per STAB-01 success criterion 7. With the signed .aab now in hand, the procedure is: `bundletool build-apks --bundle=<.aab path> --output=<.apks> --mode=universal` → unzip universal.apk → `adb install -r` on Pixel → execute the 3-phase pre-walk smoke per 07-03-PLAN Task 5 → 1h pocket-walk per Task 6's CONTEXT D-18 5-sub-check matrix. Until a Pixel is available, Plan 07-03 sits idle here.
+2. **Optional verification:** `apksigner verify --print-certs` of the universal APK extracted from the .aab should report cert SHA-256 `C6:33:47:6C:63:11:40:3F:5D:19:E2:3A:07:3A:15:F6:EA:BC:D6:40:FB:7F:F5:49:A5:B1:C3:A5:18:30:D7:BB` (matching the locally-captured value in `.planning/phases/06-release-signing/evidence/keystore-sha256.txt`). Requires `brew install bundletool` if not installed.
+3. **Optional:** clean up 5 duplicate `android.permissions` entries in `apps/mobile-rn/app.json` left by `eas init` (harmless; Android dedupes at manifest-merge time).
+4. **Optional:** clean up `/tmp/mobile-signing.pre-{rotation,rerotation}.*.yaml` backups via `rm -P` after enough confidence in the rotated keystore.
 
 Progress: `[████████░░░░░░░░░░░░] 2/6 plans (33%)` — Phase 6 done (Plan 06-01), Phase 7 partial (Plan 07-01 closed; Plan 07-03 device-blocked), Phases 8-9 unplanned. Per ADR-0011 4-phase lean scope.
 
@@ -148,7 +148,8 @@ Plan 02-04 actual: ~95 min spread across 2 sessions (Task 2 docs ~25 min prior s
 
 **Recent Trend:**
 
-- 2026-05-24 — **Plan 07-01 CLOSED.** Stage A' validated end-to-end across 4 CI iterations: 26245775886 (DELETED per ADR-0012) → 26258849328 (Invalid UUID) → 26362716928 (EAS remote credentials) → **26362961267 ✅ `Using local Android credentials`**. Commits: `5a26c68` (`eas init` populates app.json with real projectId `a9f8e26f-bd3f-4296-b67e-21909721132c`) + `8b750cd` (`credentialsSource: "local"` in eas.json + `credentials.json` generated-at-CI-time via `jq -n --arg` with `::add-mask::` protection inherited) + `5e2a8a6` (07-01-SUMMARY). EAS Cloud build 9e243e59 queued + signed with our `runningecosystem-release` keystore (cert SHA-256 preserved → existing-install upgrade path intact).
+- 2026-05-24 PM — **Plan 07-03 Tasks 1-4 SHIPPED + ENOENT-gradlew fix + .aab signed end-to-end.** Stage A' fifth iteration (`v1.0.0-beta.4`, CI run 26365264147, EAS build 052a2e92) finished with a signed .aab. Commits: `01d567f` Task 1 (notification icon + app.json `notification` block + expo-location plugin extension) → `9131904` Task 2 (`src/foreground/notification.ts` + App.tsx subscription; plan-vs-reality drift fix — `useActivityStore` + `totalDistance(points)` derived, not phantom `useSessionStore.duration`) → `79cb767` Task 3 (`src/vendor/oem.ts` + `openOEMSettings.ts` + 17 unit tests, MIUI/One UI intents + generic fallback) → `4df65d8` Task 4 (`src/vendor/AutostartDialog.tsx` + MMKV flag + TrackerStartScreen wiring + 7 unit tests) → `f09e729` ENOENT fix (commit bare android/ tree — 38 files: gradlew + wrapper + manifests + source + res; EAS Cloud needs full bare tree because it does NOT re-run `expo prebuild` when `android/` exists). `.aab` artifact URL: `https://expo.dev/artifacts/eas/CZseoc8Nac3ouY86QqPU3.aab` (signed with our keystore; Plan 07-03 Tasks 5+6 device validation now unblocked once a physical Pixel is available — `apksigner verify --print-certs` of the universal APK should show cert SHA-256 `C6:33:47:6C:63:11:40:3F:5D:19:E2:3A:07:3A:15:F6:EA:BC:D6:40:FB:7F:F5:49:A5:B1:C3:A5:18:30:D7:BB`). 591/591 jest tests + tsc clean.
+- 2026-05-24 — **Plan 07-01 CLOSED.** Stage A' CI-side validated end-to-end across 4 CI iterations: 26245775886 (DELETED per ADR-0012) → 26258849328 (Invalid UUID) → 26362716928 (EAS remote credentials) → **26362961267 ✅ `Using local Android credentials`**. Commits: `5a26c68` (`eas init` populates app.json with real projectId `a9f8e26f-bd3f-4296-b67e-21909721132c`) + `8b750cd` (`credentialsSource: "local"` in eas.json + `credentials.json` generated-at-CI-time via `jq -n --arg` with `::add-mask::` protection inherited) + `5e2a8a6` (07-01-SUMMARY). EAS Cloud build 9e243e59 queued (later failed on EAS Cloud side with `ENOENT: gradlew` — fixed via `f09e729` two hours later; see entry above).
 - 2026-05-23 — **Codebase map refresh** (commit `32cab82`). 4 parallel `gsd-codebase-mapper` agents regenerated all 7 documents in `.planning/codebase/` (2,242 lines total) capturing phases 5-7 additions, ADR-0011 + 4 amendments, ADR-0012 + amendment.
 - 2026-05-23 — **Planning files reconciliation** (commits `4789bde` + `04e43d2`). STATE.md frontmatter updated to lean scope (total_phases 9→4, completed_phases 6→1); PROJECT/REQUIREMENTS/ROADMAP tick-pass + 5 new ADR-0012 v1.0.1 backlog items added.
 - 2026-05-22 — **P0 RE-INCIDENT closed (self-inflicted chat-dump leak)**. During post-rotation verification I (executor) dumped the freshly-rotated keystore_password into agent chat via `xxd | tail -3` while investigating a phantom fingerprint discrepancy (root cause: `yq -r` adds trailing newline → pipeline `shasum` hashes `value\n` while capture-then-`printf '%s'` hashes `value`; both valid, neither corruption). Re-rotation commit `21b992c`; ADR-0012 amendment commit `0a206a0` codifies 4 credential-diagnostics discipline rules + v1.0.1 backlog item `CRED-DIAG-DISCIPLINE`. Original `e54d3cfbb4ab` + interim `8ff4b15a2e2c` fingerprints both destroyed; current live fingerprint held only in SOPS bundle.
@@ -264,24 +265,51 @@ Stopped at: Plan 07-01 Task 6 awaiting user-action `eas init` to unblock the fin
 
 Resume file: `.planning/phases/07-release-builds-mobile-stability/07-01-PLAN.md` (Tasks 0-5 done; Task 6 = Stage A' R8 device smoke; Task 7 = closeout SUMMARY).
 
-**User-action checkpoint (Plan 07-01 Task 6) — required to close Plan 07-01:**
+**User-action checkpoint (Plan 07-03 Tasks 5 + 6) — required to close Phase 7:**
 
-1. From the project root:
-   ```bash
-   cd apps/mobile-rn
-   eas login                  # opens browser; log in as your Expo account
-   eas init                   # binds project, writes real UUID into app.json's extra.eas.projectId
-   ```
-   Or non-interactive:
-   ```bash
-   export EXPO_TOKEN=...      # paste your Expo token (NEVER in chat)
-   eas init --non-interactive
-   ```
-2. Confirm `apps/mobile-rn/app.json` now has a real UUID (not `TODO-eas-project-id-after-eas-init`).
-3. Resume via `/gsd-execute-phase 7` — the executor will: commit the app.json change, tag `v1.0.0-beta.2` against the feat HEAD, push, watch CI run under patched workflow + rotated credentials. On EAS build success, validate R8 keeps (Mapbox / MMKV / expo-task-manager / Hermes), then write `07-01-SUMMARY.md` and mark Plan 07-01 complete.
-4. After Plan 07-01 closes: Plan 07-03 remains pending physical Pixel device for the 1h pocket-walk; consider parking Phase 7 there and proceeding to `/gsd-discuss-phase 8` (Closed-beta distribution — Caddy manifest + signed-URL APKs) so the launch path doesn't bottleneck on device availability.
+Plan 07-01 + the code portion of Plan 07-03 are closed. Remaining work needs a physical Pixel (or any arm64-v8a Android flagship):
 
-**Next action:** `eas init` (user-action) → `/gsd-execute-phase 7` (executor closes Plan 07-01).
+1. **Task 5 — recoverLast pre-walk smoke (~10 min):**
+   ```bash
+   # Install bundletool if not present
+   brew install bundletool   # one-time
+
+   # Download the signed .aab
+   curl -L -o /tmp/sport-v1.0.0-beta.4.aab \
+     'https://expo.dev/artifacts/eas/CZseoc8Nac3ouY86QqPU3.aab'
+
+   # Extract universal APK
+   bundletool build-apks \
+     --bundle=/tmp/sport-v1.0.0-beta.4.aab \
+     --output=/tmp/sport-v1.0.0-beta.4.apks \
+     --mode=universal
+   unzip -p /tmp/sport-v1.0.0-beta.4.apks universal.apk > /tmp/sport-v1.0.0-beta.4.apk
+
+   # Optional: verify cert SHA-256 (proof of signing identity end-to-end)
+   apksigner verify --print-certs /tmp/sport-v1.0.0-beta.4.apk
+
+   # Install on tethered Pixel
+   adb install -r /tmp/sport-v1.0.0-beta.4.apk
+
+   # Run 3-phase pre-walk smoke per 07-03-PLAN Task 5:
+   # 1) Launch app → start session → wait 2 min recording
+   # 2) `adb shell am force-stop com.runningecosystem.mobile`
+   # 3) Relaunch → verify recoverLast() restored session + points + adaptive sampling resumed
+   # Record outcome in evidence/recoverLast-pre-walk-attestation.txt
+   ```
+2. **Task 6 — 1h Pixel pocket-walk (LOAD-BEARING for Phase 8/9, ~60 min walking):**
+   Per CONTEXT D-18 5-sub-check matrix in 07-03-PLAN:
+   - ≥95% expected GPS points (~1710 of ~1800 at 0.5Hz)
+   - Foreground service notification visible at end (RU template Task 2)
+   - Battery drain <15%
+   - Mid-walk `adb shell am force-stop` at 30-min mark → `recoverLast()` survived
+   - Map renders post-walk on the recorded track
+   - Record outcome in `evidence/pocket-walk-attestation.txt`
+3. **Task 7 — 07-03-SUMMARY** runs only after Tasks 5+6 attestation files exist. After that, Phase 7 marks complete in ROADMAP.
+
+**Parallel-path option:** `/gsd-discuss-phase 8` (Closed-beta distribution — Caddy manifest + signed-URL APKs). Phase 8 depends on Phase 7 per ROADMAP, but Plan 07-01 is closed and Plan 07-03 is only Pixel-blocked — so Phase 8 planning can happen now and execute when Plan 07-03 closes.
+
+**Next action:** `eas init` complete; .aab in hand. Either acquire Pixel + run Tasks 5+6, OR `/gsd-discuss-phase 8` in parallel.
 
 ## Artifacts Created (cumulative — high-level; see `.planning/codebase/` for full inventory)
 
