@@ -70,7 +70,7 @@ jobs:
         working-directory: apps/mobile-rn
         run: npm ci
 
-      - name: Create .env (public backend URLs)
+      - name: Create .env (public backend URLs + Mapbox token)
         # apiClient.ts reads EXPO_PUBLIC_IDENTITY_URL / EXPO_PUBLIC_SYNC_URL at
         # bundle time via @expo/cli export:embed. Without them, fallback is
         # http://10.0.2.2:8081 (Android emulator loopback) which doesn't
@@ -78,22 +78,41 @@ jobs:
         # сервером" during registration. Backend host is sslip.io public
         # (also shown in SettingsScreen "Backend" row); not a secret.
         #
-        # Mapbox tokens deliberately omitted: pk.* runtime token is cert-pinned
-        # per ADR-0006 and won't match this debug build's cert SHA-256 — map
-        # tiles will be blank. Re-enable separately when needed (either via
-        # unrestricted dev token in a GitHub secret, or by adding the debug
-        # keystore cert SHA-256 to the Mapbox dashboard allowlist).
+        # Mapbox pk.* token injected from GH Secret EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN.
+        # Without it, MapView/MapSurface inflation throws hard ("Using MapView ...
+        # requires providing a valid access token"). The pk.* token IS public-
+        # designed for client embedding per Mapbox docs, but per ADR-0006 it's
+        # still SOPS/secret-stored to enable cert-restrict revocation control.
+        # ::add-mask:: ensures the value never appears verbatim in CI logs.
+        #
+        # Note: if the production pk.* token has cert SHA-256 restriction that
+        # doesn't include the debug keystore cert SHA-256 (FA:C6:17:45:DC:09:
+        # 03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:
+        # 03:3B:9C), tile loads will return 401 → blank map. Map will NOT crash,
+        # but won't render. Fix: add the debug-keystore SHA-256 to Mapbox
+        # dashboard token allowlist (one-time user action).
         #
         # EXPO_PUBLIC_UPDATE_MANIFEST_URL left unset on purpose — ADR-0011
         # Amendment 5 gate stays closed (state:'disabled' early return).
         working-directory: apps/mobile-rn
+        env:
+          EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN }}
         run: |
-          cat > .env <<'EOF'
+          if [ -z "$EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN" ]; then
+            echo "::error::EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN secret not set; MapView will crash on inflate"
+            exit 1
+          fi
+          # ::add-mask:: was set by GH Actions when EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN
+          # was read from secrets — value is masked automatically in any log/output.
+          cat > .env <<EOF
           EXPO_PUBLIC_IDENTITY_URL=https://148-253-214-156.sslip.io
           EXPO_PUBLIC_SYNC_URL=https://148-253-214-156.sslip.io
+          EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=$EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN
           EOF
-          echo "Created .env:"
-          cat .env
+          echo "Created .env (Mapbox token masked):"
+          # Print first two lines verbatim, mask the third
+          head -2 .env
+          echo "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=<masked, length=$(echo -n "$EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN" | wc -c)>"
 
       - name: Build debug APK (universal ABI + JS bundle embedded)
         working-directory: apps/mobile-rn/android
