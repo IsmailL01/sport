@@ -1,4 +1,6 @@
-# Phase 7 Plan 07-01 Task 5 — tag-triggered Android release build pipeline.
+# Tag-triggered Android release + distribution pipeline.
+#
+# Phase 7 Plan 07-01 Task 5 + Phase 8 Plan 08-01 Task 4 (this file).
 #
 # Flow:
 #   1. Tag push (v1.0.0-beta.* | v1.0.0-rc.*)
@@ -9,23 +11,34 @@
 #      emit ::add-mask:: directives BEFORE writing to $GITHUB_ENV (P0 incident
 #      response 2026-05-22 — bare `echo "X=$value" >> $GITHUB_ENV` does NOT
 #      auto-mask; only `${{ secrets.X }}` references do); forward to $GITHUB_ENV
-#   5. npm ci (apps/mobile-rn)
-#   6. Install eas-cli explicitly via npm (replaces expo/expo-github-action — the
-#      `npx eas` invocation failed with "npm error could not determine executable
-#      to run" in run 26245775886; root cause: relying on transient PATH from
-#      action setup instead of an explicit global install)
-#   7. `eas build --platform android --profile production --non-interactive
-#      --no-wait` (Path A: eas.json env block + $GITHUB_ENV propagation lets
-#      EAS Cloud builder env honor RUNNING_ECO_RELEASE_* gradle properties).
-#      EXPO_TOKEN passed via step env from `secrets.EXPO_TOKEN`.
+#   5. npm ci (apps/mobile-rn) + install eas-cli (explicit npm install -g)
+#   6. eas build (block until finish; emit JSON with artifactUrl + versionCode)
+#   7. PHASE 8: Install bundletool + mc; download .aab; extract universal APK
+#   8. PHASE 8: Decrypt manifest-signing Ed25519 keypair from SOPS
+#      (.secrets/prod/manifest-signing.yaml; ::add-mask:: on private value)
+#   9. PHASE 8: scripts/release-distribute.sh — upload APK to MinIO
+#      android-releases (private; 24h presigned URL), build canonical manifest,
+#      sign with Ed25519, upload to android-manifest (public-read; LAST step
+#      for atomicity per CONTEXT D-21)
 #
 # Pinned versions:
 #   - actions/checkout@v4, actions/setup-node@v4, actions/setup-java@v4
 #   - eas-cli installed via `npm install -g eas-cli` (latest at run-time)
-#   - SOPS_VERSION=3.13.1 (matches dev workstation; min ≥3.11 per evidence/tool-versions.txt)
+#   - SOPS_VERSION=3.13.1 (matches dev workstation; min ≥3.11)
+#   - bundletool 1.18.1 (Plan 08-01 Task 4; pinned via release jar)
+#   - mc — latest from min.io/client/mc/release/linux-amd64/mc
 #
-# See docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md for incident
-# context behind the ::add-mask:: + eas-cli explicit-install changes.
+# Required secrets:
+#   - EXPO_TOKEN — Expo authentication for eas build
+#   - SOPS_AGE_KEY_CI — CI age private key (lifted in Plan 07-01)
+#   - MINIO_RELEASES_ACCESS_KEY + MINIO_RELEASES_SECRET_KEY — service-account
+#     creds for android-releases + android-manifest buckets (Plan 08-01 Task 2)
+#
+# See:
+#   - docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md — incident
+#     context behind the ::add-mask:: + eas-cli explicit-install changes
+#   - .planning/phases/08-closed-beta-distribution/08-CONTEXT.md — Phase 8
+#     distribution architecture (D-01..D-25)
 
 name: Android release build
 
@@ -122,6 +135,7 @@ jobs:
         run: npm install -g eas-cli
 
       - name: Trigger EAS build
+        id: eas
         working-directory: apps/mobile-rn
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -130,9 +144,82 @@ jobs:
           RUNNING_ECO_RELEASE_KEY_PASSWORD: ${{ env.RUNNING_ECO_RELEASE_KEY_PASSWORD }}
           RUNNING_ECO_RELEASE_KEY_ALIAS: runningecosystem-release
         run: |
+          # Plan 08-01 Task 4: drop --no-wait (Pitfall 16) so the workflow
+          # blocks until EAS Cloud finishes. Total wall-clock ~15 min;
+          # acceptable for tag-driven cadence. --json mode emits build details
+          # to stdout once finished — capture artifactUrl + versionCode.
           eas build \
             --platform android \
             --profile production \
             --non-interactive \
-            --no-wait \
-            --message "Phase 7 release — ${GITHUB_REF_NAME}"
+            --message "Phase 8 release — ${GITHUB_REF_NAME}" \
+            --json > /tmp/eas-build.json
+          cat /tmp/eas-build.json | jq '.[0] | {id, status, versionCode, artifactUrl: .artifacts.applicationArchiveUrl}'
+          ARTIFACT_URL=$(jq -r '.[0].artifacts.applicationArchiveUrl' /tmp/eas-build.json)
+          VERSION_CODE=$(jq -r '.[0].appVersion // empty' /tmp/eas-build.json)
+          if [ -z "$ARTIFACT_URL" ] || [ "$ARTIFACT_URL" = "null" ]; then
+            echo "::error::EAS build did not produce an artifactUrl"
+            exit 1
+          fi
+          # versionCode may be at .[0].versionCode OR .[0].appBuildVersion; try both
+          if [ -z "$VERSION_CODE" ] || [ "$VERSION_CODE" = "null" ]; then
+            VERSION_CODE=$(jq -r '.[0].versionCode // .[0].appBuildVersion // 1' /tmp/eas-build.json)
+          fi
+          echo "artifact_url=$ARTIFACT_URL" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      # ↓↓↓ Plan 08-01 Task 4 distribution-pipeline extension ↓↓↓
+      # See .planning/phases/08-closed-beta-distribution/08-CONTEXT.md D-14 + D-15.
+      # Note on Pitfall 13 (bundletool needs Java 11+): the setup-java@v4 step
+      # above already provisions JDK 17 (Plan 07-01); the bundletool 1.18.1
+      # invocation below inherits that.
+
+      - name: Install bundletool + mc
+        run: |
+          # bundletool 1.18.1 (jar form for version pinning + reproducibility)
+          BUNDLETOOL_VERSION=1.18.1
+          sudo curl -sSL \
+            "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar" \
+            -o /usr/local/bin/bundletool.jar
+          printf '#!/bin/sh\nexec java -jar /usr/local/bin/bundletool.jar "$@"\n' \
+            | sudo tee /usr/local/bin/bundletool >/dev/null
+          sudo chmod +x /usr/local/bin/bundletool
+          bundletool version
+
+          # mc (MinIO client) latest release
+          sudo curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
+          sudo chmod +x /usr/local/bin/mc
+          mc --version | head -3
+
+      - name: Download .aab + extract universal APK
+        run: |
+          curl -L -o /tmp/build.aab "${{ steps.eas.outputs.artifact_url }}"
+          ls -la /tmp/build.aab
+          bundletool build-apks \
+            --bundle=/tmp/build.aab \
+            --output=/tmp/build.apks \
+            --mode=universal
+          unzip -p /tmp/build.apks universal.apk > /tmp/build.apk
+          ls -la /tmp/build.apk
+          echo "APK sha256: $(sha256sum /tmp/build.apk | awk '{print $1}')"
+
+      - name: Decrypt manifest-signing key
+        run: |
+          # Same ::add-mask:: discipline as the mobile-signing step (ADR-0012).
+          # Private key value is masked BEFORE the $GITHUB_ENV write. Public key
+          # is non-secret (also embedded in mobile app code); no mask needed.
+          MANIFEST_SIGNING_PRIVATE=$(sops -d .secrets/prod/manifest-signing.yaml | yq -r '.manifest_signing.ed25519_private_base64')
+          MANIFEST_SIGNING_PUBLIC=$(sops  -d .secrets/prod/manifest-signing.yaml | yq -r '.manifest_signing.ed25519_public_base64')
+          echo "::add-mask::$MANIFEST_SIGNING_PRIVATE"
+          echo "MANIFEST_SIGNING_PRIVATE=$MANIFEST_SIGNING_PRIVATE" >> "$GITHUB_ENV"
+          echo "MANIFEST_SIGNING_PUBLIC=$MANIFEST_SIGNING_PUBLIC" >> "$GITHUB_ENV"
+
+      - name: Distribute release (upload APK + sign manifest + publish)
+        env:
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_RELEASES_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_RELEASES_SECRET_KEY }}
+        run: |
+          bash scripts/release-distribute.sh \
+            /tmp/build.apk \
+            "${GITHUB_REF_NAME}" \
+            "${{ steps.eas.outputs.version_code }}"
