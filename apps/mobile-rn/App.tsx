@@ -28,6 +28,7 @@ import { ToastProvider } from './src/ui/Toast';
 import { ForceUpdateScreen } from './src/ui/screens/ForceUpdateScreen';
 import { useFeatureFlagsStore } from './src/state/featureflags';
 import { subscribeToRecordingTick } from './src/foreground/notification';
+import { useUpdateCheckOnForeground } from './src/update/useUpdateCheckOnForeground';
 
 // === Module-level side effects ===
 
@@ -84,6 +85,13 @@ export default function App() {
     const unsubscribe = subscribeToRecordingTick();
     return () => unsubscribe();
   }, []);
+
+  // Phase 8 / Plan 08-01 Task 5: manifest-driven update flow. Subscribes to
+  // AppState 'active' transitions; on each one (subject to a 6h throttle),
+  // fetches manifest.json from MinIO + verifies Ed25519 signature + dispatches
+  // to: silent (no update) / non-blocking UpdateBanner (optional) / REL-02
+  // ForceUpdateScreen (force). See src/update/manifestCheck.ts.
+  useUpdateCheckOnForeground();
 
   return (
     <ErrorBoundary>

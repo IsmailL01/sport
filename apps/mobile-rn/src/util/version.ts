@@ -36,3 +36,20 @@ const headerValue: string = `${semver} (${build})`;
 export function getClientVersionHeader(): string {
   return headerValue;
 }
+
+/**
+ * Bare semver of the installed binary (e.g., "1.0.0-beta.5"). Phase 8 update
+ * flow uses this for version comparison via semverLite. Memoized.
+ */
+export function getInstalledVersion(): string {
+  return semver;
+}
+
+/**
+ * Bare versionCode integer of the installed binary. Phase 8 update flow uses
+ * this for manifest version_code mirroring + debug surfaces.
+ */
+export function getInstalledBuildNumber(): number {
+  const n = Number(build);
+  return Number.isFinite(n) ? n : 0;
+}

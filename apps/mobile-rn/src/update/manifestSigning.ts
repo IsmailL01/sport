@@ -60,15 +60,28 @@ export function base64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-export function verifyManifestSignature(manifest: {
-  signature: string;
-  [k: string]: unknown;
-}): boolean {
+/**
+ * Verify the Ed25519 signature on a manifest against the embedded production
+ * public key (or an override for testing).
+ *
+ * Production callers omit `pubkeyBase64`. Tests pass a different keypair's
+ * pubkey to exercise the verification path without needing the production
+ * private key. (Mocking `MANIFEST_PUBKEY_BASE64` via `jest.mock` does not work
+ * because `verify` closes over the local const at module load, not the
+ * re-exported binding.)
+ */
+export function verifyManifestSignature(
+  manifest: {
+    signature: string;
+    [k: string]: unknown;
+  },
+  pubkeyBase64: string = MANIFEST_PUBKEY_BASE64,
+): boolean {
   try {
     const payload = canonicalJsonWithoutSignature(manifest);
     const payloadBytes = new TextEncoder().encode(payload);
     const sigBytes = base64ToBytes(manifest.signature);
-    const pubBytes = base64ToBytes(MANIFEST_PUBKEY_BASE64);
+    const pubBytes = base64ToBytes(pubkeyBase64);
     if (sigBytes.length !== 64) return false;
     if (pubBytes.length !== 32) return false;
     return ed25519.verify(sigBytes, payloadBytes, pubBytes);
