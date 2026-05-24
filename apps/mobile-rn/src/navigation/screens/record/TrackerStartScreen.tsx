@@ -29,6 +29,7 @@ import { useSettingsStore } from '../../../state/settings';
 import { aggregateSessions } from '../../../domain/stats';
 import { formatDistance, formatDuration, formatPace } from '../../../ui/format';
 import { AutostartDialog } from '../../../vendor/AutostartDialog';
+import { UpdateBanner } from '../../../update/UpdateBanner';
 import type { RecordStackParamList } from '../../types';
 
 type PermStatus = 'pending' | 'granted' | 'denied';
@@ -160,6 +161,11 @@ export function TrackerStartScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
+      {/* Phase 8 / Plan 08-01 Task 6: non-blocking update banner. Renders only
+          when useUpdateBannerStore reports an available optional update + the
+          suppression window has expired. Force-update path is handled by REL-02
+          ForceUpdateScreen mounted at App.tsx root (no banner needed). */}
+      <UpdateBanner />
       {/* Map preview */}
       <View style={{ flex: 1, backgroundColor: t.surface3 }}>
         {perm === 'granted' ? (

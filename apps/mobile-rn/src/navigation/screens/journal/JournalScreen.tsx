@@ -20,6 +20,7 @@ import { useHistoryStore } from '../../../state/history';
 import { formatArea, formatDistance, formatDuration, formatPace } from '../../../ui/format';
 import type { Session } from '../../../domain/types';
 import { aggregateSessions, type StatsPeriod } from '../../../domain/stats';
+import { UpdateBanner } from '../../../update/UpdateBanner';
 import type { JournalStackParamList } from '../../types';
 
 type Nav = NativeStackNavigationProp<JournalStackParamList, 'JournalList'>;
@@ -53,6 +54,9 @@ export function JournalScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
+      {/* Phase 8 / Plan 08-01 Task 6: non-blocking update banner. See
+          src/update/UpdateBanner.tsx for behavior. */}
+      <UpdateBanner />
       {/* Header */}
       <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -15,15 +15,48 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Card, Icon, useTheme, useThemeStore, useTweak } from '../../../design';
 import { useAuthStore } from '../../../state/auth';
 import { useSettingsStore } from '../../../state/settings';
+import { useToast } from '../../../ui/Toast';
+import { checkForUpdate } from '../../../update/manifestCheck';
+import { useUpdateBannerStore } from '../../../update/updateBannerStore';
+import { useUpdateCheckStore } from '../../../update/updateCheckStore';
 import type { MeStackParamList } from '../../types';
 
 type Nav = NativeStackNavigationProp<MeStackParamList, 'Settings'>;
 
 const APP_VERSION = '0.9';
 
+/** Format an epoch-ms timestamp as RU relative time (Plan 08-01 D-12). */
+function formatRelativeTimeRU(ts: number | null): string {
+  if (ts === null) return 'никогда';
+  const diffS = Math.floor((Date.now() - ts) / 1000);
+  if (diffS < 30) return 'только что';
+  if (diffS < 60) return `${diffS} сек назад`;
+  const m = Math.floor(diffS / 60);
+  if (m < 60) return `${m} мин назад`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} ч назад`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return 'вчера';
+  if (d < 30) return `${d} дн назад`;
+  return new Date(ts).toLocaleDateString('ru-RU');
+}
+
 export function SettingsScreen() {
   const t = useTheme();
   const nav = useNavigation<Nav>();
+  const toast = useToast();
+  const lastCheckedAt = useUpdateCheckStore((s) => s.lastCheckedAt);
+
+  const handleCheckUpdate = async (): Promise<void> => {
+    const r = await checkForUpdate({ force: true });
+    if (r.state === 'no-update') {
+      toast.show('У вас актуальная версия');
+    } else if (r.state === 'failed') {
+      toast.show('Не удалось проверить обновления');
+    }
+    // banner-shown / force-required: the respective UI surfaces (UpdateBanner /
+    // ForceUpdateScreen) handle their own rendering; no toast needed.
+  };
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const units = useSettingsStore((s) => s.units);
@@ -268,6 +301,30 @@ export function SettingsScreen() {
 
       {/* About */}
       <Section title="О приложении" t={t}>
+        {/* Phase 8 / Plan 08-01 Task 6: manual update check. Fires
+            checkForUpdate({force:true}); banner/force-update Modal handle
+            their own surfacing. Toast covers no-update + failed cases. */}
+        <Pressable
+          onPress={() => void handleCheckUpdate()}
+          accessibilityRole="button"
+          accessibilityLabel="Проверить обновления"
+        >
+          <View
+            style={{
+              paddingVertical: 12,
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: t.text2, fontSize: 14 * t.fontScale, fontFamily: t.font }}>
+              Проверить обновления
+            </Text>
+            <Text style={{ color: t.text3, fontSize: 12 * t.fontScale, fontFamily: t.font }}>
+              {formatRelativeTimeRU(lastCheckedAt)}
+            </Text>
+          </View>
+        </Pressable>
         <Row label="Версия" value={APP_VERSION} t={t} />
         <Row label="Платформа" value="React Native (Expo)" t={t} />
         <Row label="Backend" value="148-253-214-156.sslip.io" t={t} mono />
