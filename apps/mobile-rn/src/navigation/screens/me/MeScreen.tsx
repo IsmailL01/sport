@@ -22,6 +22,7 @@ import { computeStreak } from '../../../domain/streak';
 import { useAuthStore } from '../../../state/auth';
 import { useHistoryStore } from '../../../state/history';
 import { useXpStore } from '../../../modules/gamification';
+import { useFriendsStore } from '../../../modules/friends';
 import { useWalletStore } from '../../../state/wallet';
 import { aggregateSessions } from '../../../domain/stats';
 import { formatDistance, formatDuration } from '../../../ui/format';
@@ -45,12 +46,17 @@ export function MeScreen() {
   const xpToNext = useXpStore((s) => s.xpToNextGrade);
   const walletBalance = useWalletStore((s) => s.balance);
 
+  // Phase 10 / ADR-0011 Amendment 6 — pull friend lists for tab badge + Me-row preview.
+  const refreshFriends = useFriendsStore((s) => s.refresh);
+  const incomingFriendCount = useFriendsStore((s) => s.incoming.length);
+
   useEffect(() => {
     refreshHistory();
     if (user !== null) {
       void xpRefresh(user.id);
+      void refreshFriends();
     }
-  }, [refreshHistory, xpRefresh, user]);
+  }, [refreshHistory, xpRefresh, refreshFriends, user]);
 
   const totals = useMemo(() => aggregateSessions(sessions, 'all'), [sessions]);
 
@@ -240,6 +246,18 @@ export function MeScreen() {
             t={t}
           />
           <ActionRow
+            icon="addFriend"
+            label="Заявки в друзья"
+            sub={
+              incomingFriendCount > 0
+                ? `${incomingFriendCount} ${incomingFriendCount === 1 ? 'новая заявка' : 'новых заявок'}`
+                : 'входящие и исходящие'
+            }
+            badge={incomingFriendCount}
+            onPress={() => nav.navigate('FriendRequests')}
+            t={t}
+          />
+          <ActionRow
             icon="settings"
             label="Настройки"
             sub="тема, единицы, аккаунт"
@@ -363,6 +381,7 @@ function ActionRow({
   label,
   sub,
   danger,
+  badge,
   onPress,
   t,
 }: {
@@ -370,6 +389,8 @@ function ActionRow({
   label: string;
   sub: string;
   danger?: boolean;
+  /** Optional red-circle badge on the right with a count (e.g. unread items). */
+  badge?: number;
   onPress: () => void;
   t: ReturnType<typeof useTheme>;
 }) {
@@ -400,6 +421,24 @@ function ActionRow({
                 </Text>
               ) : null}
             </View>
+            {badge !== undefined && badge > 0 ? (
+              <View
+                style={{
+                  minWidth: 22,
+                  height: 22,
+                  paddingHorizontal: 7,
+                  borderRadius: 11,
+                  backgroundColor: t.error,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 4,
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>
+                  {badge > 99 ? '99+' : badge}
+                </Text>
+              </View>
+            ) : null}
             {!danger ? <Icon name="chevron" size={18} color={t.text3} /> : null}
           </View>
         </Card>

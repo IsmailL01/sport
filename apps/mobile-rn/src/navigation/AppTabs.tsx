@@ -8,6 +8,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { TabBar, type TabId } from '../design';
 import { useChatsStore } from '../state/social/useChatsStore';
+import { FriendRequestsInboxScreen, useFriendsStore } from '../modules/friends';
 
 // Record stack — Phase M6 real screens.
 import { TrackerStartScreen } from './screens/record/TrackerStartScreen';
@@ -105,6 +106,8 @@ function MeStackNav() {
       <MStack.Screen name="Wallet" component={WalletScreen} />
       <MStack.Screen name="Shop" component={ShopScreen} />
       <MStack.Screen name="RegionPicker" component={RegionPickerScreen} />
+      {/* Phase 10 / ADR-0011 Amendment 6 — friend-request inbox. */}
+      <MStack.Screen name="FriendRequests" component={FriendRequestsInboxScreen} />
     </MStack.Navigator>
   );
 }
@@ -135,10 +138,12 @@ function CursonaTabBar({ state, navigation }: BottomTabBarProps) {
   const totalUnread = useChatsStore((s) =>
     s.chats.reduce((acc, c) => acc + (c.unreadCount ?? 0), 0),
   );
+  // Phase 10 / ADR-0011 Amendment 6 — incoming friend-request count on Me tab.
+  const incomingFriendCount = useFriendsStore((s) => s.incoming.length);
   return (
     <TabBar
       active={activeId}
-      badges={{ chats: totalUnread }}
+      badges={{ chats: totalUnread, me: incomingFriendCount }}
       onTab={(id) => {
         const target = TABID_TO_ROUTE[id];
         navigation.navigate(target as never);
