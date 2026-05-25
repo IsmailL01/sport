@@ -21,6 +21,8 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { Avatar, ChatRowSkeleton, Icon, useTheme } from '../../../design';
+import { sendFriendRequest } from '../../../modules/friends';
+import { ChatsFriendshipError } from '../../../state/social/useChatsStore';
 import { formatChatTime } from '../../../util/timeFormat';
 import { lastMessagePreview, type Chat, type SocialUser } from '../../../domain/social';
 import { useChatsStore } from '../../../state/social/useChatsStore';
@@ -134,6 +136,36 @@ export function ChatsListScreen() {
       setQuery('');
       nav.navigate('Chat', { chatId: chat.id });
     } catch (e) {
+      // Phase 10 / ADR-0011 Amendment 6 — DM gated on accepted friendship.
+      // Offer to send the friend request inline so the user can resume after
+      // acceptance without leaving this screen.
+      if (e instanceof ChatsFriendshipError) {
+        Alert.alert(
+          'Сначала заявку в друзья',
+          'Чтобы написать этому человеку, отправь ему заявку в друзья. После принятия чат станет доступен.',
+          [
+            { text: 'Отмена', style: 'cancel' },
+            {
+              text: 'Отправить заявку',
+              onPress: async () => {
+                try {
+                  await sendFriendRequest(peerId);
+                  Alert.alert(
+                    'Заявка отправлена',
+                    'Чат откроется когда заявку примут.',
+                  );
+                } catch (err) {
+                  Alert.alert(
+                    'Не удалось отправить заявку',
+                    err instanceof Error ? err.message : 'Попробуй ещё раз',
+                  );
+                }
+              },
+            },
+          ],
+        );
+        return;
+      }
       Alert.alert('Ошибка', String(e));
     }
   };

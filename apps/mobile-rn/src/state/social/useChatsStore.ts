@@ -9,6 +9,20 @@ import {
   bumpUnread, clearUnread, getChat, listChats, upsertChat, upsertUser,
 } from '../../storage/socialRepository';
 
+/**
+ * Thrown by createOrFindDM when backend returns 403 + requires_friendship.
+ * Phase 10 / ADR-0011 Amendment 6. UI should prompt user to send a friend
+ * request before retrying DM creation.
+ */
+export class ChatsFriendshipError extends Error {
+  peerUserId: string;
+  constructor(peerUserId: string) {
+    super('DM requires accepted friend-request between users');
+    this.name = 'ChatsFriendshipError';
+    this.peerUserId = peerUserId;
+  }
+}
+
 type ChatsStore = {
   chats: Chat[];
   loading: boolean;
@@ -103,7 +117,25 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
         method: 'POST',
         body: JSON.stringify({ type: 'dm', peerId: peerUserId }),
       });
-      if (!resp.ok) return null;
+      if (!resp.ok) {
+        // Phase 10 / ADR-0011 Amendment 6 — friendship gate.
+        // Backend returns 403 + { error: "requires_friendship", ... } when
+        // sender hasn't established an accepted friend-request with peer.
+        // Surface this as a specific error so UI can prompt "send request".
+        if (resp.status === 403) {
+          try {
+            const body = (await resp.json()) as { error?: string };
+            if (body.error === 'requires_friendship') {
+              throw new ChatsFriendshipError(peerUserId);
+            }
+          } catch (e) {
+            if (e instanceof ChatsFriendshipError) throw e;
+            // Body parse failed but it's still a 403 — treat as friendship.
+            throw new ChatsFriendshipError(peerUserId);
+          }
+        }
+        return null;
+      }
       const s = (await resp.json()) as ServerChat;
       const c = fromServer(s, peerUserId);
       upsertChat(c);
@@ -122,6 +154,7 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
       set({ chats: listChats() });
       return c;
     } catch (e) {
+      if (e instanceof ChatsFriendshipError) throw e;
       console.warn('[chats] createOrFindDM failed', e);
       return null;
     }
