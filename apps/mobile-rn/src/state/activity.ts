@@ -120,12 +120,23 @@ const pipeline = createDefaultPipeline({
   },
 });
 
-const pauseDetector = new PauseDetector((event: PauseEvent) => {
-  manager.setPaused(event.type === 'auto-paused');
-  if (__DEV__) {
-    console.log(`[pause] ${event.type}`);
-  }
-});
+const pauseDetector = new PauseDetector(
+  (event: PauseEvent) => {
+    manager.setPaused(event.type === 'auto-paused');
+    if (__DEV__) {
+      console.log(`[pause] ${event.type}`);
+    }
+  },
+  0.5, // pauseSpeedMs (default)
+  5_000, // pauseWindowMs (default)
+  1.5, // resumeSpeedMs (default)
+  2_000, // resumeWindowMs (default)
+  // 2026-05-25: warmup gate — suppress auto-paused during GPS-lock period at
+  // session start. Symptom user reported: "ПРОДОЛЖИТЬ" button visible right
+  // after pressing СТАРТ because runner is stationary while satellites lock.
+  // Exits warmup on EITHER 10s elapsed OR 2m moved since first observed point.
+  { warmupMs: 10_000, warmupMeters: 2 },
+);
 
 const closureDetector = new ClosureDetector((event) => {
   manager.setClosureFired();
