@@ -106,7 +106,8 @@ func run() error {
 	blockRepo := postgres.NewBlockRepo(pool)
 	reportRepo := postgres.NewReportRepo(pool)
 	auditRepo := postgres.NewAuditRepo(pool)
-	svc := service.New(profRepo, followRepo, blockRepo, reportRepo, auditRepo)
+	friendReqRepo := postgres.NewFriendRequestRepo(pool)
+	svc := service.New(profRepo, followRepo, blockRepo, reportRepo, auditRepo, friendReqRepo)
 
 	limiter, err := ratelimit.New(redisURL)
 	if err != nil {

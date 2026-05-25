@@ -80,6 +80,16 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("DELETE /blocks/{user_id}", h.requireAuth(h.unblock))
 	mux.HandleFunc("GET /blocks/me", h.requireAuth(h.listBlocks))
 
+	// Phase 10 / FRIEND-REQUEST-FLOW (ADR-0011 Amendment 6)
+	mux.HandleFunc("POST /friend-requests/{user_id}", h.requireAuth(h.sendFriendRequest))
+	mux.HandleFunc("GET /friend-requests/incoming", h.requireAuth(h.listIncomingFriendRequests))
+	mux.HandleFunc("GET /friend-requests/outgoing", h.requireAuth(h.listOutgoingFriendRequests))
+	mux.HandleFunc("POST /friend-requests/{id}/accept", h.requireAuth(h.acceptFriendRequest))
+	mux.HandleFunc("POST /friend-requests/{id}/reject", h.requireAuth(h.rejectFriendRequest))
+	mux.HandleFunc("DELETE /friend-requests/{id}", h.requireAuth(h.cancelFriendRequest))
+	mux.HandleFunc("GET /friends", h.requireAuth(h.listFriends))
+	mux.HandleFunc("GET /friends/check/{user_id}", h.requireAuth(h.checkAreFriends))
+
 	// Phase E: модерация — reports + admin queue.
 	mux.HandleFunc("POST /reports", h.requireAuth(h.createReport))
 	mux.HandleFunc("GET /reports/me", h.requireAuth(h.myReports))
@@ -126,6 +136,9 @@ type relationDTO struct {
 	IsBlocked   bool `json:"isBlocked"`
 	IsBlockedBy bool `json:"isBlockedBy"`
 	CanDM       bool `json:"canDm"`
+	// 2026-05-25 Phase 10 / ADR-0011 Amendment 6: friend-request UI state.
+	FriendStatus    string `json:"friendStatus"`              // none | pending_outgoing | pending_incoming | accepted | self
+	FriendRequestID string `json:"friendRequestId,omitempty"` // present when status is pending_*
 }
 
 type bulkRequest struct {
@@ -234,6 +247,7 @@ func (h *Handler) getRelation(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, relationDTO{
 		IsFollowing: rel.IsFollowing, IsFollower: rel.IsFollower,
 		IsBlocked: rel.IsBlocked, IsBlockedBy: rel.IsBlockedBy, CanDM: rel.CanDM,
+		FriendStatus: rel.FriendStatus, FriendRequestID: rel.FriendRequestID,
 	})
 }
 
@@ -428,6 +442,11 @@ func writeError(w http.ResponseWriter, status int, code, msg string) {
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {
+	// Phase 10 / ADR-0011 Amendment 6: friend-request errors handled
+	// inline via writeFriendRequestError (file friend_requests.go).
+	if writeFriendRequestError(w, err) {
+		return
+	}
 	switch {
 	case service.IsNotFound(err):
 		writeError(w, http.StatusNotFound, "not_found", "resource not found")

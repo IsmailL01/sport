@@ -41,22 +41,62 @@ type Block struct {
 }
 
 // Relation — агрегированное отношение между двумя пользователями (для UI button-state).
+//
+// 2026-05-25 Phase 10 / ADR-0011 Amendment 6: extended with friend-request fields.
+// CanDM remains the canonical "can I message this user" boolean; it now derives
+// from are_friends() check (existence of accepted friend_requests row) instead
+// of a manually-set permission.
 type Relation struct {
 	IsFollowing bool
 	IsFollower  bool
 	IsBlocked   bool
 	IsBlockedBy bool
 	CanDM       bool
+	// Friend-request state for UI rendering (Phase 10):
+	//   none      — neither user has sent a request
+	//   pending_outgoing — I sent a request, awaiting receiver
+	//   pending_incoming — they sent me a request, awaiting my accept/reject
+	//   accepted  — friends (CanDM=true)
+	//   rejected  — request was rejected (either side may re-send)
+	//   cancelled — sender cancelled own pending
+	FriendStatus string
+	// FriendRequestID — present iff FriendStatus is pending_*; used for accept/reject calls.
+	FriendRequestID string
+}
+
+// === Phase 10 / FRIEND-REQUEST-FLOW ===
+
+type FriendRequestStatus string
+
+const (
+	FriendRequestPending   FriendRequestStatus = "pending"
+	FriendRequestAccepted  FriendRequestStatus = "accepted"
+	FriendRequestRejected  FriendRequestStatus = "rejected"
+	FriendRequestCancelled FriendRequestStatus = "cancelled"
+)
+
+// FriendRequest — one row of friend_requests table.
+type FriendRequest struct {
+	ID          string
+	SenderID    string
+	ReceiverID  string
+	Status      FriendRequestStatus
+	CreatedAt   time.Time
+	RespondedAt *time.Time
 }
 
 var (
-	ErrProfileNotFound = errors.New("profile not found")
-	ErrAlreadyExists   = errors.New("relation already exists")
-	ErrSelfTarget      = errors.New("cannot target self")
-	ErrUsernameTaken   = errors.New("username taken")
-	ErrInvalidArg      = errors.New("invalid argument")
-	ErrForbidden       = errors.New("forbidden")
-	ErrNotFound        = errors.New("not found")
+	ErrProfileNotFound         = errors.New("profile not found")
+	ErrAlreadyExists           = errors.New("relation already exists")
+	ErrSelfTarget              = errors.New("cannot target self")
+	ErrUsernameTaken           = errors.New("username taken")
+	ErrInvalidArg              = errors.New("invalid argument")
+	ErrForbidden               = errors.New("forbidden")
+	ErrNotFound                = errors.New("not found")
+	ErrFriendRequestExists     = errors.New("friend request already pending")
+	ErrAlreadyFriends          = errors.New("users are already friends")
+	ErrFriendRequestNotPending = errors.New("friend request not pending")
+	ErrFriendRequestNotOwned   = errors.New("not authorized for this friend request")
 )
 
 // === Phase 8 / E: модерация ===

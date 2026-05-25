@@ -11,11 +11,12 @@ import (
 )
 
 type Service struct {
-	profiles *postgres.ProfileRepo
-	follows  *postgres.FollowRepo
-	blocks   *postgres.BlockRepo
-	reports  *postgres.ReportRepo
-	audit    *postgres.AuditRepo
+	profiles   *postgres.ProfileRepo
+	follows    *postgres.FollowRepo
+	blocks     *postgres.BlockRepo
+	reports    *postgres.ReportRepo
+	audit      *postgres.AuditRepo
+	friendReqs *postgres.FriendRequestRepo
 }
 
 func New(
@@ -24,10 +25,12 @@ func New(
 	blocks *postgres.BlockRepo,
 	reports *postgres.ReportRepo,
 	audit *postgres.AuditRepo,
+	friendReqs *postgres.FriendRequestRepo,
 ) *Service {
 	return &Service{
 		profiles: profiles, follows: follows, blocks: blocks,
 		reports: reports, audit: audit,
+		friendReqs: friendReqs,
 	}
 }
 
@@ -160,11 +163,17 @@ func (s *Service) ListBlocked(ctx context.Context, actorID string, limit int) ([
 }
 
 // GetRelation — для UI: что показать на ProfileScreen чужого юзера.
+//
+// 2026-05-25 Phase 10 / ADR-0011 Amendment 6:
+// CanDM теперь derives from are_friends(actor, target) AND no-block. Extended
+// FriendStatus + FriendRequestID fields populated so client can render the
+// right button state (Send / Pending / Accept / Friends).
 func (s *Service) GetRelation(ctx context.Context, actorID, targetID string) (*domain.Relation, error) {
 	rel := &domain.Relation{}
 	if actorID == targetID {
 		// На свой профиль — нейтральные значения.
 		rel.CanDM = true
+		rel.FriendStatus = "self"
 		return rel, nil
 	}
 	following, err := s.follows.IsFollowing(ctx, actorID, targetID)
@@ -183,11 +192,37 @@ func (s *Service) GetRelation(ctx context.Context, actorID, targetID string) (*d
 	if err != nil {
 		return nil, err
 	}
+
+	// Friend-request state lookup (Phase 10). Friends-first, then pending-
+	// outgoing, then pending-incoming. Rejected/cancelled don't surface to
+	// UI (user can re-send via SendFriendRequest which flips status).
+	areFriends, err := s.friendReqs.AreFriends(ctx, actorID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	friendStatus := "none"
+	friendRequestID := ""
+	if areFriends {
+		friendStatus = "accepted"
+	} else {
+		// Check outgoing pending (I sent it).
+		if fr, ferr := s.friendReqs.GetByPair(ctx, actorID, targetID); ferr == nil && fr.Status == domain.FriendRequestPending {
+			friendStatus = "pending_outgoing"
+			friendRequestID = fr.ID
+		} else if fr, ferr := s.friendReqs.GetByPair(ctx, targetID, actorID); ferr == nil && fr.Status == domain.FriendRequestPending {
+			friendStatus = "pending_incoming"
+			friendRequestID = fr.ID
+		}
+	}
+
 	rel.IsFollowing = following
 	rel.IsFollower = follower
 	rel.IsBlocked = blocked
 	rel.IsBlockedBy = blockedBy
-	rel.CanDM = !blocked && !blockedBy
+	// CanDM gates on friendship now (Phase 10). No-block enforced regardless.
+	rel.CanDM = areFriends && !blocked && !blockedBy
+	rel.FriendStatus = friendStatus
+	rel.FriendRequestID = friendRequestID
 	return rel, nil
 }
 
