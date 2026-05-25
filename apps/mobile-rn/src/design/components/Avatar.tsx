@@ -1,17 +1,24 @@
 // Avatar — circular profile image, optional grade badge / online dot / ring.
 // Phase 8 / M1. Mirror Avatar from ui.jsx.
+//
+// 2026-05-25: src=null fallback changed from pravatar.cc external lookup
+// (third-party dependency, blank in airplane mode, blank for cert-restricted
+// debug APKs hitting Mapbox pk.* problem class) to a deterministic
+// initials-on-gradient fallback computed locally per src/design/avatarInitials.ts.
 
 import { Image, View, Text, type StyleProp, type ViewStyle } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { useTheme } from '../ThemeProvider';
 import { type GradeLetter, gradeLetter } from '../tokens';
+import { colorForName, initialsForName } from '../avatarInitials';
 
 export type AvatarProps = {
-  /** Image URL. If null/undefined, falls back to pravatar by name hash. */
+  /** Image URL. If null/empty, falls back to deterministic initials + gradient by name. */
   src?: string | null;
   /** Diameter (px). */
   size?: number;
-  /** Used for pravatar hash fallback. */
+  /** Display name — used for initials + gradient color hash on src-less avatars. */
   name?: string;
   /** Optional grade ('D', 'A+', 'S'). Renders small badge bottom-left. */
   grade?: string | null;
@@ -23,15 +30,6 @@ export type AvatarProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-function hashCode(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h) + s.charCodeAt(i);
-    h |= 0;
-  }
-  return h;
-}
-
 export function Avatar({
   src,
   size = 40,
@@ -42,10 +40,15 @@ export function Avatar({
   style,
 }: AvatarProps) {
   const t = useTheme();
-  const url = src ?? `https://i.pravatar.cc/120?img=${Math.abs(hashCode(name)) % 70 + 1}`;
+  const hasImage = src !== null && src !== undefined && src !== '';
   const badgeFontSize = Math.max(9, Math.round(size * 0.22));
+  const initialsFontSize = Math.max(11, Math.round(size * 0.4));
   const grLetter: GradeLetter = gradeLetter(grade);
   const grColor = t.grades[grLetter];
+
+  // Fallback gradient + initials (when no src). Deterministic per name.
+  const { start: gradStart, end: gradEnd } = colorForName(name);
+  const initials = initialsForName(name);
 
   return (
     <View
@@ -78,11 +81,41 @@ export function Avatar({
           borderColor: ring || 'transparent',
         }}
       >
-        <Image
-          source={{ uri: url }}
-          style={{ width: '100%', height: '100%' }}
-          resizeMode="cover"
-        />
+        {hasImage ? (
+          <Image
+            source={{ uri: src }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : (
+          <LinearGradient
+            colors={[gradStart, gradEnd]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              width: '100%',
+              height: '100%',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text
+              style={{
+                color: '#FFFFFF',
+                fontSize: initialsFontSize,
+                fontWeight: '700',
+                fontFamily: t.fontDisplay,
+                letterSpacing: -0.5,
+                // Slight text-shadow so initials read on lighter palette buckets
+                textShadowColor: 'rgba(0,0,0,0.25)',
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 1,
+              }}
+            >
+              {initials}
+            </Text>
+          </LinearGradient>
+        )}
       </View>
 
       {grade && (
