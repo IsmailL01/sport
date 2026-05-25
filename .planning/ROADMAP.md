@@ -102,6 +102,43 @@ This roadmap takes Running Ecosystem from "Phase 5 code-complete on `feat/curson
 - [ ] `09-01-PLAN.md` — Solo-dev Android smoke test (own + 1 friend, 1 full GPS session per device) + tag `v1.0.0-beta.1` — Wave 1, autonomous=false (Task 1 = solo smoke USER ACTION)
 - [ ] `09-02-PLAN.md` — Invite 5-10 Android testers + 72h watchlist via debug-tail.sh + feedback intake — Wave 2 (depends on 09-01 PASS), autonomous=false (Task 1 = send invites USER ACTION; Task 2 = 72h triage)
 
+### Phase 10: Friend-request flow
+
+**Workstream:** `shared` (backend + mobile)
+**Goal:** Replace asymmetric follow-only DM gate with symmetric friend-request flow. Send → other accepts → DM unlocks.
+**Depends on:** —
+**Status:** [x] **CODE-COMPLETE 2026-05-25** via `/gsd-quick social-yolo-pass` sessions 1-2. Production migration apply on VPS remains as user-action.
+**Origin:** Promoted from v1.0.1 backlog per ADR-0011 Amendment 6 (2026-05-25)
+**Success Criteria:**
+1. Backend migration `0022_friend_requests` applied on prod VPS — endpoints return 200, not 500
+2. `POST /friend-requests/{user_id}` creates pending row (or flips rejected→pending re-send)
+3. Receiver sees incoming in `GET /friend-requests/incoming`; accept transitions status → DM unlocks bidirectionally
+4. Messaging service `POST /conversations` for type=dm returns 403 `requires_friendship` between non-friends
+5. Mobile UX end-to-end: ForeignProfile button state machine → Inbox accept/reject → DM creation succeeds after acceptance
+
+**Plans:**
+- [x] Backend session 1 — migration + 8 endpoints + messaging gate (commits `46b0d65` + `609b0e2` + `7e70a4f`)
+- [x] Mobile session 2 — `src/modules/friends/` + nav + ForeignProfile button + ChatsList error handling (commits `0228ccf` + `625da53` + `c02328b` + `77ff16c`)
+
+### Phase 11: Stories revival
+
+**Workstream:** `shared` (mobile-only; backend `feed` service on port 8085 reused from Phase 8/C)
+**Goal:** Re-introduce 24h ephemeral story posts. Tray of unviewed-first avatars at top of chat list; full-screen modal viewer with auto-advance progress bars; composer with image picker + overlay text + 24h retention.
+**Depends on:** —
+**Status:** [x] **CODE-COMPLETE 2026-05-25** via `/gsd-quick social-yolo-pass` session 3. Offline drafts (LocalStoryDraft SQLite v14) deferred to v1.0.1 backlog `STORIES-OFFLINE-DRAFTS`.
+**Origin:** Promoted from v1.0.1 backlog per ADR-0011 Amendment 6 (2026-05-25)
+**Success Criteria:**
+1. Tray of story-ring avatars rendered on ChatsListScreen when followees have active stories
+2. Tap avatar → StoryViewer full-screen modal with progress bars + tap-left/tap-right nav + long-press pause + swipe-down dismiss
+3. Auto-advance every 5s; final story → goBack
+4. Me-tab → "Опубликовать историю" → pick image → preview + overlay text → publish; story appears in tray immediately
+5. markViewed fires once per story per viewer (idempotent server-side)
+6. 24h retention honored client-side via isStoryExpired()
+
+**Plans:**
+- [x] Mobile session 2 — module shells (domain + sync + state + tray UI) (commit `7f480aa`)
+- [x] Mobile session 3 — viewer + creator + RootStack wiring + entry points (commit `c27025c`)
+
 ## Acceptance Gate for v1.0 Closed Beta
 
 Hard criteria (drastically reduced from the old 21-phase scope per ADR-0011; further narrowed to Android-only per Amendment 3):
@@ -173,8 +210,11 @@ Tracked for first post-v1.0 maintenance milestone. Inherited from the 21-phase s
 | CRED-DIAG-DISCIPLINE | Codify the 4 credential-diagnostics discipline rules in `docs/SECRETS.md` as a "Credential diagnostics" section: (1) single canonical fingerprint form `printf '%s' "$VAR" \| shasum -a 256 \| cut -c1-12`; (2) no byte-level inspection of values (no `xxd`, `od -c`, `hexdump`, `${VAR:0:N}`, `${VAR: -N}`); (3) length OK / bytes not; (4) fingerprint discrepancies are shape problems not value problems. Add a pre-commit grep rule for `xxd .*\$[A-Z_]+` patterns in shell scripts (false-positive-tolerant). | ADR-0012 amendment §"Lessons added" | The discipline rules are what closed the self-inflicted re-incident loop. Codifying them prevents the next dev (or future me) from repeating. |
 | EAS-PROJECT-INIT | `apps/mobile-rn/app.json` has literal placeholder `extra.eas.projectId: "TODO-eas-project-id-after-eas-init"`. Blocks Plan 07-01 Task 6 final EAS Cloud build under tag-triggered `android-release.yml`. Resolution: user-action `cd apps/mobile-rn && eas login && eas init` (or `EXPO_TOKEN=... eas init --non-interactive`). | ADR-0012 + Plan 07-01 Task 6 | **Note:** not actually a v1.0.1 deferral — it's the immediate next user-action to close Plan 07-01. Tracked here so it doesn't drift out of mind if Plan 07-01 closeout slips. |
 | DISTRIBUTION-PIPELINE-RE-ENABLE | Phase 8 distribution-pipeline (Plan 08-01) is code-complete + runtime-disabled per ADR-0011 Amendment 5. Re-enable = (1) populate `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRET_KEY` repo secrets (CI side flips `DISTRIBUTE_ENABLED` to `true` on next tag push automatically), (2) configure mobile env `EXPO_PUBLIC_UPDATE_MANIFEST_URL` to match MinIO public-read bucket URL, (3) cut a new beta tag. Code already in repo (Ed25519 signer + verifier, manifestCheck dispatch, force-update store, UpdateBanner UI, useUpdateCheckOnForeground hook, Settings button); 638/638 jest tests defend against drift. | ADR-0011 Amendment 5 2026-05-24 | Closed-beta uses manual sideload by solo dev. Promote when ANY: (a) tester base passes ~20 active users (DM-with-link starts hitting "did everyone update" overhead); (b) forced upgrade becomes operationally needed (backend breaking change requires `min_supported_version` enforcement); (c) MinIO or equivalent S3-compatible object store provisioned on user's infra; (d) transition to broader distribution OUTSIDE Play Store. No code changes required to re-enable. |
-| STORIES-REVIVAL | Re-introduce stories UI module on mobile (was removed Phase 8/C closeout; backend `feed` service on port 8085 + SQLite tables `stories`+`story_views` v11 still exist for rollback). Includes: viewer with progress bars, creator (camera + upload), ring badge on chat/profile avatars, story-reactions store, sync loop, cleanup-cron client. Needs design decisions on retention (24h?) and visibility model (followers-only vs public). | `/gsd-quick chat-polish-pass` 2026-05-25 discussion | Was deliberately removed Phase 8/C; revival is feature add (~2-4 days). Recommend deferring until post-v1.0 unless beta testers explicitly ask. |
-| FRIEND-REQUEST-FLOW | Symmetric friend-request with accept/reject (current model is asymmetric follow, no accept needed). New `social-graph` endpoints (POST `/friend-requests/{userId}`, GET `/friend-requests/incoming`, POST `/friend-requests/{id}/accept`, POST `/friend-requests/{id}/reject`) + new `friend_requests` schema/migration + mobile `useFriendRequestsStore` + `FriendRequestInboxScreen` + Me-tab badge + notification path. Decide co-exist vs replace follow. | `/gsd-quick chat-polish-pass` 2026-05-25 discussion | Currently follow model gates DMs via `canDm` permission (Phase 8/K). Promote when product decision: do we want explicit friendship as a stronger relation than follow? ~1-2 days. |
+| STORIES-OFFLINE-DRAFTS | SQLite v14 cache for LocalStoryDraft (pending uploads survive app restart). Currently in-memory only — drafts lost if app closes during composition. Needs storiesRepository.ts + retry queue in storiesSync.ts. | `/gsd-quick social-yolo-pass` 2026-05-25 session 3 | ~2-3h work. Promote when tester reports lost-draft frustration. |
+| CHAT-REACTIONS-POPUP | Tap reaction count on chat message → bottom-sheet listing all users + their reactions. | `/gsd-quick social-yolo-pass` 2026-05-25 session 3 | ~1.5h. Pure UI; existing reaction data already available. |
+| CHAT-REPLY-SCROLL | Tap reply quote on chat bubble → FlatList scrollToIndex to original message. | `/gsd-quick social-yolo-pass` 2026-05-25 session 3 | ~1h. ChatScreen FlatList ref already in scope. |
+| CHAT-STATUS-ICONS-POLISH | Consistent rendering of clock/check/double-check/eye glyphs for message delivery status (currently mixed strings). | `/gsd-quick social-yolo-pass` 2026-05-25 session 3 | ~30min. Visual polish only. |
+| MENTION-NAVIGATION | @username in chat message → navigate to ForeignProfile. Needs username→userId lookup (likely cache hit in useUsersStore by username). Currently MessageText renders mention tappable but onPress is no-op. | `/gsd-quick social-yolo-pass` 2026-05-25 session 3 | ~1h once lookup pattern decided. |
 | CHAT-TYPING-INDICATOR | Ghost bubble when peer is typing on ChatScreen. Backend realtime pubsub event (`typing.started` / `typing.stopped` on conversation channel) + mobile listener in `useRealtimeStore` (5s expiry) + render below message list with fade animation. | `/gsd-quick chat-polish-pass` 2026-05-25 discussion | Touches messaging service. Big UX feel improvement for small effort (~3h). Good first follow-up to chat-polish-pass when ready. |
 | CHAT-SWIPE-DELETE | Left-swipe row on ChatsListScreen → reveal red Delete button → soft-delete chat. `react-native-gesture-handler` Swipeable wrapper + animated removal via LayoutAnimation. Needs new backend endpoint `DELETE /conversations/{id}` (soft-delete, mark `deleted_at`). | `/gsd-quick chat-polish-pass` 2026-05-25 discussion | Modern gesture-based polish; gesture-handler already in project. ~3h. |
 | CHAT-MODULE-MIGRATION | Move chat code from `src/state/social/`, `src/storage/socialRepository.ts`, `src/domain/social.ts`, `src/ui/social/` into `src/modules/chat/{domain,storage,state,sync,ui}/index.ts` to match the modular pattern used by Phase 8/E moderation. | `/gsd-quick chat-polish-pass` 2026-05-25 discussion | Architectural refactor; non-urgent (1-2 days). Useful before adding bigger features (e.g. STORIES-REVIVAL or FRIEND-REQUEST-FLOW). |

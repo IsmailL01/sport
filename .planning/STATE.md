@@ -6,9 +6,9 @@ status: executing
 stopped_at: Plan 08-01 GATED per ADR-0011 Amendment 5 (code-complete + runtime-disabled; mobile EXPO_PUBLIC_UPDATE_MANIFEST_URL + workflow DISTRIBUTE_ENABLED gates; re-enable = config flip)
 last_updated: "2026-05-24T19:30:00.000Z"
 progress:
-  total_phases: 4
+  total_phases: 6  # ADR-0011 Amendment 6: 4 → 6 (Phase 10 friend-requests + Phase 11 stories)
   completed_phases: 0
-  total_plans: 4
+  total_plans: 6
   completed_plans: 2
   percent: 0
 ---
@@ -245,6 +245,7 @@ Small, ad-hoc work items run via `/gsd-quick`. Each has its own
 |---|---|---|---|---|---|
 | 2026-05-25 | [chat-polish-pass](quick/20260525-chat-polish-pass/SUMMARY.md) | 6 FE-only chat polish items: scroll-FAB, skeleton loading, peer-avatar empty state, Telegram-style timestamps, deterministic avatar gradients, aggregate tab unread badge | 7 (`994f85e..0031359`) | +31 (638 → 669) | TIGHT scope per --discuss; 4 backlog items captured for v1.0.1: STORIES-REVIVAL, FRIEND-REQUEST-FLOW, CHAT-TYPING-INDICATOR, CHAT-SWIPE-DELETE |
 | 2026-05-25 | [tracker-live-polish-pass](quick/20260525-tracker-live-polish-pass/SUMMARY.md) | 7 polish/bug items on the live-tracker screen (the load-bearing UI for Plan 07-03): PauseDetector warmup gate (fixes "ПРОДОЛЖИТЬ on start"), time-freeze on pause via SessionManager.effectiveElapsedMs, pace/HR/lap display guards, map camera freeze on pause, empty-session stop guard | 7 (`bc95c30..da35b5f`) | +17 (669 → 686) | No backend changes; warmup gate makes Plan 07-03 Pixel pocket-walk land on better baseline. Domain-layer fix for time-freeze keeps single canonical elapsed-time value across all consumers (UI + RunDetails + future activity-sync). |
+| 2026-05-25 | [social-yolo-pass](quick/20260525-social-yolo-pass/SUMMARY.md) | **YOLO XL** task (3 sessions, broke /gsd-quick convention per user "Yolo C"): Phase 10 FRIEND-REQUEST-FLOW end-to-end (backend migration + 8 social-graph endpoints + messaging gate + mobile module + UI screens + inbox + tab badge) + Phase 11 STORIES-REVIVAL (mobile-only — viewer + creator + tray + ring badges) + linkified chat message text. ADR-0011 Amendment 6 expands v1.0 scope 4 → 6 phases. | 13 (`a827bc5..aea06e5`) | +13 (686 → 699) | **User-action: apply migration `0022_friend_requests` on prod VPS** before testing endpoints. STORIES-OFFLINE-DRAFTS + CHAT-REACTIONS-POPUP + CHAT-REPLY-SCROLL + CHAT-STATUS-ICONS-POLISH + MENTION-NAVIGATION captured as v1.0.1 items. |
 
 ## Artifacts Created (cumulative — high-level; see `.planning/codebase/` for full inventory)
 
