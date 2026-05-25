@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { Avatar, MessageBubbleSkeleton } from '../../design';
+import { MessageText } from './MessageText';
 import type { Chat, Message } from '../../domain/social';
 import { canDeleteMessage } from '../../domain/social';
 import { getMediaAdapter } from '../../media';
@@ -473,7 +474,13 @@ function Bubble({
           </View>
         )}
         {msg.text !== null && msg.text !== '' && (
-          <Text style={styles.bubbleText}>{msg.text}</Text>
+          // Phase 11 session 3 chat polish — URLs + @mentions tappable.
+          <MessageText
+            body={msg.text}
+            color={mine ? '#FFFFFF' : '#111827'}
+            linkColor={mine ? '#C6F560' : '#2563EB'}
+            fontSize={15}
+          />
         )}
         <View style={styles.bubbleMeta}>
           {msg.editedAt !== null && (
