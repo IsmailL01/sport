@@ -208,20 +208,6 @@ export function MeScreen() {
         {/* Action list */}
         <View style={{ marginTop: 18, gap: 8 }}>
           <ActionRow
-            icon="bolt"
-            label="Тренировки"
-            sub="планы и сценарии"
-            onPress={() => Alert.alert('Тренировки', 'Скоро вернём — Phase M10.')}
-            t={t}
-          />
-          <ActionRow
-            icon="heart"
-            label="Датчики"
-            sub="HR / BLE сенсоры"
-            onPress={() => Alert.alert('Датчики', 'Скоро вернём — Phase M10.')}
-            t={t}
-          />
-          <ActionRow
             icon="trophy"
             label="Личные рекорды"
             sub="лучшая дистанция, темп, длительность"
