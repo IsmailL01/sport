@@ -73,26 +73,46 @@ Captured decisions:
 
 ## Progress log (multi-session)
 
-### Session 1 (2026-05-25 PM)
+### Session 1 (2026-05-25 PM) — COMPLETE
 
-- [ ] Scaffolding (PLAN + CONTEXT + Amendment 6)
-- [ ] Backend friend-requests migration
-- [ ] Backend social-graph endpoints
-- [ ] Backend messaging gate
-- [ ] Mobile friends module shells
+- [x] Scaffolding (PLAN + CONTEXT + Amendment 6) — `a827bc5`
+- [x] Backend friend-requests migration `0022_friend_requests` (up + down) — `46b0d65`
+- [x] Backend social-graph endpoints (8 routes + handlers + service + repo) — `609b0e2`
+- [x] Backend messaging gate (FriendshipGate + createOrFindConv check) — `7e70a4f`
+
+Backend Phase 10 FRIEND-REQUEST-FLOW is now **functionally complete** at
+the code level. Remaining backend work = production migration apply (user
+action: `migrate -path migrations -database "$DB_URL" up` on the VPS).
+
+Tests/lint:
+- 2 services build clean (social-graph, messaging)
+- golangci-lint v2.5: 0 issues across both
+- No new Go tests yet — added in session 2 or 3 once mobile lands and
+  full e2e smoke is needed
+
+### Session 2 (TBD) — Mobile friends + stories
+
+- [ ] Mobile friends module: domain + storage + state + sync
+- [ ] Mobile UI: ForeignProfileScreen friend button + FriendRequestsInboxScreen
+- [ ] Stories module shells (domain + storage + state)
 - [ ] Status report
 
-### Session 2 (TBD)
+### Session 3 (TBD) — Stories UI + chat polish + closeout
 
-- [ ] Mobile friends UI
-- [ ] Stories module shells
-- [ ] Status report
+- [ ] Stories UI (tray + viewer + creator scaffolds)
+- [ ] Chat polish items (reactions popup, linkified text, reply scroll, status icons)
+- [ ] SUMMARY.md + STATE.md + ROADMAP.md (Phase 10 + Phase 11 entries)
+- [ ] Push session 2-3 commits
 
-### Session 3 (TBD)
+### Resume command for next session
 
-- [ ] Stories UI
-- [ ] Chat polish
-- [ ] SUMMARY + closeout
+```bash
+/gsd-quick resume social-yolo-pass
+```
+
+Pick up at "Mobile friends module domain + storage + state". CONTEXT.md
+captures all architectural decisions (D-01..D-09) and module structure
+diagrams needed to continue without re-discussing scope.
 
 ## Architectural notes
 
