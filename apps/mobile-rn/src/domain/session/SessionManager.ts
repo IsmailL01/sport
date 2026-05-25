@@ -75,6 +75,10 @@ export interface SessionSnapshot {
   areaM2: number | null;
   areaWarnings: AreaWarning[];
   isPaused: boolean;
+  /** Wall-clock ms when current pause began (set on isPaused false→true, cleared on resume). */
+  pausedAt: number | null;
+  /** Cumulative pause time across all pause cycles in current session (ms). */
+  pausedDurationMs: number;
   closureFired: boolean;
   bufferedCount: number;
   rawCount: number;
@@ -98,6 +102,8 @@ export class SessionManager {
   private areaM2: number | null = null;
   private areaWarnings: AreaWarning[] = [];
   private isPaused = false;
+  private pausedAt: number | null = null;
+  private pausedDurationMs = 0;
   private closureFired = false;
   private rawCount = 0;
   private droppedCount = 0;
@@ -138,6 +144,8 @@ export class SessionManager {
       areaM2: this.areaM2,
       areaWarnings: [...this.areaWarnings],
       isPaused: this.isPaused,
+      pausedAt: this.pausedAt,
+      pausedDurationMs: this.pausedDurationMs,
       closureFired: this.closureFired,
       bufferedCount: this.buffer.length,
       rawCount: this.rawCount,
@@ -149,6 +157,27 @@ export class SessionManager {
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+  /**
+   * Effective elapsed time since session start, with paused periods excluded.
+   * Used by UI for the live timer display so the clock freezes during pause.
+   *
+   * Formula:
+   *   - elapsed = nowMs - startedAt
+   *   - subtract pausedDurationMs (completed pause cycles)
+   *   - subtract (now - pausedAt) if currently paused
+   *
+   * Returns 0 if session hasn't started.
+   *
+   * 2026-05-25: introduced as part of tracker-live-polish-pass to fix the bug
+   * where TrackerLiveScreen's timer kept ticking during pause.
+   */
+  effectiveElapsedMs(nowMs: number = Date.now()): number {
+    if (this.startedAt === null) return 0;
+    const rawElapsed = nowMs - this.startedAt;
+    const openPause = this.pausedAt !== null ? nowMs - this.pausedAt : 0;
+    return Math.max(0, rawElapsed - this.pausedDurationMs - openPause);
+  }
 
   start(activityType: ActivityType = 'run'): void {
     if (this.state === 'recording') return; // idempotent — no double-start
@@ -174,6 +203,8 @@ export class SessionManager {
     this.areaM2 = null;
     this.areaWarnings = [];
     this.isPaused = false;
+    this.pausedAt = null;
+    this.pausedDurationMs = 0;
     this.closureFired = false;
     this.rawCount = 0;
     this.droppedCount = 0;
@@ -188,6 +219,12 @@ export class SessionManager {
     this.flushBuffer(true);
     const endedAt = Date.now();
     this.endedAt = endedAt;
+    // If user hits STOP while paused, fold the open pause window into
+    // pausedDurationMs so the final elapsed-time reading is consistent.
+    if (this.isPaused && this.pausedAt !== null) {
+      this.pausedDurationMs += endedAt - this.pausedAt;
+      this.pausedAt = null;
+    }
     if (this.sessionId !== null) {
       const distance = totalDistance(this.points);
       const closed = isClosed(this.points, distance);
@@ -246,6 +283,7 @@ export class SessionManager {
     }
     this.state = 'stopped';
     this.isPaused = false;
+    this.pausedAt = null;
     this.emit();
   }
 
@@ -273,6 +311,8 @@ export class SessionManager {
     this.areaM2 = null;
     this.areaWarnings = [];
     this.isPaused = false;
+    this.pausedAt = null;
+    this.pausedDurationMs = 0;
     this.closureFired = false;
     this.rawCount = 0;
     this.droppedCount = 0;
@@ -364,6 +404,8 @@ export class SessionManager {
     this.areaWarnings =
       session.calcMethod === 'shoelace_with_warning' ? ['self-intersection'] : [];
     this.isPaused = false;
+    this.pausedAt = null;
+    this.pausedDurationMs = 0;
     this.closureFired = session.isClosed === true;
     this.rawCount = 0;
     this.droppedCount = 0;
@@ -392,6 +434,17 @@ export class SessionManager {
     const wasPaused = this.isPaused;
     this.isPaused = isPaused;
     if (wasPaused !== isPaused) {
+      // Track pause boundaries for time-freeze accounting (2026-05-25).
+      // On enter-pause: stamp pausedAt with wall-clock now.
+      // On exit-pause: accumulate elapsed into pausedDurationMs + clear pausedAt.
+      // UI consumers read `effectiveElapsedMs(snapshot, now)` for frozen timer.
+      const now = Date.now();
+      if (isPaused) {
+        this.pausedAt = now;
+      } else if (this.pausedAt !== null) {
+        this.pausedDurationMs += now - this.pausedAt;
+        this.pausedAt = null;
+      }
       const mode = isPaused ? 'paused' : 'active';
       this.locationAdapter.setSamplingMode(mode).catch((e) => {
         console.error(`[session] setSamplingMode ${mode} failed`, e);

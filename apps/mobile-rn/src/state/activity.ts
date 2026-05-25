@@ -76,6 +76,10 @@ type ActivityStore = {
   lastRawAccuracy: number | null;
   /** На паузе ли запись (auto-pause из PauseDetector). */
   isPaused: boolean;
+  /** Wall-clock ms when current pause began (null when not paused). 2026-05-25. */
+  pausedAt: number | null;
+  /** Cumulative pause time across all pause cycles in current session (ms). 2026-05-25. */
+  pausedDurationMs: number;
   /** true когда трек впервые замкнулся (см. ClosureDetector). Сбрасывается при reset. */
   closureFired: boolean;
   /** Площадь и предупреждения от AreaCalculator (актуальны если isClosedNow). */
@@ -194,6 +198,8 @@ const manager = new SessionManager(
     lastDropFilter: snap.lastDropFilter,
     lastRawAccuracy: snap.lastRawAccuracy,
     isPaused: snap.isPaused,
+    pausedAt: snap.pausedAt,
+    pausedDurationMs: snap.pausedDurationMs,
     closureFired: snap.closureFired,
     areaM2: snap.areaM2,
     areaWarnings: snap.areaWarnings,
@@ -370,6 +376,8 @@ export const useActivityStore = create<ActivityStore>(() => ({
   lastDropFilter: initial.lastDropFilter,
   lastRawAccuracy: initial.lastRawAccuracy,
   isPaused: initial.isPaused,
+  pausedAt: initial.pausedAt,
+  pausedDurationMs: initial.pausedDurationMs,
   closureFired: initial.closureFired,
   areaM2: initial.areaM2,
   areaWarnings: initial.areaWarnings,
