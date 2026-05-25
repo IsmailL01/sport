@@ -68,6 +68,9 @@ export type { TabBarProps, TabId } from './components/TabBar';
 export { SectionHeader } from './components/SectionHeader';
 export type { SectionHeaderProps } from './components/SectionHeader';
 
+export { Skeleton, ChatRowSkeleton, MessageBubbleSkeleton } from './components/Skeleton';
+export type { SkeletonProps } from './components/Skeleton';
+
 // === Gamification primitives ===
 export { GradeBadge } from './components/GradeBadge';
 export type { GradeBadgeProps } from './components/GradeBadge';
