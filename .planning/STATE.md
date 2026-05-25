@@ -244,6 +244,7 @@ Small, ad-hoc work items run via `/gsd-quick`. Each has its own
 | Date | Slug | Description | Commits | Tests | Notes |
 |---|---|---|---|---|---|
 | 2026-05-25 | [chat-polish-pass](quick/20260525-chat-polish-pass/SUMMARY.md) | 6 FE-only chat polish items: scroll-FAB, skeleton loading, peer-avatar empty state, Telegram-style timestamps, deterministic avatar gradients, aggregate tab unread badge | 7 (`994f85e..0031359`) | +31 (638 → 669) | TIGHT scope per --discuss; 4 backlog items captured for v1.0.1: STORIES-REVIVAL, FRIEND-REQUEST-FLOW, CHAT-TYPING-INDICATOR, CHAT-SWIPE-DELETE |
+| 2026-05-25 | [tracker-live-polish-pass](quick/20260525-tracker-live-polish-pass/SUMMARY.md) | 7 polish/bug items on the live-tracker screen (the load-bearing UI for Plan 07-03): PauseDetector warmup gate (fixes "ПРОДОЛЖИТЬ on start"), time-freeze on pause via SessionManager.effectiveElapsedMs, pace/HR/lap display guards, map camera freeze on pause, empty-session stop guard | 7 (`bc95c30..da35b5f`) | +17 (669 → 686) | No backend changes; warmup gate makes Plan 07-03 Pixel pocket-walk land on better baseline. Domain-layer fix for time-freeze keeps single canonical elapsed-time value across all consumers (UI + RunDetails + future activity-sync). |
 
 ## Artifacts Created (cumulative — high-level; see `.planning/codebase/` for full inventory)
 
