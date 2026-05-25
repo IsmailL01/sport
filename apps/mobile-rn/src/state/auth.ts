@@ -302,7 +302,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
     // 1. Прогнать logout: токены, все zustand-стораджи, локальный кэш отношений
     //    и записей, feature flags — всё чистится одной точкой входа.
     try {
-      await get().logout();
+      await useAuthStore.getState().logout();
     } catch (e) {
       console.warn('[auth] logout failed during deleteAccountLocal', e);
     }
