@@ -232,19 +232,26 @@ describe('TrackerLiveScreen — Stop+Save navigation (PHASE1-09 / D-20)', () => 
     alertSpy.mockRestore();
   });
 
-  it('falls back to nav.goBack() (not nav.replace) when sessionId is null after stop', async () => {
-    // Edge: пользователь нажал Stop+Save, но sessionId === null
-    // (нулевая длина points / отменённая сессия).
+  it('empty-session guard: durationS=0 + no points → "Пустая сессия" Alert + goBack on delete (never nav.replace)', async () => {
+    // 2026-05-25 (tracker-live-polish-pass item 7): empty-session guard
+    // intercepts STOP before reaching the Save/Delete dialog. The previous
+    // assertion (Save path falls through to goBack when sessionId null) is
+    // superseded: the new guard prevents that broken path from ever firing.
+    // Test now validates the new "Пустая сессия" Alert flow.
     mockActivity.sessionId = null;
     mockActivity.startedAt = null;
     mockActivity.endedAt = null;
 
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (_title: any, _msg: any, buttons: any) => {
+      (title: any, _msg: any, buttons: any) => {
+        // Empty-session dialog title is "Пустая сессия"; pick "Удалить и выйти".
+        expect(String(title)).toMatch(/Пустая сессия/);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const save = buttons?.find((b: any) => /Сохранить/i.test(b?.text ?? ''));
-        save?.onPress?.();
+        const del = buttons?.find((b: any) =>
+          /Удалить и выйти/i.test(b?.text ?? ''),
+        );
+        del?.onPress?.();
       },
     );
 
