@@ -4,8 +4,6 @@
 // modules/clubs/domain + state. Backend синхронизация — будущая работа
 // (CLUBS-BACKEND-SYNC backlog v1.0.1).
 
-import { v4 as uuidv4 } from 'uuid';
-
 import type {
   Club,
   ClubDetail,
@@ -17,6 +15,34 @@ import type {
 } from '../modules/clubs/domain/types';
 import { ClubError } from '../modules/clubs/domain/errors';
 import { getDatabase } from './database';
+
+/**
+ * Local UUID v4 helper. We avoid the `uuid` npm package because v14 is ESM-only
+ * and jest-expo's transformIgnorePatterns doesn't unwrap it (see Plan 08-01
+ * pattern). Math.random is fine for client-side row IDs — no security context.
+ */
+function clubId(): string {
+  // RFC 4122 v4 layout: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+  // where y is one of [8,9,a,b].
+  const hex: string[] = [];
+  for (let i = 0; i < 16; i++) {
+    let byte = Math.floor(Math.random() * 256);
+    if (i === 6) byte = (byte & 0x0f) | 0x40;
+    if (i === 8) byte = (byte & 0x3f) | 0x80;
+    hex.push(byte.toString(16).padStart(2, '0'));
+  }
+  return (
+    hex.slice(0, 4).join('') +
+    '-' +
+    hex.slice(4, 6).join('') +
+    '-' +
+    hex.slice(6, 8).join('') +
+    '-' +
+    hex.slice(8, 10).join('') +
+    '-' +
+    hex.slice(10, 16).join('')
+  );
+}
 
 type ClubRow = {
   id: string;
@@ -63,7 +89,7 @@ function rowToMember(row: ClubMemberRow): ClubMember {
 export function createClub(input: CreateClubInput): Club {
   const db = getDatabase();
   const now = Date.now();
-  const id = uuidv4();
+  const id = clubId();
 
   const club: Club = {
     id,
