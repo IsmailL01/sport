@@ -674,4 +674,112 @@ scope-warning: This task INTENTIONALLY breaks /gsd-quick convention
 
 ---
 
-*Architecture analysis: 2026-05-25*
+## Phase 10 + Phase 11 mobile modules (2026-05-25 sessions 2-3 social-yolo-pass)
+
+Two new modules under `src/modules/` brought Mobile to **5 modules total** (gamification, moderation, permissions, friends, stories) — all following the same `{domain,sync,state,ui}/index.ts` pattern proven by Phase 8/E moderation.
+
+### `src/modules/friends/` — Phase 10 FRIEND-REQUEST-FLOW
+
+6 files. Mobile counterpart to backend session 1 (commits `46b0d65` + `609b0e2` + `7e70a4f`).
+
+- **domain/types.ts** — `FriendRequest`, `FriendRequestStatus`, `FriendActionState` (`self|none|pending_outgoing|pending_incoming|accepted`), `REQUIRES_FRIENDSHIP_ERROR_CODE` constant.
+- **sync/friendsApi.ts** — 8 endpoint wrappers (send/list-incoming/list-outgoing/accept/reject/cancel/list-friends/check-are-friends) + typed `FriendRequestError` class with `code: ApiErrorCode` + `status: number` fields. RFC3339 → ms-epoch parser.
+- **state/useFriendsStore.ts** — Zustand store with `friendIds`, `incoming`, `outgoing`, `mutating`, `lastError`. Optimistic UI: outgoing pre-pended on `send`; incoming filtered on `accept`/`reject`. Single `refresh()` pulls all three lists in parallel.
+- **ui/FriendActionButton.tsx** — state-machine button driven by `FriendActionState` enum. Local `localOverride` flag flips immediately on user action, then parent re-fetches Relation. Five render branches, no `else` fallthrough.
+- **ui/FriendRequestsInboxScreen.tsx** — `FlatList` over Row union type (`section | incoming | outgoing | empty`), pull-to-refresh, inline `Принять`/`Отклонить`/`Отменить` buttons + peer-profile pre-fetch via `useUsersStore.getOrFetch`.
+
+### `src/modules/stories/` — Phase 11 STORIES-REVIVAL
+
+8 files. Backend `feed` service on port 8085 reused from Phase 8/C original.
+
+- **domain/types.ts** — `Story`, `StoryWithStats`, `StoryGroup`, `LocalStoryDraft`, helpers `groupStoriesByAuthor` (unviewed-first sort), `isStoryExpired` (24h retention check). `STORY_OVERLAY_MAX_LENGTH = 200`, `STORY_DURATION_MS = 24h`.
+- **sync/storiesApi.ts** — 6 endpoint wrappers (`fetchStoriesFeed`, `fetchMyStories`, `fetchStoryViewers`, `markStoryViewed`, `publishStory`, `deleteStory`) + `StoryApiError` class. Defensive RFC3339-or-ms-epoch parsing (`parseEpochOrIso`).
+- **state/useStoriesStore.ts** — `groups` + `stories` + `markViewed` (optimistic flip of `iViewed` + `viewCount`). In-memory only; SQLite cache for `LocalStoryDraft` deferred to v1.0.1 backlog `STORIES-OFFLINE-DRAFTS`.
+- **ui/StoryRingAvatar.tsx** — Avatar wrapper subscribing to `useStoriesStore.groupForAuthor`. Ring color: `theme.lime` for unviewed group, `theme.divider` for fully viewed, `null` for no active stories.
+- **ui/StoryTrayHeader.tsx** — horizontal scroll, rendered as `ListHeaderComponent` of ChatsListScreen. Pre-fetches peer profiles via `useUsersStore`. Returns `null` (zero-height) when no active stories.
+- **ui/StoryViewerScreen.tsx** — full-screen modal. Progress bars (one per story in group, animated 0→1 over `STORY_DISPLAY_MS = 5s`, past bars filled 100%). `Pressable.onPress` with `locationX < 100` → previous; otherwise next. `onLongPress` pauses animation, `onPressOut` resumes. `PanResponder` detects vertical drag >80px → `nav.goBack()`. `markViewed` fired once per story per session via `lastMarkedRef` deduplication.
+- **ui/StoryCreatorScreen.tsx** — image picker (`MediaAdapter.pickFromGallery` + `takePhoto`) → preview with overlay text (`STORY_OVERLAY_MAX_LENGTH` cap) → `uploadImage` → `publishStory` → background `refresh` + `goBack`.
+- **index.ts** — public barrel exporting types + API + store + 5 UI components.
+
+### Composite navigation prop pattern (now solidly canonical)
+
+Three screens use `CompositeNavigationProp<own_stack, RootStackParamList>` to navigate to RootStack-level modals (`ForeignProfile`, `StoryViewer`, `StoryCreator`):
+
+- `PeopleSearchScreen` (existing) — tab→ForeignProfile
+- `ChatsListScreen` (this batch) — tab→StoryViewer
+- `MeScreen` (this batch) — tab→StoryCreator
+
+Pattern documented in `src/navigation/screens/me/MeScreen.tsx` and `src/navigation/screens/chats/ChatsListScreen.tsx`. Required whenever a tab screen needs cross-stack navigation.
+
+### State-machine button pattern (generalizable)
+
+`FriendActionButton.tsx` demonstrates a useful pattern: parent-passed server-derived state enum + local override for immediate feedback before server confirms.
+
+```typescript
+const [localOverride, setLocalOverride] = useState<FriendActionState | null>(null);
+const effective = localOverride ?? state;
+// On action: setLocalOverride('pending_outgoing'); call API; onMutated?.()
+// Parent re-fetches Relation; state prop updates; localOverride still wins until parent re-renders past mutation.
+```
+
+Useful for any optimistic-UI action button where server round-trip is >100ms and user expects immediate visual feedback.
+
+### Pure-function util + RN renderer split
+
+`src/util/linkify.ts` + `src/ui/social/MessageText.tsx` demonstrate the clean separation:
+
+- **Util layer** — pure JS, returns `LinkifyToken[]` (`text | url | mention` discriminated union). No React, no RN. 13 jest tests cover all paths.
+- **Render layer** — consumes token array, renders nested `<Text>` with onPress handlers (`Linking.openURL` for URLs, `onMentionPress?` callback for mentions). Untested at unit level (UI render); validated via manual smoke.
+
+Pattern enables full util-level testing without RN test renderer setup. Suitable for any text/markdown/syntax-processing logic.
+
+### Cross-stack RootStack modal registration
+
+Three modal routes now registered at RootStack level alongside `ForeignProfile`:
+
+```typescript
+// src/navigation/RootNavigator.tsx
+<Stack.Screen name="ForeignProfile" component={ForeignProfileScreen} options={{ presentation: 'modal' }} />
+<Stack.Screen name="StoryViewer"    component={StoryViewerScreen}    options={{ presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />
+<Stack.Screen name="StoryCreator"   component={StoryCreatorScreen}   options={{ presentation: 'modal' }} />
+```
+
+`gestureEnabled: false` on StoryViewer because PanResponder handles dismiss; default swipe-back would conflict.
+
+### Linkified message text in chat bubbles
+
+`MessageText` component now used in `src/ui/social/ChatScreen.tsx` Bubble:
+
+```typescript
+{msg.text && (
+  <MessageText
+    body={msg.text}
+    color={mine ? '#FFFFFF' : '#111827'}
+    linkColor={mine ? '#C6F560' : '#2563EB'}
+    fontSize={15}
+  />
+)}
+```
+
+URLs auto-link (open in browser via `Linking.openURL`); `@mention` renders bold but `onPress` is no-op until v1.0.1 `MENTION-NAVIGATION` ships username→userId lookup.
+
+### Updated navigation type unions
+
+```typescript
+// src/navigation/types.ts
+export type MeStackParamList = {
+  // ... existing
+  FriendRequests: undefined;  // NEW
+};
+
+export type RootStackParamList = {
+  // ... existing
+  ForeignProfile: { userId: string };
+  StoryViewer: { authorId: string; startIndex?: number };  // NEW
+  StoryCreator: undefined;                                   // NEW
+};
+```
+
+---
+
+*Architecture analysis: 2026-05-25 (refreshed after Phase 10+11 mobile shipped)*

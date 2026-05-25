@@ -673,4 +673,81 @@ Workstation-state assumptions that have caused real friction during Phase 6/7/8/
 
 ---
 
-*Concerns audit: 2026-05-25*
+## Session 2-3 updates (social-yolo-pass mobile, commits `0228ccf..024989c`)
+
+### Phase status grid update
+
+| Phase | Status (before) | Status (now) |
+|---|---|---|
+| 6 | done | done (unchanged) |
+| 7 | partial (Plan 07-01 done; 07-03 device-blocked) | partial (unchanged) |
+| 8 | gated per Amendment 5 | gated (unchanged) |
+| 9 | not started | not started (recommend `/gsd-plan-phase 9` next) |
+| **10** | backend-done-mobile-pending | **✅ CODE-COMPLETE** (backend + mobile shipped) |
+| **11** | not started | **✅ CODE-COMPLETE** (mobile shipped; backend reused) |
+
+Phase 10 + Phase 11 both **code-complete pending migration apply on prod VPS**. Once user runs the migration apply, Phase 10 is fully operational. Phase 11 needs no backend action (existing `feed` service on port 8085 already serves the contract).
+
+### v1.0.1 backlog reshape (one of the rare net-decreases in size)
+
+**Removed (promoted to v1.0 active scope per Amendment 6):**
+- `STORIES-REVIVAL` → Phase 11 [x]
+- `FRIEND-REQUEST-FLOW` → Phase 10 [x]
+
+**Added (emerged from social-yolo-pass session 3 closeout):**
+- `STORIES-OFFLINE-DRAFTS` — SQLite v14 cache + draft retry queue. Current StoryCreator drafts are in-memory only; lost if app force-killed during compose. ~2-3h.
+- `CHAT-REACTIONS-POPUP` — tap reaction count on chat message → bottom-sheet listing all reactors + their reactions. ~1.5h. Pure UI.
+- `CHAT-REPLY-SCROLL` — tap reply quote → FlatList scrollToIndex to original message. ~1h.
+- `CHAT-STATUS-ICONS-POLISH` — consistent clock/check/double-check/eye glyph rendering for message delivery states. ~30min.
+- `MENTION-NAVIGATION` — `@username` in chat messages tappable → ForeignProfile. Needs username→userId lookup first (likely cache hit in useUsersStore by-username). Currently `MessageText` renders mention tappable but `onPress` is no-op. ~1h once lookup pattern decided.
+
+**Net v1.0.1 backlog count:** 12 → 15 (was 12; -2 promoted, +5 new).
+
+### New pitfalls flagged
+
+**P15. Stories offline-drafts gap (NEW 2026-05-25 PM)**
+- StoryCreatorScreen drafts lost if app force-killed during compose.
+- Impact: low — single screen, brief composition window (typically < 1 min).
+- Mitigation: tracked as `STORIES-OFFLINE-DRAFTS` v1.0.1 backlog. SQLite v14 schema + retry queue solution sketched in stories module `LocalStoryDraft` type (already defined).
+
+**P16. Unicode-aware regex with lookbehind requires Hermes RN 0.72+ (NEW 2026-05-25 PM)**
+- `src/util/linkify.ts` uses `/...(?<![\p{L}\d])(@[A-Za-z0-9_]{3,32})/gu` for email-guard.
+- Hermes added lookbehind support in RN 0.72. Project pins RN 0.74 via Expo SDK 54, so safe — but worth noting if anyone migrates regex to a non-Hermes runtime.
+- Documented inline in `linkify.ts` source.
+
+**P17. Module pattern inconsistency: 5 modules under `src/modules/` but chat code still at root (NEW 2026-05-25 PM)**
+- 5 modules now follow `src/modules/<name>/{domain,sync,state,ui}/` pattern: gamification, moderation, permissions, friends, stories.
+- Chat code (`src/state/social/`, `src/storage/socialRepository.ts`, `src/ui/social/`, `src/domain/social.ts`) remains at root paths.
+- Tracked as `CHAT-MODULE-MIGRATION` v1.0.1 backlog (existing item; not introduced by this batch).
+- **Risk:** future module-pattern features (lazy-loading, plugin extraction) won't apply to chat code without migration first.
+
+**P18. Mobile module UI/state/sync zero unit-test coverage (NEW 2026-05-25 PM, follows TC pattern)**
+- ~2500 LOC added across `modules/friends/` + `modules/stories/` UI components, Zustand stores, sync API wrappers.
+- Zero jest unit tests for these layers (only pure-function `linkify.ts` got tests).
+- Matches existing convention (UI validated via APK smoke); but the gap is now substantial in absolute size.
+- v1.0.1 candidates: integration tests for friend-request flow + stories markViewed flow.
+
+### Active blockers update
+
+| Status | Item | Notes |
+|---|---|---|
+| ✅ Resolved | Mobile sessions 2-3 of social-yolo-pass | Shipped 9 commits |
+| ⏳ Active | Apply migration `0022_friend_requests.up.sql` on prod VPS | User-action; until done, `/friend-requests/*` endpoints return 500 |
+| ⏳ Active | Plan 07-03 Pixel pocket-walk (Tasks 5+6) | Device-blocked (no change) |
+| ⏳ Active | Phase 9 closed-beta launch unplanned | Recommend `/gsd-plan-phase 9` next |
+
+### Quick-task velocity (informational)
+
+Three polish-pass quick tasks completed today (2026-05-25):
+
+| Slug | Sessions | Commits | LOC | Time |
+|---|---|---|---|---|
+| chat-polish-pass | 1 | 8 | +750 | ~3h |
+| tracker-live-polish-pass | 1 | 8 | +850 | ~2.5h |
+| social-yolo-pass | 3 | 14 | +4500 | ~6h |
+
+The multi-session yolo pattern (`yolo: true` in PLAN frontmatter + progress log in CONTEXT.md) is proven workable, but **not the default**. Reserve for "user explicitly wants scope larger than /gsd-quick" cases backed by an ADR amendment.
+
+---
+
+*Concerns audit: 2026-05-25 (refreshed after social-yolo-pass sessions 2-3; Phase 10+11 CODE-COMPLETE; v1.0.1 backlog reshaped — 12 → 15 items net; 4 new pitfalls; mobile module unit-test gap documented)*

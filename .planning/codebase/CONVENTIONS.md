@@ -558,4 +558,98 @@ After the self-inflicted chat-dump leak documented in `docs/DECISIONS/0012-keyst
 
 ---
 
-*Convention analysis: 2026-05-25 (refresh after social-yolo-pass session 1, commits `a827bc5..830b8db`)*
+## Patterns reinforced by social-yolo-pass sessions 2-3 (2026-05-25)
+
+### 1. Typed error classes per module
+
+Pattern emerged across modules — each module that wraps a backend domain defines its own typed error class with `code: ApiErrorCode` + `status: number` fields. UI catches the specific class via `instanceof` and renders actionable Alerts.
+
+Examples:
+- `modules/friends/sync/friendsApi.ts` → `FriendRequestError`
+- `modules/stories/sync/storiesApi.ts` → `StoryApiError`
+- `state/social/useChatsStore.ts` → `ChatsFriendshipError` (with `peerUserId` field for context)
+
+**Convention:** when adding a new module sync layer, define a typed error class even if there's only one error case initially. Makes UI-side `if (e instanceof X)` checks possible without parsing error message strings.
+
+### 2. Composite navigation prop pattern
+
+Used in any screen that needs to navigate from one stack to a different stack's screen (typically tab→root modal).
+
+```typescript
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+type Nav = CompositeNavigationProp<
+  NativeStackNavigationProp<OwnStackParamList, 'OwnScreen'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
+```
+
+Three screens now use this pattern (was 1 before this batch): PeopleSearchScreen (existing), ChatsListScreen, MeScreen.
+
+**Convention:** if a screen navigates only within its own stack, plain `NativeStackNavigationProp` is fine. If it needs to open a RootStack modal (`ForeignProfile`, `StoryViewer`, `StoryCreator`), promote Nav type to `CompositeNavigationProp`.
+
+### 3. Pure-function util + RN renderer split
+
+Demonstrated by `src/util/linkify.ts` + `src/ui/social/MessageText.tsx`.
+
+- **Util layer** (`linkify.ts`): pure JS, no React/RN imports, returns discriminated-union token array. Fully unit-testable.
+- **Render layer** (`MessageText.tsx`): consumes tokens, renders nested `<Text>` with onPress handlers. Untested at unit level; validated via manual smoke.
+
+**Convention:** when adding text-processing logic (markdown, syntax highlight, mention extraction, etc.), split into pure parser + RN renderer. Test parser. Skip UI tests unless visual snapshot regression is a concern.
+
+### 4. Optimistic UI with explicit rollback
+
+Pattern from `useFriendsStore`:
+
+```typescript
+send: async (receiverId) => {
+  set({ mutating: true });
+  try {
+    const fr = await apiSend(receiverId);
+    set((s) => ({ outgoing: [fr, ...s.outgoing], mutating: false, lastError: null }));
+    return fr;
+  } catch (e) {
+    set({ mutating: false, lastError: e.message });
+    throw e;
+  }
+},
+```
+
+**Convention:**
+- Set `mutating: true` first (UI gates inputs)
+- Optimistically mutate local state on success
+- On error: clear `mutating`, set `lastError`, **re-throw** for caller awareness
+- Don't auto-rollback on error — caller refreshes if needed
+
+### 5. State-machine button (generalizable UX pattern)
+
+`FriendActionButton.tsx` is the canonical example. State-derived render with local override for immediate feedback:
+
+```typescript
+const [localOverride, setLocalOverride] = useState<State | null>(null);
+const effective = localOverride ?? state;
+// Action: setLocalOverride('pending'); call API; parent.onMutated?.();
+```
+
+**Convention:** useful for any user-initiated action button where:
+- Server returns canonical state
+- User expects immediate visual feedback (<100ms)
+- Parent passes both state + onMutated callback for refetch
+
+### 6. Idempotent server actions surfaced via no-op error swallowing
+
+`sendFriendRequest` is idempotent for pending state (returns same row). `markStoryViewed` swallows HTTP 409 (already-viewed) silently. Pattern: at the API wrapper level, decide which "this isn't a real error" status codes get swallowed vs propagated.
+
+**Convention:** for action endpoints that may legitimately fire multiple times (mark-viewed, mark-read, send-request), the API wrapper should swallow the idempotency-conflict status (typically 409) silently. Document with inline comment so future maintainers understand the swallow is intentional.
+
+### 7. Cross-service permission gate via shared DB
+
+Phase 10 introduced the first cross-service permission pattern:
+- `messaging/internal/permissions/friendship_gate.go` queries `are_friends()` SQL function (defined in social-graph migration 0022) directly via shared Postgres pool.
+
+**Convention:** for permission checks that need to be enforced at multiple service boundaries (typically: messaging gates DM creation), define the canonical check as a STABLE SQL function in the owner-service migration and call it directly from consumer services via shared pool. Avoids inter-service HTTP latency. Trade-off: cross-service schema coupling (tracked in CONCERNS.md as `CROSS-SERVICE-SCHEMA-COUPLING`).
+
+---
+
+*Convention analysis: 2026-05-25 (refreshed after social-yolo-pass sessions 2-3, commits `0228ccf..024989c`)*

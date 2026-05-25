@@ -699,4 +699,66 @@ Jobs (each name is a verbatim contract consumed by `Plan 04-05` branch-protectio
 
 ---
 
-*Testing analysis: 2026-05-25 (refresh after social-yolo-pass session 1; mobile test count unchanged at 686, backend Go test count unchanged at 23 files, Phase 10 backend tests deferred to session 2-3)*
+## Session 2-3 updates (social-yolo-pass mobile, commits `0228ccf..024989c`)
+
+### Test count delta
+
+**jest 686 → 699 (+13).** All new tests in `src/util/__tests__/linkify.test.ts`:
+
+```
+describe('linkifyText', () => {
+  it('returns single text token for plain string')
+  it('returns empty array for empty input')
+  it('extracts a full https URL')
+  it('prepends https to bare www URL')
+  it('extracts @mention')
+  it('rejects too-short mentions (< 3 chars)')
+  it('accepts long mention up to 32 chars')
+  it('handles multiple entities in one string')
+  it('mention at start of string')
+  it('URL with path + query')
+  it('does NOT linkify emails')         // lookbehind email-guard
+  it('does NOT linkify bare phone numbers')
+  it('handles cyrillic text alongside latin mention')
+});
+```
+
+13/13 passing. Pure-function util; no RN or test-renderer mocking needed.
+
+### Convention reinforced: pure utils tested, UI surfaces validated via APK
+
+Mobile module additions in sessions 2-3 added **~2500 LOC across UI components, state stores, and sync wrappers** for:
+- `src/modules/friends/` (Phase 10 — 5 component files)
+- `src/modules/stories/` (Phase 11 — 5 component files)
+
+**Zero unit tests added for these modules.** This matches the convention established by chat-polish-pass + tracker-live-polish-pass:
+
+| Layer | Test coverage convention |
+|---|---|
+| Pure JS utilities (timeFormat, avatarInitials, linkify) | Full jest unit tests |
+| Pure domain types (TS types) | No test (compile-time check via tsc) |
+| Pure domain helpers (groupStoriesByAuthor, isStoryExpired, currentPace) | jest unit tests |
+| SessionManager (domain, has injectable repo + adapter) | jest unit tests (33 across 3 files) |
+| PauseDetector (pipeline filter) | jest unit tests (24 across 2 files) |
+| Zustand stores (useFriendsStore, useStoriesStore) | **NOT TESTED** — would need full store-spec mocks |
+| Sync API wrappers (friendsApi, storiesApi) | **NOT TESTED** — would need fetch mock infrastructure |
+| UI components | **NOT TESTED** — manual smoke via APK install |
+
+**Rationale:** stores and sync wrappers are thin glue over already-tested layers (backend integration smokes catch contract drift; APK smoke catches UI bugs). The cost of mocking RN's environment for store/UI tests > value at closed-beta scale.
+
+**v1.0.1 candidates** if test gap surfaces real bugs:
+- Integration test for friend-request flow (send → accept → DM unlock)
+- Integration test for stories markViewed dedup
+- Snapshot tests for state-machine button (FriendActionButton 5 render branches)
+
+### New jest config impact: NONE
+
+The `linkify.ts` regex uses Hermes-side features (`\p{L}` Unicode property + `(?<![\p{L}\d])` lookbehind). These work in jest's Node runtime via standard ES2018+ regex support — no test config changes needed.
+
+### Backend test count delta
+
+Backend Go test count unchanged in sessions 2-3 (no Go changes). Session 1 backend additions (`46b0d65 + 609b0e2 + 7e70a4f`) deliberately deferred test additions to "session 2-3 once full e2e smoke is meaningful" per CONTEXT.md D-09 — **STILL DEFERRED to v1.0.1**. Integration test for friend-request flow + messaging gate would be 5-10 test cases (smoke via existing `services/backend/scripts/smoke_*.py` pattern, e.g. `smoke_friend_requests.py` mirroring `smoke_stories.py` from Phase 8/C).
+
+---
+
+*Testing analysis: 2026-05-25 (refreshed after social-yolo-pass sessions 2-3; jest 686 → 699 with +13 linkify tests; mobile module UI/state untested per convention; backend Phase 10 integration smoke deferred to v1.0.1)*

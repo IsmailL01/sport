@@ -646,4 +646,92 @@ sport/
 
 ---
 
-*Structure analysis: 2026-05-25*
+## Phase 10 + Phase 11 additions (2026-05-25 sessions 2-3 social-yolo-pass)
+
+### New mobile modules
+
+**`apps/mobile-rn/src/modules/friends/`** (Phase 10 / Amendment 6 — 6 files, ~1008 LOC):
+
+```
+friends/
+├── domain/types.ts                       FriendRequest, FriendActionState, REQUIRES_FRIENDSHIP_ERROR_CODE
+├── sync/friendsApi.ts                    8 endpoint wrappers + FriendRequestError class
+├── state/useFriendsStore.ts              Zustand: friendIds + incoming + outgoing + optimistic UI
+├── ui/FriendActionButton.tsx             State-machine button (5 render branches)
+├── ui/FriendRequestsInboxScreen.tsx      Inbox screen: 2 sections, pull-to-refresh, inline actions
+└── index.ts                              Public barrel
+```
+
+**`apps/mobile-rn/src/modules/stories/`** (Phase 11 / Amendment 6 — 8 files, ~1500 LOC, revived from Phase 8/C deprecation):
+
+```
+stories/
+├── domain/types.ts                       Story, StoryWithStats, StoryGroup, LocalStoryDraft, helpers
+├── sync/storiesApi.ts                    6 endpoint wrappers + StoryApiError class
+├── state/useStoriesStore.ts              Zustand: groups + stories + markViewed (optimistic)
+├── ui/StoryRingAvatar.tsx                Avatar wrapper with lime/divider story ring
+├── ui/StoryTrayHeader.tsx                Horizontal avatar scroll (ListHeader of ChatsListScreen)
+├── ui/StoryViewerScreen.tsx              Full-screen modal: progress bars + tap nav + swipe dismiss
+├── ui/StoryCreatorScreen.tsx             Image picker + overlay text + publish
+└── index.ts                              Public barrel
+```
+
+**Total mobile module count:** 5 (was 3 after prior refresh)
+- `gamification/` (pre-existing)
+- `moderation/` (pre-existing, Phase 8/E)
+- `permissions/` (pre-existing)
+- `friends/` (NEW)
+- `stories/` (REVIVED)
+
+### New mobile utilities + components
+
+**`apps/mobile-rn/src/util/linkify.ts`** + **`__tests__/linkify.test.ts`** — pure-function URL + @mention extractor. 13 tests. Pattern: `(?<![\p{L}\d])(https?://[^\s<>]+|www\.[^\s<>]+|@[A-Za-z0-9_]{3,32})` with `gu` flag. Email/phone guard via lookbehind.
+
+**`apps/mobile-rn/src/ui/social/MessageText.tsx`** — renders `LinkifyToken[]` as nested `<Text>` with onPress handlers. Used by `ChatScreen.Bubble` for message-body rendering (replaces direct `<Text>{msg.text}</Text>`).
+
+### Updated mobile navigation files
+
+**`apps/mobile-rn/src/navigation/types.ts`** — type unions extended:
+- `MeStackParamList` gains `FriendRequests: undefined`
+- `RootStackParamList` gains `StoryViewer: { authorId; startIndex? }` + `StoryCreator: undefined`
+
+**`apps/mobile-rn/src/navigation/RootNavigator.tsx`** — registers two new modal routes alongside ForeignProfile:
+- `StoryViewer` — `fullScreenModal` + `fade` + `gestureEnabled: false`
+- `StoryCreator` — `modal` + `slide_from_bottom`
+
+**`apps/mobile-rn/src/navigation/AppTabs.tsx`** — `CursonaTabBar` reads `useFriendsStore.incoming.length` and passes as `badges.me` alongside existing `badges.chats`. Both badges now active.
+
+### Updated mobile screens (integration points)
+
+**`apps/mobile-rn/src/navigation/screens/me/MeScreen.tsx`**:
+- New `ActionRow` "Заявки в друзья" with `badge?: number` prop (red pill 22px)
+- New `ActionRow` "Опубликовать историю" → `nav.navigate('StoryCreator')`
+- `Nav` type promoted to `CompositeNavigationProp<MeStack, RootStack>` (cross-stack)
+- `useEffect` now calls `useFriendsStore.refresh()` on mount
+
+**`apps/mobile-rn/src/navigation/screens/chats/ChatsListScreen.tsx`**:
+- `ListHeaderComponent` renders `<StoryTrayHeader onPickAuthor={...}>` in non-search mode
+- `handleOpenPerson` catches `ChatsFriendshipError` → Alert with inline "Отправить заявку" button calling `sendFriendRequest`
+- `Nav` type promoted to `CompositeNavigationProp<ChatsStack, RootStack>` (cross-stack)
+
+**`apps/mobile-rn/src/navigation/screens/ForeignProfileScreen.tsx`**:
+- `RelationDTO` type extended with optional `friendStatus` + `friendRequestId`
+- `<FriendActionButton>` rendered as primary action (replaces follow primacy)
+- Follow demoted to `secondary`/`ghost` variant
+- DM button label conditional on `canDm`: "Чат после принятия заявки" when locked
+- `onOpenDM` catches `ChatsFriendshipError` → refetches Relation (button shows updated state inline)
+
+**`apps/mobile-rn/src/state/social/useChatsStore.ts`**:
+- New exported `ChatsFriendshipError` class with `peerUserId` field
+- `createOrFindDM` parses HTTP 403 + `{error: "requires_friendship"}` → throws the new error
+- Other errors still return `null` (unchanged contract)
+
+### Updated design system
+
+**`apps/mobile-rn/src/design/components/TabBar.tsx`** — `badges` prop active for multiple tabs. Existing implementation (from chat-polish-pass) already supports any TabId; this batch just wires Me-tab to it.
+
+**`apps/mobile-rn/src/navigation/screens/me/MeScreen.tsx`** — `ActionRow` component gains optional `badge?: number` prop rendering 22px red pill (`theme.error` bg, white text, `marginRight: 4`).
+
+---
+
+*Structure analysis: 2026-05-25 (refreshed after Phase 10+11 mobile shipped)*

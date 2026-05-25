@@ -23,6 +23,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 **Mobile:**
 - Node.js 20 (release CI: `.github/workflows/android-release.yml` step "Setup Node"); Node 22 in `.github/workflows/android-debug-apk.yml` (dev-build APK pipeline, NEW 2026-05-24)
 - Hermes JS engine (Android — `apps/mobile-rn/android/gradle.properties:42` `hermesEnabled=true`); JSC fallback (`io.github.react-native-community:jsc-android:2026004.+`)
+- **Hermes ≥ RN 0.72 prerequisite confirmed** — `apps/mobile-rn/src/util/linkify.ts` (NEW 2026-05-25, session 3 of social-yolo-pass) uses Unicode lookbehind (`(?<![\p{L}\d])`) + `\p{L}` Unicode property escape with `u` flag. Both Hermes features since RN 0.72; we run 0.81.5.
 - New Architecture enabled (`newArchEnabled: true` in `apps/mobile-rn/app.json:10` + `gradle.properties:38`)
 - React Native 0.81.5 + React 19.1.0
 
@@ -46,15 +47,26 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 **Mobile core:**
 - Expo SDK ~54.0.33 — `apps/mobile-rn/package.json:27`. Bare workflow (full `apps/mobile-rn/android/` tree committed since Plan 07-03 fix `f09e729` — 42 files tracked vs. previously 3)
 - React Native 0.81.5, React 19.1.0
-- React Navigation 7.x (native-stack + bottom-tabs)
+- React Navigation 7.x (native-stack + bottom-tabs). **Route surface extended 2026-05-25** (session 2+3 of social-yolo-pass):
+  - `MeStackParamList` gained `FriendRequests: undefined` (defined `apps/mobile-rn/src/navigation/types.ts:99`; registered `apps/mobile-rn/src/navigation/AppTabs.tsx:110`)
+  - `RootStackParamList` gained `StoryViewer: { authorId; startIndex? }` (`types.ts:24`) + `StoryCreator: undefined` (`types.ts:26`); both registered as modal presentations alongside `ForeignProfile` in `apps/mobile-rn/src/navigation/RootNavigator.tsx:161-171`
+  - `TabBar.badges` prop now drives **both** `chats` (unread count) AND `me` (incoming friend-request count) tab badges — see `apps/mobile-rn/src/navigation/AppTabs.tsx:146` `badges={{ chats: totalUnread, me: incomingFriendCount }}`. Me-tab badge is new in this batch; chats badge predates it.
 - Zustand ^5.0.13 for state stores
 - `react-native-mmkv` ^4.3.1 for persistent KV (banner-suppress flags, autostart-shown flag, throttle timestamps)
 - `react-native-nitro-modules` ^0.35.6 (MMKV peer dep)
-- `expo-linear-gradient` ~15.0.8 — NOW ACTIVELY USED by `apps/mobile-rn/src/design/components/Avatar.tsx` (chat-polish-pass 2026-05-25, gradient fallback when no `avatarUrl` provided). Was previously dormant.
+- `expo-linear-gradient` ~15.0.8 — actively used by `apps/mobile-rn/src/design/components/Avatar.tsx` (chat-polish-pass 2026-05-25, gradient fallback when no `avatarUrl` provided). No additional usage added in sessions 2-3.
+
+**Mobile module organization (`apps/mobile-rn/src/modules/`):** 5 modules as of 2026-05-25 session 3 (was 3 in prior refresh `5127c7f`):
+- `gamification/` — pre-existing
+- `moderation/` — pre-existing
+- `permissions/` — pre-existing (mobile-side permission orchestration; distinct from backend `permissions` package)
+- `friends/` — **NEW 2026-05-25 (Phase 10 / ADR-0011 Amendment 6)**. Layout: `domain/types.ts`, `sync/friendsApi.ts` (uses `apiClient` wrapper, no new external deps), `state/useFriendsStore.ts` (Zustand), `ui/FriendActionButton.tsx`, `ui/FriendRequestsInboxScreen.tsx`. Public surface re-exported from `apps/mobile-rn/src/modules/friends/index.ts`.
+- `stories/` — **REVIVED 2026-05-25 (Phase 11 / STORIES-REVIVAL, Amendment 6)** from Phase 8/C deprecation. Layout: `domain/types.ts` (with `groupStoriesByAuthor`, `isStoryExpired`, `STORY_OVERLAY_MAX_LENGTH`, `STORY_DURATION_MS`), `sync/storiesApi.ts` (uses `apiClient` + existing `sync/mediaUpload.fetchMediaURL/uploadImage` + `media/MediaAdapter`), `state/useStoriesStore.ts`, `ui/StoryRingAvatar.tsx`, `ui/StoryTrayHeader.tsx`, `ui/StoryViewerScreen.tsx`, `ui/StoryCreatorScreen.tsx`. Public surface in `apps/mobile-rn/src/modules/stories/index.ts`.
+- Unsorted-but-still-modular code at root `src/state/social/` etc. remains pending migration per CHAT-MODULE-MIGRATION v1.0.1 backlog.
 
 **Backend core:**
 - Standard library `net/http` (no Gin/Echo/Chi) — handlers in `services/backend/<svc>/internal/handler/http.go`
-- `github.com/jackc/pgx/v5` v5.9.2 — PostgreSQL driver across all services. **NEW pattern (Phase 10 / ADR-0011 Amendment 6, 2026-05-25):** cross-service DB-level permission queries — see `permissions` package below.
+- `github.com/jackc/pgx/v5` v5.9.2 — PostgreSQL driver across all services. **Cross-service DB-level permission queries pattern (Phase 10 / ADR-0011 Amendment 6, 2026-05-25):** see `permissions` package below.
 - `github.com/nats-io/nats.go` v1.39.1 — JetStream client (messaging, feed, social-graph, notifications, activity-sync, realtime-gw)
 - `github.com/coder/websocket` v1.8.13 — WebSocket terminus in `services/backend/realtime-gw/`
 - `github.com/golang-jwt/jwt/v5` v5.3.1 — JWT verification across services (`IDENTITY_JWT_SECRET` shared env)
@@ -62,7 +74,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - `github.com/minio/minio-go/v7` v7.0.78 — S3 client in `services/backend/media/`
 
 **Backend internal packages (per-service `internal/` libraries):**
-- `services/backend/messaging/internal/permissions/` — **NEW Phase 10 (2026-05-25)**. Hosts `FriendshipGate` struct (`friendship_gate.go`) that wraps the `are_friends(u1, u2)` Postgres SQL function added by migration `0022_friend_requests.up.sql`. Pattern: cross-service permission check done by direct SQL call against shared Postgres pool (no inter-service HTTP). Wired in `services/backend/messaging/cmd/server/main.go` via `permissions.NewFriendshipGate(pool)`. Consumed by `Handler.createOrFindConv` to enforce DM friendship precondition.
+- `services/backend/messaging/internal/permissions/` — Phase 10 (2026-05-25). Hosts `FriendshipGate` struct (`friendship_gate.go`) that wraps the `are_friends(u1, u2)` Postgres SQL function added by migration `0022_friend_requests.up.sql`. Pattern: cross-service permission check done by direct SQL call against shared Postgres pool (no inter-service HTTP). Wired in `services/backend/messaging/cmd/server/main.go` via `permissions.NewFriendshipGate(pool)`. Consumed by `Handler.createOrFindConv` to enforce DM friendship precondition.
 - No new external libraries needed — uses existing `github.com/jackc/pgx/v5` + `github.com/jackc/pgx/v5/pgxpool`.
 
 **Mapping:**
@@ -75,7 +87,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - `@testing-library/react-native` ^13.3.3 (mobile)
 - `better-sqlite3` 12.10.0 (mobile dev — `apps/mobile-rn/src/storage/` test fakes)
 - Go stdlib `testing` + `-race -coverprofile=coverage.out` (CI `.github/workflows/backend-ci.yml:54`)
-- 686 mobile jest tests passing (2026-05-25; +48 from 638 after chat-polish-pass + tracker-live-polish-pass)
+- **699 mobile jest tests passing** (2026-05-25 session 3 of social-yolo-pass; was 686 in prior refresh). +13 new tests in `apps/mobile-rn/src/util/__tests__/linkify.test.ts` (114 lines) covering URL extraction (http/https/www), `@mention` extraction, the email-guard lookbehind, and Unicode-aware boundary behavior.
 
 **Build/Dev:**
 - EAS CLI installed at run-time via `npm install -g eas-cli` (`.github/workflows/android-release.yml:134-135` — explicit install added after Plan 07-01 P0 incident, docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md)
@@ -100,14 +112,15 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - `expo-intent-launcher` ~13.0.8 — MIUI/One UI deep-link intents in `apps/mobile-rn/src/vendor/openOEMSettings.ts` (Plan 07-03 Task 3)
 - `expo-notifications` ~0.32.17 — sticky Android foreground-service notification in `apps/mobile-rn/src/foreground/notification.ts` (Plan 07-03 Task 2; channel `recording`, importance LOW, 5s tick)
 - `expo-application` ~7.0.8 — `nativeApplicationVersion` + `nativeBuildVersion` source for `apps/mobile-rn/src/util/version.ts` (`getClientVersionHeader`, `getInstalledVersion`, `getInstalledBuildNumber`)
-- `expo-linear-gradient` ~15.0.8 — gradient fallback for `Avatar` component (`apps/mobile-rn/src/design/components/Avatar.tsx`, chat-polish-pass)
+- `expo-linear-gradient` ~15.0.8 — gradient fallback for `Avatar` component (`apps/mobile-rn/src/design/components/Avatar.tsx`, chat-polish-pass; unchanged in sessions 2-3 of social-yolo-pass)
 - `expo-location` ~19.0.8, `expo-task-manager` ~14.0.9 — background tracking
 - `expo-secure-store` ~15.0.8 — JWT storage (`apps/mobile-rn/src/auth/tokenStorage.ts`)
 - `expo-sqlite` ~16.0.10 — local activity storage
 - `expo-haptics` ~14.1.4, `expo-speech` ~14.0.8 (TTS via `apps/mobile-rn/src/util/expoSpeechAdapter.ts`)
-- `expo-file-system` ~19.0.22, `expo-image-manipulator` ~14.0.8, `expo-image-picker` ~17.0.11 — media flows
+- `expo-file-system` ~19.0.22, `expo-image-manipulator` ~14.0.8, `expo-image-picker` ~17.0.11 — media flows. **`expo-image-picker` usage extended 2026-05-25** via the existing `MediaAdapter` (`apps/mobile-rn/src/media/`) — now also consumed by `StoryCreatorScreen` (`apps/mobile-rn/src/modules/stories/ui/StoryCreatorScreen.tsx:30-51`) for picking story media. No new package added.
 - `react-native-get-random-values` ^2.0.0 — uuid polyfill (imported first in `apps/mobile-rn/App.tsx:15`)
 - `uuid` ^14.0.0
+- **React Native `Linking` (built-in module)** — now consumed by `apps/mobile-rn/src/ui/social/MessageText.tsx` (NEW 2026-05-25 session 3) to open URLs extracted by `linkifyText()`. No new package — RN core API.
 
 **Critical backend:**
 - `github.com/jackc/pgx/v5` v5.9.2 — Postgres driver. **As of 2026-05-25:** also drives cross-service permission checks (`messaging` queries `social-graph`-owned `are_friends()` SQL function via shared Postgres pool — see `services/backend/messaging/internal/permissions/friendship_gate.go`)
@@ -115,23 +128,25 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - `github.com/nats-io/nats.go` v1.39.1 — NATS JetStream
 - `github.com/getsentry/sentry-go` v0.46.2 — Sentry SDK (dormant per ADR-0010 / D-38 — empty DSN no-op path enforced in `services/backend/pkg/observability/sentry_init.go:6-17`)
 - `github.com/prometheus/client_golang` v1.20.5 — `/metrics` handler in each service
-- `go.opentelemetry.io/otel` v1.43.0 + `go.opentelemetry.io/otel/sdk` v1.43.0 + `otelhttp` v0.68.0 + `otlptracehttp` v1.43.0 — tracing. **Bumped from v1.32.0 → v1.43.0** in `services/backend/pkg/go.mod` (instrumentation `v0.57.0 → v0.68.0`). Indirect bumps: `proto/otlp v1.5.0 → v1.10.0`, `google.golang.org/grpc v1.71.x → v1.80.0`.
+- `go.opentelemetry.io/otel` v1.43.0 + `go.opentelemetry.io/otel/sdk` v1.43.0 + `otelhttp` v0.68.0 + `otlptracehttp` v1.43.0 — tracing. Bumped from v1.32.0 → v1.43.0 in `services/backend/pkg/go.mod` (instrumentation `v0.57.0 → v0.68.0`). Indirect bumps: `proto/otlp v1.5.0 → v1.10.0`, `google.golang.org/grpc v1.71.x → v1.80.0`.
 - `golang.org/x/crypto` v0.50.0 — Ed25519 in `scripts/sign-manifest.go` + `scripts/verify-manifest.go`
+
+**No new external dependencies added in social-yolo-pass sessions 2-3 (2026-05-25):** `apps/mobile-rn/package.json` is byte-identical at the dependencies level between commit `5127c7f` and HEAD. Friends + Stories modules + linkify + MessageText are built entirely on existing deps (apiClient/Zustand/MMKV/expo-image-picker/MediaAdapter/Linking/`\p{L}` Unicode-aware regex).
 
 **Infrastructure:**
 - timescale/timescaledb:2.17.2-pg16 — PostgreSQL + TimescaleDB (`services/backend/docker-compose.prod.yml:25`)
 - nats:2.11-alpine with JetStream + 7d retention
 - minio/minio:RELEASE.2025-01-20T14-49-07Z (write side gated by `DISTRIBUTE_ENABLED` per ADR-0011 Amendment 5; runtime container always present)
 - redis:7-alpine with `--maxmemory 256mb --maxmemory-policy allkeys-lru`
-- migrate/migrate:v4.18.1 — run-once init job. **Migration count: 22 numbered + 2 drill (was 21 numbered)** — `0022_friend_requests` (Phase 10) added 2026-05-25 (`830b8db`). **Migration `0022` is NOT yet applied on the production VPS** as of `830b8db`; the new friend-request endpoints will return DB errors until applied.
+- migrate/migrate:v4.18.1 — run-once init job. **Migration count: 22 numbered + 2 drill** (Phase 10 `0022_friend_requests` added 2026-05-25 commit `46b0d65`). **Migration `0022` is NOT yet applied on the production VPS** as of HEAD; the new friend-request endpoints + DM friendship gate will return DB errors until applied.
 - caddy:2.8-alpine — gateway, Let's Encrypt via sslip.io
 - grafana/loki:3.2.0, grafana/grafana:11.3.0, prom/prometheus:v2.55.0 — observability stack (`infra/observability-stack/docker-compose.yml`, runs on srv1561293 colocated with niko-prod, Caddy :8443 self-signed sole ingress)
 
 ## Configuration
 
 **Environment:**
-- Mobile: `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`, `EXPO_PUBLIC_IDENTITY_URL`, `EXPO_PUBLIC_SYNC_URL`, `EXPO_PUBLIC_API_URL` (read in `apps/mobile-rn/src/auth/apiClient.ts:22-30`). Defaults to `http://10.0.2.2:8081` (Android emulator). ESLint blocks `EXPO_PUBLIC_*_SECRET` syntax + literal `sk.<40+>` Mapbox secret-token shape (`apps/mobile-rn/eslint.config.js:47-60`).
-- **`EXPO_PUBLIC_UPDATE_MANIFEST_URL`** (NEW Plan 08-01; GATED per ADR-0011 Amendment 5) — when unset/empty, `manifestCheck.ts` returns `state: 'disabled'` early without making any network call. No production manifest URL is currently set.
+- Mobile: `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`, `EXPO_PUBLIC_IDENTITY_URL`, `EXPO_PUBLIC_SYNC_URL`, `EXPO_PUBLIC_API_URL` (read in `apps/mobile-rn/src/auth/apiClient.ts:22-30`). Defaults to `http://10.0.2.2:8081` (Android emulator). ESLint blocks `EXPO_PUBLIC_*_SECRET` syntax + literal `sk.<40+>` Mapbox secret-token shape (`apps/mobile-rn/eslint.config.js:47-60`). **No new `EXPO_PUBLIC_*` env vars introduced in sessions 2-3** — Friends + Stories modules reach backend via the existing `apiClient` against `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_SYNC_URL`.
+- **`EXPO_PUBLIC_UPDATE_MANIFEST_URL`** (Plan 08-01; GATED per ADR-0011 Amendment 5) — when unset/empty, `manifestCheck.ts` returns `state: 'disabled'` early without making any network call. No production manifest URL is currently set.
 - Backend (per-service env): `<SVC>_HTTP_ADDR`, `<SVC>_DB_URL`, `IDENTITY_JWT_SECRET` (shared, ≥32 chars), `NATS_URL`, `REDIS_URL`, `S3_*` (media), `EXPO_ACCESS_TOKEN` (notifications), `CADDY_ACME_EMAIL` (gateway). Compose enforces required vars via `${VAR:?need VAR}` syntax in `services/backend/docker-compose.prod.yml`.
 - **Messaging service (2026-05-25):** `MESSAGING_DB_URL` now consumed for *two* purposes — its own conversation/message tables AND the friendship-gate query (`SELECT are_friends($1, $2)`). Same connection pool serves both (`services/backend/messaging/cmd/server/main.go` wires the pool into `permissions.NewFriendshipGate(pool)` before passing it to `handler.New`).
 - Prod env file on VPS: `/run/sport.env` (rendered by Ansible; consumed by `services/backend/docker-compose.prod.yml`)
@@ -165,7 +180,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 **Jest:**
 - `transformIgnorePatterns` whitelists `@noble/.*` for ESM-only transform (`apps/mobile-rn/jest.config.js:5-9`) — required by Plan 08-01 Task 5
 - `testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx']`
-- 686 tests passing as of 2026-05-25 (was 638 before chat-polish-pass + tracker-live-polish-pass landed today)
+- **699 tests passing as of 2026-05-25** (was 686 in prior refresh `5127c7f`). +13 new tests in session 3: `apps/mobile-rn/src/util/__tests__/linkify.test.ts` covering URL/mention tokenization.
 
 **Build (mobile):**
 - `apps/mobile-rn/jest.config.js`, `apps/mobile-rn/eslint.config.js`, `apps/mobile-rn/eas.json`, `apps/mobile-rn/app.json`, `apps/mobile-rn/tsconfig.json`
@@ -184,7 +199,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - `.github/workflows/backend-ci.yml` — Go test/lint/SAST/Vuln/Secrets/Docker/Cardinality/PII pipeline
 - `.github/workflows/backend-cd.yml` — multi-service GHCR publish + cosign + SLSA L2
 - `.github/workflows/android-release.yml` — tag-triggered .aab build + (gated) MinIO distribution
-- `.github/workflows/android-debug-apk.yml` — **NEW 2026-05-24** dev-build pipeline; workflow_dispatch + push trigger; Node 22 + JDK 17 Temurin; produces universal debug APK (`arm64-v8a` + `x86_64`) as a GH Actions artifact (14-day retention); injects `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` from secrets, leaves `EXPO_PUBLIC_UPDATE_MANIFEST_URL` unset (gate closed); used for BlueStacks dev-loop + ad-hoc tester APK sharing
+- `.github/workflows/android-debug-apk.yml` — dev-build pipeline; workflow_dispatch + push trigger; Node 22 + JDK 17 Temurin; produces universal debug APK (`arm64-v8a` + `x86_64`) as a GH Actions artifact (14-day retention); injects `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` from secrets, leaves `EXPO_PUBLIC_UPDATE_MANIFEST_URL` unset (gate closed); used for BlueStacks dev-loop + ad-hoc tester APK sharing
 - `.github/workflows/secret-scan-full.yml` — Sun 03:00 UTC cron, full-history gitleaks + trufflehog
 
 ## Platform Requirements
@@ -198,7 +213,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - macOS or Linux dev workstation (Android Studio + JDK 17 for native debugging)
 
 **Production:**
-- Single VPS (148.253.214.156) running `services/backend/docker-compose.prod.yml` via systemd sport-stack umbrella (`/opt/sport/services/backend/`, env file `/run/sport.env`). Image tags pinned via `SPORT_STACK_TAG` env. `make rollback v=<tag>` (root `Makefile`) wraps `migrate down 1` + ansible re-deploy + smoke probe. 8 services healthy on 2026-05-25 probe. **Pending action 2026-05-25:** Migration `0022_friend_requests.up.sql` must be applied on the prod VPS before the new social-graph friend-request endpoints + messaging DM-gate behave correctly. Not yet applied as of `830b8db`.
+- Single VPS (148.253.214.156) running `services/backend/docker-compose.prod.yml` via systemd sport-stack umbrella (`/opt/sport/services/backend/`, env file `/run/sport.env`). Image tags pinned via `SPORT_STACK_TAG` env. `make rollback v=<tag>` (root `Makefile`) wraps `migrate down 1` + ansible re-deploy + smoke probe. 8 services healthy on 2026-05-25 probe. **Pending action:** Migration `0022_friend_requests.up.sql` must be applied on the prod VPS before the social-graph friend-request endpoints + messaging DM-gate + (downstream) mobile Friends module behave correctly.
 - Observability VPS (srv1561293, 82.25.71.215) — separate host running `infra/observability-stack/docker-compose.yml`. All 3 containers bound to 127.0.0.1; Caddy :8443 (self-signed) sole public ingress. Memory caps: loki 512m, prom 512m, grafana 768m.
 - Android device: arm64-v8a only for release builds (`abiFilters` set in `apps/mobile-rn/android/app/build.gradle:111-113`). minSdk / targetSdk inherit from Expo SDK 54.
 - Distribution: tag push `v1.0.0-beta.*` | `v1.0.0-rc.*` → `.github/workflows/android-release.yml` → if `MINIO_RELEASES_ACCESS_KEY` is set (i.e., `DISTRIBUTE_ENABLED=true`), APK lands in MinIO `android-releases` (24h presigned) + signed manifest in `android-manifest` (public-read). When the secret is unset (current closed-beta posture per ADR-0011 Amendment 5), the .aab build still runs but distribution steps skip via `if: env.DISTRIBUTE_ENABLED == 'true'`.
@@ -213,7 +228,7 @@ Previously hybrid expo-prebuild (3 tracked files). Now fully committed under `ap
 - `app/src/main/java/com/runningecosystem/mobile/MainActivity.kt`
 - `app/src/main/java/com/runningecosystem/mobile/MainApplication.kt`
 - `app/src/main/res/` — drawables (splash, ic_launcher), mipmaps (ic_launcher per density), values (colors, strings, styles)
-- `app/debug.keystore` — NEW committed 2026-05-24 (commit `0f6f840`)
+- `app/debug.keystore` — committed 2026-05-24 (commit `0f6f840`)
 
 `local.properties` and `build/` are NOT tracked (in `.gitignore`).
 
