@@ -16,8 +16,9 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { apiClient } from '../../auth/apiClient';
 import { Avatar, Button, Card, GradeBadge, Icon, useTheme } from '../../design';
+import { FriendActionButton } from '../../modules/friends';
 import { useAuthStore } from '../../state/auth';
-import { useChatsStore } from '../../state/social/useChatsStore';
+import { ChatsFriendshipError, useChatsStore } from '../../state/social/useChatsStore';
 import {
   getRelation,
   isFresh,
@@ -48,6 +49,9 @@ type RelationDTO = {
   isBlocked: boolean;
   isBlockedBy: boolean;
   canDm: boolean;
+  // Phase 10 / ADR-0011 Amendment 6 — extended fields.
+  friendStatus?: 'self' | 'none' | 'pending_outgoing' | 'pending_incoming' | 'accepted';
+  friendRequestId?: string;
 };
 
 export function ForeignProfileScreen() {
@@ -156,7 +160,14 @@ export function ForeignProfileScreen() {
         });
       }
     } catch (e) {
-      console.warn('[ForeignProfile] open DM failed', e);
+      // Phase 10 / ADR-0011 Amendment 6 — friendship gate. Since this screen
+      // already has the FriendActionButton, just refresh relation state so
+      // the button reflects the gate; user can act on it inline.
+      if (e instanceof ChatsFriendshipError) {
+        void load();
+      } else {
+        console.warn('[ForeignProfile] open DM failed', e);
+      }
     } finally {
       setOpening(false);
     }
@@ -243,9 +254,18 @@ export function ForeignProfileScreen() {
             </Text>
           ) : (
             <>
+              {/* Phase 10 / ADR-0011 Amendment 6 — friend-request state-machine
+                  button. Replaces the primary action position previously held by
+                  Follow. Follow stays available below as a secondary action. */}
+              <FriendActionButton
+                targetUserId={userId}
+                state={rel?.friendStatus ?? 'none'}
+                requestId={rel?.friendRequestId ?? null}
+                onMutated={() => void load()}
+              />
               <Button
-                variant={rel?.isFollowing ? 'secondary' : 'primary'}
-                size="lg"
+                variant={rel?.isFollowing ? 'secondary' : 'ghost'}
+                size="md"
                 full
                 disabled={toggling}
                 onPress={onToggleFollow}
@@ -253,7 +273,7 @@ export function ForeignProfileScreen() {
                   <Icon
                     name={rel?.isFollowing ? 'check' : 'userplus'}
                     size={18}
-                    color={rel?.isFollowing ? t.text : '#000'}
+                    color={rel?.isFollowing ? t.text : t.text}
                   />
                 }
               >
@@ -270,9 +290,13 @@ export function ForeignProfileScreen() {
                 full
                 disabled={opening || rel?.canDm === false}
                 onPress={onOpenDM}
-                icon={<Icon name="chat" size={18} color={t.text} />}
+                icon={<Icon name="chat" size={18} color={rel?.canDm === false ? t.text3 : t.text} />}
               >
-                {opening ? 'Открываем…' : 'Написать'}
+                {opening
+                  ? 'Открываем…'
+                  : rel?.canDm === false
+                    ? 'Чат после принятия заявки'
+                    : 'Написать'}
               </Button>
             </>
           )}
