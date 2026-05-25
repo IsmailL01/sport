@@ -1,12 +1,20 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-05-24
+**Analysis Date:** 2026-05-25
 
 The repo has two distinct test surfaces:
-- **Mobile (Jest + RN Testing Library):** 60 test files across `apps/mobile-rn/src/`, ~636 individual test cases across 59 suites at the time of writing (Plan 07-03 + Plan 08-01 added ~75 cases since commit `32cab82`)
-- **Backend (Go `testing` + `httptest` + in-memory repos):** 23 `*_test.go` files across `services/backend/`, executed per-module via the `backend-ci` matrix
+- **Mobile (Jest + RN Testing Library):** **64 test files, 686 individual cases, 2 snapshots**, all green. Distributed across top-level `apps/mobile-rn/src/__tests__/` (~47 files) + module-local `<module>/__tests__/` directories (17 files).
+- **Backend (Go `testing` + `httptest` + in-memory repos):** **23 `*_test.go` files** across `services/backend/`, executed per-module via the `backend-ci` matrix (race detector enabled).
 
 In addition, `.planning/phases/<NN-…>/evidence/smoke-*.sh` shell smokes exercise cross-language and CI-shape contracts that Jest/Go-test can't reach.
+
+**Test growth since prior refresh (commit `ac76df0` 2026-05-24):**
+
+| Source | Tests added | Files added |
+|---|---|---|
+| `chat-polish-pass` (quick task 2026-05-25) | +31 (14 timeFormat + 17 avatarInitials) | 2 new test files |
+| `tracker-live-polish-pass` (quick task 2026-05-25) | +17 (6 PauseDetector warmup + 9 SessionManager time-freeze + 2 pause-flow integration) | 3 new test files |
+| **Total delta** | **+48** | **+5 files (638 → 686 tests, 59 → 64 suites)** |
 
 ## Test Framework
 
@@ -32,26 +40,29 @@ module.exports = {
   ],
 };
 ```
-- `transformIgnorePatterns` allowlist updated in Plan 08-01 Task 5 to add `@noble/*` (Ed25519 deps are ESM-only and need Babel transform)
+- `transformIgnorePatterns` allowlist added `@noble/*` in Plan 08-01 Task 5 (Ed25519 deps are ESM-only and need Babel transform)
 - Barrel `index.ts` excluded from coverage
+- **No `coverageThreshold`** set — 80%+ / 90%+ targets in `CLAUDE.md` are policy, not enforced
 
 **Backend runner:**
 - Standard Go `testing` package + `net/http/httptest` for handler tests
 - In-memory repository implementations (`internal/repository/memory/`) substitute for Postgres in service-level unit tests
 - Race detector enabled: `go test -race -coverprofile=coverage.out ./...` (see `.github/workflows/backend-ci.yml:54`)
+- Tracked-as-clean: 9 backend modules with golangci-lint v2.5.0 + govulncheck both 0-issue (verified `92fe656` + `69cc8eb` 2026-05-24 / 2026-05-25)
 
 **Run Commands:**
 
 Mobile:
 ```bash
 cd apps/mobile-rn
-npm test                                                # Run all suites
+npm test                                                # Run all suites — 686/686 expected
 npm run test:coverage                                   # With coverage report
 npx jest --testPathPattern='update'                     # Pattern filter (e.g., update module)
+npx jest --testPathPattern='SessionManager'             # Multi-file pattern (5 SessionManager-touching files)
 npx jest path/to/file.test.ts                           # Single file
 npx jest -t 'force-update path'                         # By test-name regex
 npm run lint                                            # ESLint
-npm run typecheck                                       # tsc --noEmit
+npm run typecheck                                       # tsc --noEmit  ← per-commit gate during quick tasks
 ```
 
 Backend:
@@ -70,12 +81,25 @@ bash .planning/phases/08-closed-beta-distribution/evidence/smoke-release-distrib
 
 ## Test File Organization
 
-**Location pattern (mobile):** co-located in `__tests__/` directories beside the source they test.
-- Domain/pipeline/util tests live in the top-level `apps/mobile-rn/src/__tests__/` (e.g., `pipeline.test.ts`, `AreaCalculator.test.ts`, `geo.test.ts`)
-- Module-local tests live in `<module>/__tests__/` — e.g., `apps/mobile-rn/src/update/__tests__/`, `apps/mobile-rn/src/vendor/__tests__/`, `apps/mobile-rn/src/state/__tests__/`, `apps/mobile-rn/src/auth/__tests__/`, `apps/mobile-rn/src/util/__tests__/`, `apps/mobile-rn/src/ui/screens/__tests__/`, `apps/mobile-rn/src/domain/session/__tests__/`
+**Location pattern (mobile):** TWO co-location styles coexist (both in active use):
+
+1. **Centralized `src/__tests__/` (original, dominant — ~47 files):** Domain / pipeline / util / state / integration tests live in the top-level `apps/mobile-rn/src/__tests__/` (e.g., `pipeline.test.ts`, `AreaCalculator.test.ts`, `geo.test.ts`, `SessionManager.test.ts`, `sessionRepository.integration.test.ts`).
+2. **Co-located `<module>/__tests__/` (newer pattern — 17 files):** Module-local tests live beside the source they test:
+   - `apps/mobile-rn/src/update/__tests__/` (4 files, 48 cases — Plan 08-01)
+   - `apps/mobile-rn/src/vendor/__tests__/` (2 files — Plan 07-03)
+   - `apps/mobile-rn/src/state/__tests__/` (2 files: featureflags, forceUpdate)
+   - `apps/mobile-rn/src/auth/__tests__/` (apiClient)
+   - `apps/mobile-rn/src/util/__tests__/` (version, **timeFormat** — chat-polish-pass)
+   - `apps/mobile-rn/src/design/__tests__/` (**avatarInitials** — chat-polish-pass)
+   - `apps/mobile-rn/src/ui/screens/__tests__/` (ForceUpdateScreen)
+   - `apps/mobile-rn/src/domain/session/__tests__/` (3 files: smoke, **timeFreezing**, **pauseFlow** — tracker-live-polish-pass)
+   - `apps/mobile-rn/src/pipeline/filters/__tests__/` (**PauseDetector.warmup** — tracker-live-polish-pass)
+
+**Convention for NEW tests:** Co-located `<module>/__tests__/` is the preferred default for **new** code. The centralized `src/__tests__/` remains for cross-module integration tests + tests added before the co-location convention took hold. Either location is valid; both are picked up by `jest.config.js:7` `testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx']`.
 
 **Naming:**
-- Unit tests: `<source>.test.ts(x)` — `manifestSchema.test.ts`, `AutostartDialog.test.tsx`
+- Unit tests: `<source>.test.ts(x)` — `manifestSchema.test.ts`, `AutostartDialog.test.tsx`, `timeFormat.test.ts`, `avatarInitials.test.ts`
+- Feature-specific test variants on same source: `<source>.<feature>.test.ts` — `PauseDetector.warmup.test.ts` (tests new warmup gate; doesn't touch existing PauseDetector behavior), `SessionManager.timeFreezing.test.ts` (tests new `effectiveElapsedMs()` API only), `SessionManager.pauseFlow.test.ts` (integration test wiring PauseDetector + SessionManager together)
 - Integration tests: `<source>.integration.test.ts` — `sessionRepository.integration.test.ts`
 - Snapshot tests: `<source>.snapshot.test.tsx` — `RunDetailsScreen.snapshot.test.tsx` (snapshots stored in `__snapshots__/<source>.snapshot.test.tsx.snap`)
 - Smoke tests outside Jest: `<source>.smoke.test.ts` — `SessionManager.smoke.test.ts`
@@ -84,7 +108,7 @@ bash .planning/phases/08-closed-beta-distribution/evidence/smoke-release-distrib
 **Location pattern (backend):** Go convention — `*_test.go` lives in the same package as the SUT.
 - `services/backend/identity/internal/service/auth_test.go` next to `auth.go`
 - `services/backend/identity/internal/handler/http_test.go` next to `http.go`
-- `services/backend/pkg/observability/*_test.go` for shared infrastructure
+- `services/backend/pkg/observability/*_test.go` for shared infrastructure (7 test files; all golangci-lint v2.5 clean post-`92fe656`)
 
 **Smoke shell scripts:** `.planning/phases/<NN-…>/evidence/smoke-*.sh` — one script per cross-cutting concern within a plan. Each script is self-contained, exits non-zero on failure, and is committed alongside the plan it validates.
 
@@ -94,22 +118,23 @@ apps/mobile-rn/
 ├── __mocks__/                          # Jest auto-mocks (package-root)
 │   └── expo-sqlite.ts                  # better-sqlite3 shim
 ├── src/
-│   ├── __tests__/                      # cross-module / top-level tests (~40 files)
+│   ├── __tests__/                      # cross-module / top-level tests (~47 files)
 │   │   ├── __snapshots__/              # auto-generated Jest snapshots
 │   │   ├── pipeline.test.ts
 │   │   ├── AreaCalculator.test.ts
+│   │   ├── SessionManager.test.ts      # original full-coverage suite
 │   │   └── ...
 │   ├── __fixtures__/                   # intentional lint-failure fixtures
 │   │   └── secret.lint-fixture.ts
-│   ├── update/
-│   │   ├── __tests__/                  # module-local tests (4 files, 48 cases — Plan 08-01)
-│   │   └── *.ts
-│   ├── vendor/__tests__/               # 2 files, 24 cases (Plan 07-03)
+│   ├── update/__tests__/               # 4 files, 48 cases (Plan 08-01)
+│   ├── vendor/__tests__/               # 2 files (Plan 07-03)
 │   ├── state/__tests__/                # featureflags, forceUpdate
 │   ├── auth/__tests__/                 # apiClient
-│   ├── util/__tests__/                 # version
+│   ├── util/__tests__/                 # version, timeFormat (2 files)
+│   ├── design/__tests__/               # avatarInitials (1 file)
+│   ├── pipeline/filters/__tests__/     # PauseDetector.warmup (1 file)
 │   ├── ui/screens/__tests__/           # ForceUpdateScreen
-│   └── domain/session/__tests__/       # SessionManager.smoke
+│   └── domain/session/__tests__/       # SessionManager.smoke + .timeFreezing + .pauseFlow (3 files)
 .planning/phases/
 └── <NN-slug>/
     └── evidence/
@@ -120,14 +145,16 @@ apps/mobile-rn/
 
 **Suite organization (mobile):**
 ```typescript
-// 1. Module-header comment: phase / plan / task + strategy
+// 1. Module-header comment: phase / plan / task OR quick-task slug + date + strategy
 // Phase 8 Plan 08-01 Task 5 — manifestCheck.ts unit tests.
-//
-// Mocks: react-native-mmkv (in-memory store), fetch (Jest mock), the
-// manifestSigning module (always-accept stub for state-transition focus), ...
+//   OR
+// Time-freeze on pause — 2026-05-25 tracker-live-polish-pass.
+// Validates that SessionManager.effectiveElapsedMs() freezes the clock
+// during pause windows so UI timer doesn't tick while paused.
 
 // 2. Fixtures at module scope (UPPER_SNAKE_CASE)
 const VALID_MANIFEST = { ... };
+const T0 = new Date(2026, 4, 25, 12, 0, 0).getTime();  // Fixed reference clock
 
 // 3. jest.mock() declarations BEFORE imports (hoisted — see Mocking section)
 jest.mock('react-native-mmkv', () => ({ ... }));
@@ -137,28 +164,66 @@ jest.mock('../manifestSigning', () => ({ ... }));
 import { checkForUpdate } from '../manifestCheck';
 import { useForceUpdateStore } from '../../state/forceUpdate';
 
-// 5. Mock-handle retrieval for per-test control
+// 5. Mock-handle retrieval for per-test control (when applicable)
 const mockVerify = jest.requireMock('../manifestSigning').verifyManifestSignature as jest.Mock;
 
 // 6. Reset helper + beforeEach
 const __reset = () => { ... };
 beforeEach(() => {
   __reset();
-  mockVerify.mockReset().mockReturnValue(true);
-  global.fetch = jest.fn();
+  jest.useFakeTimers().setSystemTime(T0);  // ← new convention for time-dependent suites
+});
+afterEach(() => {
+  jest.useRealTimers();
 });
 
 // 7. describe blocks grouped by scenario
 describe('checkForUpdate — optional update path', () => {
   it('shows banner when manifest.version > installed AND ...', async () => { ... });
 });
-describe('checkForUpdate — failure paths (all silent per D-13)', () => { ... });
+describe('SessionManager.effectiveElapsedMs — time-freeze on pause', () => { ... });
 ```
-Reference: `apps/mobile-rn/src/update/__tests__/manifestCheck.test.ts`.
+
+**Time-freeze pattern (NEW, tracker-live-polish-pass + chat-polish-pass):**
+
+Two complementary patterns for handling clock-dependent code:
+
+1. **Injectable clock parameter** (preferred for pure functions): function accepts optional `nowMs: number = Date.now()`, tests pass a fixed `NOW`. Reference: `formatChatTime(ts, nowMs)` — `apps/mobile-rn/src/util/timeFormat.ts:22`. Test pattern:
+   ```typescript
+   // apps/mobile-rn/src/util/__tests__/timeFormat.test.ts:6
+   const NOW = new Date(2026, 4, 22, 15, 0, 0).getTime();
+   function at(year, month1to12, day, hour=12, min=0) { ... }
+   expect(formatChatTime(at(2026, 5, 22, 14, 30), NOW)).toBe('14:30');
+   ```
+   No `beforeEach` / `setSystemTime` — every call carries its own clock. Cleanest for boundary-case coverage (midnight, prior-year cutoff).
+
+2. **`jest.useFakeTimers().setSystemTime(T0)`** (for stateful methods that read `Date.now()` internally): set the system time before each test, advance with `jest.setSystemTime(T0 + delta)` between assertions. Reference: `SessionManager.timeFreezing.test.ts:60-68`:
+   ```typescript
+   const T0 = new Date(2026, 4, 25, 12, 0, 0).getTime();
+   beforeEach(() => {
+     jest.useFakeTimers().setSystemTime(T0);
+   });
+   afterEach(() => {
+     jest.useRealTimers();
+   });
+
+   it('FREEZES during active pause — clock stops moving for UI', () => {
+     const m = makeManager();
+     m.start();
+     expect(m.effectiveElapsedMs(T0 + 30_000)).toBe(30_000);
+     // Advance system time to T0+30s, then trigger setPaused which reads Date.now()
+     jest.setSystemTime(T0 + 30_000);
+     m.setPaused(true);
+     // Wall clock advances — but timer should remain at 30s
+     expect(m.effectiveElapsedMs(T0 + 60_000)).toBe(30_000);
+   });
+   ```
+
+The two patterns combine in integration tests: SessionManager methods read `Date.now()` internally so `jest.setSystemTime` is required, but assertions pass `T0 + delta` to `effectiveElapsedMs(nowMs)` for explicit control.
 
 **`describe` naming convention:** `<unit> — <scenario>` with em-dash. Russian names are common in pipeline/domain tests (`describe('AreaCalculator.calculateArea')` with `it('квадрат 200×200м (≈40 000 м²) — tolerance 5%')` in `apps/mobile-rn/src/__tests__/AreaCalculator.test.ts`).
 
-**`it` naming convention:** Behavioral assertions in present tense — `'shows banner when …'`, `'rejects a signature when one byte is mutated'`, `'preserves suppressedUntil when same manifest version returns'`.
+**`it` naming convention:** Behavioral assertions in present tense — `'shows banner when …'`, `'rejects a signature when one byte is mutated'`, `'preserves suppressedUntil when same manifest version returns'`, `'FREEZES during active pause — clock stops moving for UI'`, `'emits auto-paused after warmupMs elapses even with no motion'`.
 
 **Parametric tests:** Use `it.each` with a typed cases array — see `apps/mobile-rn/src/vendor/__tests__/oem.test.ts:18-39`:
 ```typescript
@@ -209,6 +274,7 @@ func TestRegister_RejectsInvalidEmail(t *testing.T) {
 - Test names: `Test<Function>_<Scenario>` — `TestLogin_WrongPassword`, `TestRefresh_RotatesTokens`
 - Sentinel error comparison via `errors.Is(err, domain.ErrInvalidCredentials)` (enforced by `errorlint`)
 - `t.Helper()` on construction helpers so error lines point at the caller
+- **staticcheck ST1023 convention** (post-`92fe656`): drop redundant type annotations from assignment expressions where Go can infer — use `var capturedLevel = slog.LevelInfo` instead of `var capturedLevel slog.Level = slog.LevelInfo`. Lint flags the redundant form.
 
 ## Mocking
 
@@ -330,16 +396,31 @@ jest.mock('../design', () => ({
 ```
 See `apps/mobile-rn/src/update/__tests__/manifestCheck.test.ts:94, 99-102`.
 
+**Inline collaborator mocks for SessionManager-integration tests** (tracker-live-polish-pass introduced this pattern explicitly):
+
+Integration tests that exercise multiple real domain objects together still need to mock external boundaries. The pattern: define **inline `make*` factory functions** at module top that return minimal-shape stubs:
+```typescript
+// apps/mobile-rn/src/domain/session/__tests__/SessionManager.pauseFlow.test.ts:32-63
+function makeMockRepo(): SessionRepo { return { createSession: jest.fn(), ... }; }
+function makeNoopPipeline(): Pipeline { return new Pipeline([passthroughFilter]); }
+function makeMockAdapter(): LocationAdapter { return { start: jest.fn(...), ... }; }
+```
+**Real:** SUT (`SessionManager`) + real collaborator (`PauseDetector`, `ClosureDetector`, `Pipeline`).
+**Stubbed:** External boundaries — `SessionRepo` (SQLite), `LocationAdapter` (native GPS).
+This is the closest jest can get to "user starts → pauses → resumes → stops" without RN render. The rendering integration (`TrackerLiveScreen` reads selectors and computes `durationS`) is validated via APK manual smoke.
+
 **What to mock:**
 - Native bridge modules: MMKV, expo-sqlite, expo-device
 - Network: `global.fetch`
 - AppState / RN platform globals (when not part of the SUT)
 - The crypto module when testing a state machine that depends on it (focus test on dispatch logic; cover crypto in its own dedicated suite)
+- External boundaries in domain-integration tests: SQLite repos, LocationAdapter, MapAdapter
 
 **What NOT to mock:**
-- Pure domain logic (`AreaCalculator`, `Pipeline` filters, `semverLite`) — exercised directly with handcrafted inputs
+- Pure domain logic (`AreaCalculator`, `Pipeline` filters, `semverLite`, `SessionManager`, `PauseDetector`, `formatChatTime`, `initialsForName`, `colorForName`) — exercised directly with handcrafted inputs
 - Zustand stores — they are part of the SUT for `update/` tests; tests use `useStore.setState({ … })` / `getState()` to set up/inspect state
 - The system under test itself (obvious — but easy to slip when the SUT re-exports from a module that needs mocking)
+- In integration tests: the collaborator objects whose wiring is the test's primary subject (e.g., `pauseFlow.test.ts` wires real `PauseDetector` ↔ real `SessionManager`; only external IO is stubbed)
 
 ## Pinned Test Keypair Pattern (Plan 08-01 Task 5)
 
@@ -372,13 +453,21 @@ function makePoint(opts: Partial<Point> & { ts?: number; lat?: number; lon?: num
 
 // apps/mobile-rn/src/__tests__/AreaCalculator.test.ts:18-27
 function squareAround(centerLat: number, centerLon: number, sideM: number): RawPoint[] { ... }
+
+// apps/mobile-rn/src/pipeline/filters/__tests__/PauseDetector.warmup.test.ts:8-24
+function makePoint(opts: { ts: number; speed: number; lat?: number; lng?: number }): Point { ... }
+
+// apps/mobile-rn/src/domain/session/__tests__/SessionManager.pauseFlow.test.ts:20-30
+function makeRaw(opts: { ts: number; speed: number; lat?: number; lng?: number }): RawPoint { ... }
 ```
 
 **Module-scope const fixtures** for shared payloads:
 ```typescript
 // Reused across multiple `it` blocks
-const VALID = { apk_sha256: 'a'.repeat(64), ... };  // apps/mobile-rn/src/update/__tests__/manifestSchema.test.ts:3-12
-const PAYLOAD = { apk_sha256: 'a'.repeat(64), ... };  // apps/mobile-rn/src/update/__tests__/manifestSigning.test.ts:86-94
+const VALID = { apk_sha256: 'a'.repeat(64), ... };       // manifestSchema.test.ts:3-12
+const PAYLOAD = { apk_sha256: 'a'.repeat(64), ... };     // manifestSigning.test.ts:86-94
+const T0 = new Date(2026, 4, 25, 12, 0, 0).getTime();    // SessionManager.timeFreezing.test.ts:60
+const NOW = new Date(2026, 4, 22, 15, 0, 0).getTime();   // timeFormat.test.ts:6
 ```
 
 **Location:** No central `fixtures/` directory — factories and fixtures live inline at the top of each test file. This is deliberate: each test file owns its fixtures, no cross-file coupling.
@@ -406,20 +495,23 @@ go tool cover -html=coverage.out                        # HTML view
 ## Test Types
 
 **Unit tests:**
-- Mobile: 60 files; dominant pattern. Cover domain primitives (filters, area, semver), state stores (Zustand), parsers/validators, hooks, components.
+- Mobile: 64 files (686 cases); dominant pattern. Cover domain primitives (filters, area, semver, time-format, avatar initials), state stores (Zustand), parsers/validators, hooks, components.
 - Backend: 23 files; cover handlers (with `httptest`), services (with in-memory repos), shared `pkg/*` packages.
 
 **Integration tests:**
-- Mobile: `*.integration.test.ts` suffix — currently `apps/mobile-rn/src/__tests__/sessionRepository.integration.test.ts` (real `:memory:` SQLite via the better-sqlite3 shim; `beforeEach` does `_setDatabase(db); runMigrations();` for full isolation). See `apps/mobile-rn/src/__tests__/sessionRepository.integration.test.ts:27-36`.
+- Mobile: `*.integration.test.ts` suffix + the new `SessionManager.pauseFlow.test.ts` pattern (wires real domain objects together with mocked external boundaries). Currently:
+  - `apps/mobile-rn/src/__tests__/sessionRepository.integration.test.ts` (real `:memory:` SQLite via the better-sqlite3 shim; `beforeEach` does `_setDatabase(db); runMigrations();` for full isolation)
+  - `apps/mobile-rn/src/domain/session/__tests__/SessionManager.pauseFlow.test.ts` (2 cases: full-run scenario + warmup-resets-across-start) — exercises `PauseDetector + SessionManager + Pipeline + ClosureDetector` real, mocks `SessionRepo + LocationAdapter`
 - Backend: handler tests are effectively integration tests (full HTTP stack via `httptest.NewServer`). No separate `_integration_test.go` suffix; standard `_test.go` is used.
 
 **Snapshot tests:**
-- `*.snapshot.test.tsx` — `apps/mobile-rn/src/__tests__/RunDetailsScreen.snapshot.test.tsx`, with snapshots in `apps/mobile-rn/src/__tests__/__snapshots__/`
+- `*.snapshot.test.tsx` — `apps/mobile-rn/src/__tests__/RunDetailsScreen.snapshot.test.tsx`, with snapshots in `apps/mobile-rn/src/__tests__/__snapshots__/` (2 stored snapshots, all green)
+- **No new visual snapshot tests added for UI polish** (chat-polish-pass + tracker-live-polish-pass precedent): UI changes (Skeleton, Avatar gradient, TabBar badges, FAB, empty states, pace/HR null-guards, lap-button opacity) are validated via **manual APK smoke install** instead. Reasoning: visual snapshots churn on every styling tweak + don't catch the real concern (visual correctness on device). Snapshot tests stay reserved for stable structural-render contracts (e.g., `RunDetailsScreen` layout).
 
 **Component tests (RN Testing Library):**
 - Pattern: import `render` + `act` from `@testing-library/react-native`, wrap the SUT in any required Provider, query by `testID`. Use `jest.useFakeTimers()` + `act(() => { … })` to advance timers for animation-bearing components (see `apps/mobile-rn/src/__tests__/Toast.test.tsx:18-24, 60+`).
 
-**E2E tests:** Not used. Smoke shell scripts cover end-to-end shape concerns where Jest can't reach (CI workflow shape, cross-language byte-identity, file-content greps).
+**E2E tests:** Not used. Smoke shell scripts cover end-to-end shape concerns where Jest can't reach (CI workflow shape, cross-language byte-identity, file-content greps). Visual end-to-end is covered by manual APK installs from `android-debug-apk.yml` artifacts.
 
 **Smoke scripts** (`.planning/phases/<NN-…>/evidence/smoke-*.sh`):
 Each smoke is `set -euo pipefail`, has a clear `must` / `mustnot` / `mustnot_re` helper convention, and exits non-zero on any assertion failure. Used to validate:
@@ -478,7 +570,39 @@ beforeEach(() => {
 ```
 Reference: `apps/mobile-rn/src/update/__tests__/manifestCheck.test.ts:74-95`.
 
-**Fake timers + act():**
+**Module re-import for Zustand store isolation** — `forceUpdate.test.ts` uses `jest.resetModules()` + `require()` inside each `it` block to get a clean store instance per test:
+```typescript
+beforeEach(() => {
+  jest.resetModules();
+});
+it('initial state: required=false, empty strings', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useForceUpdateStore } = require('../forceUpdate');
+  expect(useForceUpdateStore.getState().required).toBe(false);
+});
+```
+Reference: `apps/mobile-rn/src/state/__tests__/forceUpdate.test.ts:5-17`. The `require` instead of `import` is necessary because static `import` is hoisted (single module instance for the whole file); `require` after `resetModules()` reads a fresh copy.
+
+**Fake timers + setSystemTime (time-dependent state machines):**
+```typescript
+const T0 = new Date(2026, 4, 25, 12, 0, 0).getTime();
+beforeEach(() => { jest.useFakeTimers().setSystemTime(T0); });
+afterEach(() => { jest.useRealTimers(); });
+
+it('accumulates across multiple pause cycles', () => {
+  const m = makeManager();
+  m.start();
+  jest.setSystemTime(T0 + 20_000);
+  m.setPaused(true);
+  jest.setSystemTime(T0 + 30_000);
+  m.setPaused(false);
+  ...
+  expect(m.effectiveElapsedMs(T0 + 90_000)).toBe(50_000);
+});
+```
+Reference: `apps/mobile-rn/src/domain/session/__tests__/SessionManager.timeFreezing.test.ts:62-127`.
+
+**Fake timers + act() (animation-bearing components):**
 ```typescript
 beforeEach(() => { jest.useFakeTimers(); });
 afterEach(() => { jest.useRealTimers(); });
@@ -497,19 +621,32 @@ expect(r.areaM2).toBeLessThan(42_000);
 ```
 Tolerance is documented in the `it` name — `'квадрат 200×200м (≈40 000 м²) — tolerance 5%'`. Reference: `apps/mobile-rn/src/__tests__/AreaCalculator.test.ts:42-44`.
 
+**Bounds assertions** (when exact values depend on detector internals that aren't stable across refactors): assert lower + upper bound rather than equality:
+```typescript
+// SessionManager.pauseFlow.test.ts:170-178
+const effective = manager.effectiveElapsedMs(T0 + 90_000);
+// We can't assert exact value because pause boundaries depend on
+// detector internals — but it MUST be less than wall-clock 90s and
+// greater than 30s (active periods only).
+expect(effective).toBeLessThan(90_000);
+expect(effective).toBeGreaterThan(30_000);
+```
+
 ## CI Integration
 
 **Mobile:**
 - No dedicated mobile-CI workflow at the time of writing. Mobile tests run locally + as a step in plan-specific smoke scripts (e.g., `smoke-mobile-update-flow.sh` re-invokes `npx jest --testPathPattern='update'` as the final assertion).
 - ESLint + tsc are part of local quality gate (`npm run lint`, `npm run typecheck`), not yet wired to a CI matrix.
+- **`android-debug-apk.yml`** workflow (`workflow_dispatch` + push-triggered with `apps/mobile-rn/**` paths) builds universal debug APK for ad-hoc tester distribution; not currently running `npm test` (build-only).
+- **`android-release.yml`** workflow (tag-triggered, ADR-0011 Amendment 5 gated) is the closed-beta distribution pipeline; runs EAS Cloud build + SOPS keystore + `bundletool` + MinIO upload + Ed25519 signed manifest.
 
 **Backend:** `.github/workflows/backend-ci.yml` — runs on push to `main` and on `pull_request` against `main`, filtered to paths `services/backend/**`, `.github/workflows/backend-ci.yml`, `.github/workflows/secret-scan-full.yml`, `Makefile`, `.golangci.yml`, `.trivyignore.yaml`.
 
 Jobs (each name is a verbatim contract consumed by `Plan 04-05` branch-protection JSON — DO NOT vary the spelling, including the em-dash `—` U+2014 in `secrets-scan-diff`):
 1. **`Test (Go 1.25)`** — `strategy.matrix.service: [pkg, identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]`. Runs `go test -race -coverprofile=coverage.out ./...` per module + writes coverage summary to `$GITHUB_STEP_SUMMARY`.
-2. **`Lint (golangci-lint v2)`** — pinned to v2.5.0. Loops per module because `services/backend` is a `go.work` workspace root without `go.mod`.
+2. **`Lint (golangci-lint v2)`** — pinned to v2.5.0. Loops per module because `services/backend` is a `go.work` workspace root without `go.mod`. **All 9 modules currently 0-issue** post-`92fe656`.
 3. **`SAST (gosec)`** — `-severity high`, blocks on HIGH findings (per D-10).
-4. **`Vuln (govulncheck)`** — per-module loop; blocks on any finding (per D-10).
+4. **`Vuln (govulncheck)`** — per-module loop; blocks on any finding (per D-10). **All 9 modules currently 0-vuln** post-`69cc8eb` (Go `1.25.0 → 1.25.10` + `otel v1.32 → v1.43`; was 19-26 vulns per module pre-bump).
 5. **`SAST (semgrep)`** — container `returntocorp/semgrep`, configs `p/golang` + `p/owasp-top-ten`, severity ERROR, `--error` flag.
 6. **`Secrets (gitleaks + trufflehog — PR diff)`** — PR-only diff scan. Full-history runs in cron `secret-scan-full.yml`.
 7. **`Docker build (no push, verify)`** — `needs: [test, lint]`, matrix over 8 services. Includes `aquasecurity/trivy-action@master` HIGH/CRITICAL block, `ignore-unfixed: false`, `trivyignores: .trivyignore.yaml`.
@@ -517,8 +654,8 @@ Jobs (each name is a verbatim contract consumed by `Plan 04-05` branch-protectio
 9. **`PII Audit (slog grep)`** — runs `scripts/pii_audit.sh` (Plan OBS-06 / D-14). Blocks if a new `slog.*Context` call uses a PII attribute key from the D-12 deny-list.
 10. **`Cardinality Probe (Prom labels)`** — boots docker-compose, polls `/metrics`, runs `scripts/cardinality_probe.py` to detect forbidden labels (`user_id`, `session_id`, `device_id`, `external_uuid`, `email`, `phone`) and metric families > 1000 series.
 
-**Pre-commit (local, every commit):** `.pre-commit-config.yaml` runs `gitleaks v8.30.1` (staged files only). Custom rules in `.gitleaks.toml` extend defaults for bare Mapbox `sk.` / `pk.` patterns.
+**Pre-commit (local, every commit):** `.pre-commit-config.yaml` runs `gitleaks v8.30.1` (staged files only). Custom rules in `.gitleaks.toml` extend defaults for bare Mapbox `sk.` / `pk.` patterns. All commits in 2026-05-24 + 2026-05-25 passed cleanly.
 
 ---
 
-*Testing analysis: 2026-05-24*
+*Testing analysis: 2026-05-25*

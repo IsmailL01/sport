@@ -1,8 +1,8 @@
 # External Integrations
 
-**Analysis Date:** 2026-05-24
+**Analysis Date:** 2026-05-25
 
-Single-VPS production (148.253.214.156, sslip.io) + colocated observability host (srv1561293, 82.25.71.215). All inbound TLS via Caddy + Let's Encrypt. Closed-beta scope per ADR-0011 — OAuth providers + Sentry remain dormant.
+Single-VPS production (148.253.214.156, sslip.io) + colocated observability host (srv1561293, 82.25.71.215). All inbound TLS via Caddy + Let's Encrypt. Closed-beta scope per ADR-0011 — OAuth providers + Sentry remain dormant. Phase 8 distribution code shipped but parked behind two env gates: `EXPO_PUBLIC_UPDATE_MANIFEST_URL` (mobile) and `DISTRIBUTE_ENABLED` derived from `MINIO_RELEASES_ACCESS_KEY` (CI) — see ADR-0011 Amendment 5.
 
 ## APIs & External Services
 
@@ -10,7 +10,7 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
 - **Mapbox** — vector tiles + offline regions + map style
   - Mobile SDK: `@rnmapbox/maps` ^10.3.0 (quarantined inside `apps/mobile-rn/src/map/`; ESLint `no-restricted-imports` blocks direct imports elsewhere per `apps/mobile-rn/eslint.config.js:34-46`)
   - Maven repo: `https://api.mapbox.com/downloads/v2/releases/maven` wired in `apps/mobile-rn/android/build.gradle:27-43` (auth no longer required — Mapbox dropped download-token requirement; optional via `MAPBOX_DOWNLOADS_TOKEN`)
-  - Public token (pk.): `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` — read in `apps/mobile-rn/App.tsx:35`, applied via `setMapboxAccessToken()` (re-exported from `apps/mobile-rn/src/map/index.ts`)
+  - Public token (pk.): `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` — read in `apps/mobile-rn/App.tsx:35`, applied via `setMapboxAccessToken()` (re-exported from `apps/mobile-rn/src/map/index.ts`). NOW INJECTED INTO BOTH release AND debug-APK CI pipelines via the GH Secret of the same name (added 2026-05-24, auto-masked by GH Actions).
   - Secret token (sk.): server-side use only — never bundled (ESLint `no-restricted-syntax` blocks `Literal /^sk\.[A-Za-z0-9._-]{40,}/` per `eslint.config.js:55-59`)
   - Storage: `.secrets/prod/mapbox.yaml` (SOPS) — unchanged since Plan 06-01
 
@@ -22,7 +22,17 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
   - **Phase 8 change** — `--no-wait` flag DROPPED (Pitfall 16 / Plan 08-01 Task 4 line `.github/workflows/android-release.yml:147-156`). Workflow now BLOCKS until EAS finishes (~15 min wall-clock). `--json` mode emits `artifactUrl` + `versionCode` parsed via `jq`.
   - Credentials: `production.android.credentialsSource: "local"` (`apps/mobile-rn/eas.json:36`). `apps/mobile-rn/credentials.json` generated in CI from SOPS-decrypted passwords + `release.keystore` path (gitignored; lifetime = job duration)
   - Resource class: `m-medium` (`apps/mobile-rn/eas.json:32`)
-  - .aab → universal APK extraction: bundletool 1.18.1 jar in `.github/workflows/android-release.yml:177-203` (`bundletool build-apks --mode=universal` then `unzip -p universal.apk`)
+  - .aab → universal APK extraction: bundletool 1.18.1 jar in `.github/workflows/android-release.yml:177-203` (`bundletool build-apks --mode=universal` then `unzip -p universal.apk`) — GATED behind `DISTRIBUTE_ENABLED`.
+
+- **GitHub Actions debug-APK build** — NEW dev-loop pipeline (`.github/workflows/android-debug-apk.yml`, added 2026-05-24)
+  - Trigger: `workflow_dispatch` (manual button) + `push` to `main` or `feat/cursona-redesign` when `apps/mobile-rn/**` or the workflow file changes
+  - No EAS dependency — pure local Gradle (`./gradlew :app:assembleDebug`) on GH-hosted ubuntu-latest
+  - ABIs: `arm64-v8a` + `x86_64` (BlueStacks/emulator-friendly via `-PrunningEcoAbiFilters`)
+  - Signing: `debug.keystore` (committed, stable SHA-256 cert)
+  - Output: `app-debug-<sha>` artifact (`app-debug.apk`, ~80-120MB universal, 14-day retention)
+  - Use cases: BlueStacks loop without Metro, ad-hoc internal tester APK sharing, smoke checks
+  - Env injection: `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` (required; job exits 1 if unset) + hardcoded `EXPO_PUBLIC_IDENTITY_URL` + `EXPO_PUBLIC_SYNC_URL` pointing at sslip.io. `EXPO_PUBLIC_UPDATE_MANIFEST_URL` LEFT UNSET on purpose so the auto-update path returns `state: 'disabled'` (ADR-0011 Amendment 5).
+  - NOT a substitute for production-signed pocket-walk validation (Plan 07-03) — production keystore not used.
 
 **Push:**
 - **Expo Push Notifications** — backend → device
@@ -58,9 +68,9 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
   - **Public endpoint via Caddy reverse-proxy:** `s3.148-253-214-156.sslip.io` — wired in `services/backend/gateway/Caddyfile.prod:15-23` (`reverse_proxy minio:9000`). Caddy v2 preserves Host header so MinIO signature validation works.
   - Buckets:
     - `media` — Phase B3 media (presigned URLs from `services/backend/media/`)
-    - `android-releases` — **PRIVATE**, holds APKs as `<tag>.apk` (e.g., `v1.0.0-beta.5.apk`). Distribution via 24h presigned URLs generated by `mc share download --expire 24h` (Plan 08-01 Task 2 / `scripts/release-distribute.sh:60-63`)
-    - `android-manifest` — **PUBLIC-READ**, holds signed `manifest.json` (Ed25519-signed; mobile fetches via `GET https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json` in `apps/mobile-rn/src/update/manifestCheck.ts:25-26`)
-  - Service-account auth (CI uploads): `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRET_KEY` — NEW GitHub Actions secrets, scoped to both `android-releases` + `android-manifest`
+    - `android-releases` — **PRIVATE**, holds APKs as `<tag>.apk` (e.g., `v1.0.0-beta.5.apk`). Distribution via 24h presigned URLs generated by `mc share download --expire 24h` (Plan 08-01 Task 2 / `scripts/release-distribute.sh:60-63`). **WRITE PATH GATED** by `DISTRIBUTE_ENABLED` per ADR-0011 Amendment 5 — bucket exists, but CI does not upload while `MINIO_RELEASES_ACCESS_KEY` is unset.
+    - `android-manifest` — **PUBLIC-READ**, holds signed `manifest.json` (Ed25519-signed; mobile fetches via `GET https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json` in `apps/mobile-rn/src/update/manifestCheck.ts:25-26`). Also gated on the write side; mobile read path additionally gated by `EXPO_PUBLIC_UPDATE_MANIFEST_URL` being non-empty.
+  - Service-account auth (CI uploads): `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRET_KEY` — GitHub Actions secrets, scoped to both `android-releases` + `android-manifest`. **CURRENTLY UNSET** (intentional, per ADR-0011 Amendment 5) → `DISTRIBUTE_ENABLED=false` → distribution steps skip via `if: env.DISTRIBUTE_ENABLED == 'true'`.
   - Atomicity contract (CONTEXT D-21): in `scripts/release-distribute.sh`, manifest is uploaded LAST. If APK upload / signing / round-trip verify fails, no manifest update propagates → clients never see broken pointer.
   - Media service env: `S3_ENDPOINT: s3.148-253-214-156.sslip.io`, `S3_ENDPOINT_INTERNAL: minio:9000`, `S3_BUCKET: media`, `S3_REGION: us-east-1` (`docker-compose.prod.yml:163-170`); SDK `github.com/minio/minio-go/v7` v7.0.78
 
@@ -112,14 +122,14 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
 - Provisioning: `infra/observability-stack/grafana/provisioning/`
 
 **Tracing:**
-- OpenTelemetry — `go.opentelemetry.io/otel` v1.32.0 + OTLP HTTP exporter v1.32.0
+- OpenTelemetry — `go.opentelemetry.io/otel` v1.43.0 + `otel/sdk` v1.43.0 + OTLP HTTP exporter v1.43.0 + `otelhttp` instrumentation v0.68.0. **Bumped from v1.32.0 → v1.43.0** in `services/backend/pkg/go.mod` (commit between `ac76df0` and HEAD). Indirect bumps follow: `proto/otlp v1.5.0 → v1.10.0`, `google.golang.org/grpc v1.71.x → v1.80.0`.
 - HTTP middleware: `OtelHTTPMiddleware` in `services/backend/pkg/observability/sentry_init.go` (paired with sentry recovery + promhttp in chain documented at lines 27-32)
 - PII-attribute scrub in TracerProvider's `piiScrubProcessor` (see `services/backend/pkg/observability/otel_init.go`)
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Production VPS (148.253.214.156) — `services/backend/docker-compose.prod.yml` under systemd sport-stack umbrella at `/opt/sport/services/backend/`. Env file `/run/sport.env`. Image tags pinned via `${SPORT_STACK_TAG:?...}` per service in compose.
+- Production VPS (148.253.214.156) — `services/backend/docker-compose.prod.yml` under systemd sport-stack umbrella at `/opt/sport/services/backend/`. Env file `/run/sport.env`. Image tags pinned via `${SPORT_STACK_TAG:?...}` per service in compose. 8 services healthy on 2026-05-25 probe.
 - Observability VPS (srv1561293, 82.25.71.215) — `infra/observability-stack/docker-compose.yml` colocated with niko-prod, Caddy :8443 self-signed.
 - Container registry: `ghcr.io/ismaill01/<service>` (lowercase intentional — GHCR namespace = lowercase user). Tag conventions enforced via `.github/workflows/backend-cd.yml`:
   - `:<sha>` (always)
@@ -133,7 +143,7 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
 **CI Pipelines:**
 
 `.github/workflows/backend-ci.yml` (PR + push-to-main on `services/backend/**`):
-- `Test (Go 1.25)` — `go test -race -coverprofile=coverage.out` matrix across 9 modules
+- `Test (Go 1.25)` — `go test -race -coverprofile=coverage.out` matrix across 9 modules (toolchain auto-resolves to 1.25.10)
 - `Lint (golangci-lint v2)` — pinned v2.5.0, per-module loop (services/backend is workspace-root with `go.work` but no `go.mod`)
 - `SAST (gosec)` — `gosec -severity high`, blocks HIGH per D-10
 - `Vuln (govulncheck)` — per-module loop, blocks on findings
@@ -158,7 +168,8 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
 - Generate `apps/mobile-rn/credentials.json` (gitignored) inline via `jq -n`
 - `npm ci` (mobile) + explicit `npm install -g eas-cli`
 - EAS build (blocks until done; `--json` mode → `artifactUrl` + `versionCode`)
-- **NEW Plan 08-01 Task 4 distribution steps:**
+- **Gate computation:** `DISTRIBUTE_ENABLED: ${{ secrets.MINIO_RELEASES_ACCESS_KEY != '' && 'true' || 'false' }}` — when the secret is unset (current state per ADR-0011 Amendment 5), all distribution steps below skip via `if: env.DISTRIBUTE_ENABLED == 'true'`
+- **Plan 08-01 Task 4 distribution steps (GATED):**
   - Install `bundletool` 1.18.1 jar + `mc` (MinIO client) latest
   - Download .aab + extract universal APK via `bundletool build-apks --mode=universal` → unzip
   - Decrypt manifest-signing key (`.secrets/prod/manifest-signing.yaml`); private value masked
@@ -171,15 +182,24 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
     6. Upload manifest LAST to `android-manifest` (atomicity per D-21)
     7. Re-fetch + re-verify (catches MinIO-side corruption)
 
+`.github/workflows/android-debug-apk.yml` (NEW 2026-05-24; workflow_dispatch + push to `main` | `feat/cursona-redesign` when `apps/mobile-rn/**` changes):
+- Setup: Node 22 + JDK 17 temurin + Gradle cache
+- Writes `apps/mobile-rn/.env` with `EXPO_PUBLIC_IDENTITY_URL` + `EXPO_PUBLIC_SYNC_URL` (sslip.io) + `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` (from masked secret). `EXPO_PUBLIC_UPDATE_MANIFEST_URL` deliberately omitted (gate closed).
+- Build: `./gradlew :app:assembleDebug -PrunningEcoAbiFilters="arm64-v8a,x86_64" -PreactNativeArchitectures="arm64-v8a,x86_64" -PrunningEcoEmbedJSInDebug=true --no-daemon`
+- Output: `app-debug.apk` uploaded as `app-debug-${{ github.sha }}` artifact (14-day retention, `if-no-files-found: error`)
+- Signing: `debug.keystore` (committed) → stable cert SHA-256
+
 `.github/workflows/secret-scan-full.yml` (cron Sun 03:00 UTC = 06:00 MSK):
 - gitleaks-action@v2 + trufflehog full-history scan (fetch-depth: 0 — Pitfall 10: never on every PR)
 - Manual trigger via `gh workflow run secret-scan-full.yml`
 
 **Required GitHub Actions secrets:**
 - `EXPO_TOKEN` — Expo authentication for `eas build`
+- `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` — NEW 2026-05-24; auto-masked when read; consumed by `android-debug-apk.yml` (required, fails fast if unset) + optionally injectable into `android-release.yml`. Same pk.* token also lives in `.secrets/prod/mapbox.yaml` for SOPS-edit workflows.
 - `SOPS_AGE_KEY_CI` — CI age private key (lifted Plan 07-01 commit `dd0dce5`); public half is recipient in `.sops.yaml:23` (`age19ysu774h4...`)
-- `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRET_KEY` — NEW Plan 08-01 Task 2; MinIO service-account scoped to `android-releases` (private) + `android-manifest` (public-read) buckets
+- `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRET_KEY` — Plan 08-01 Task 2; MinIO service-account scoped to `android-releases` (private) + `android-manifest` (public-read) buckets. **CURRENTLY UNSET** (per ADR-0011 Amendment 5) → `DISTRIBUTE_ENABLED=false` → distribution steps skip.
 - `GITHUB_TOKEN` — standard, for gitleaks-action PR comments + GHCR push
+- `runningecosystem-release` keystore-related secrets — release.keystore password material is stored inside `.secrets/prod/mobile-signing.yaml` (SOPS), decrypted in-CI; not stored as raw GH Secrets.
 - (NOT set, intentional) `GITLEAKS_LICENSE` — repo is personal account (IsmailL01/sport), license NOT required; license needed only if namespace = organization
 
 ## Environment Configuration
@@ -189,17 +209,18 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
 - `SPORT_STACK_TAG` — image tag pin (set via `ansible-playbook -e sport_stack_tag=<v>`)
 - `EXPO_ACCESS_TOKEN` (optional; notifications service)
 
-**Required env vars (mobile build, via EAS):**
-- `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`
+**Required env vars (mobile build, via EAS or local Gradle):**
+- `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` (required for both release + debug-APK paths; debug-APK CI fails fast if unset)
 - `EXPO_PUBLIC_IDENTITY_URL`, `EXPO_PUBLIC_SYNC_URL`, `EXPO_PUBLIC_API_URL`
-- `RUNNING_ECO_RELEASE_STORE_FILE`, `RUNNING_ECO_RELEASE_STORE_PASSWORD`, `RUNNING_ECO_RELEASE_KEY_ALIAS`, `RUNNING_ECO_RELEASE_KEY_PASSWORD` (signing — Gradle reads via `findProperty`)
-- `MANIFEST_SIGNING_PRIVATE`, `MANIFEST_SIGNING_PUBLIC` (Plan 08-01 Task 5; private masked via `::add-mask::`)
+- `EXPO_PUBLIC_UPDATE_MANIFEST_URL` — Plan 08-01; **GATED OFF** in production (ADR-0011 Amendment 5). When unset/empty, `apps/mobile-rn/src/update/manifestCheck.ts` returns `{ state: 'disabled' }` without any network call.
+- `RUNNING_ECO_RELEASE_STORE_FILE`, `RUNNING_ECO_RELEASE_STORE_PASSWORD`, `RUNNING_ECO_RELEASE_KEY_ALIAS`, `RUNNING_ECO_RELEASE_KEY_PASSWORD` (signing — Gradle reads via `findProperty`; release pipeline only)
+- `MANIFEST_SIGNING_PRIVATE`, `MANIFEST_SIGNING_PUBLIC` (Plan 08-01 Task 5; private masked via `::add-mask::`; consumed only when `DISTRIBUTE_ENABLED=true`)
 
 **Secrets location:**
 - SOPS-encrypted YAML bundles in `.secrets/{dev,staging,prod}/*.yaml` (committed to git; ciphertext only)
 - Age recipients DEV_A + CI configured in `.sops.yaml`; DEV_B TODO
 - Plaintext NEVER committed — `.gitleaks.toml` + `.trufflehog/` + `.gitattributes` (with `-text` on ciphertext to disable git 3-way merge)
-- Pre-commit hooks via `.pre-commit-config.yaml`
+- Pre-commit hooks via `.pre-commit-config.yaml` (includes detect-secrets in addition to gitleaks)
 
 **Webhooks & Callbacks:**
 
@@ -214,21 +235,22 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
   - `media`: `:8086`
   - `notifications`: `:8087`
   - `realtime-gw`: `:8090` (WebSocket)
+- All 8 backend services + Postgres + Redis + NATS + MinIO + gateway healthy on 2026-05-25 probe via `https://148-253-214-156.sslip.io/healthz`.
 - Caddy gateway routes `148-253-214-156.sslip.io/*` + `s3.148-253-214-156.sslip.io/*` (MinIO proxy)
 - Mobile deep-link scheme: `runningecosystem://` (`apps/mobile-rn/android/app/src/main/AndroidManifest.xml:29-34`)
 
 **Outgoing:**
 - Mobile → Mapbox CDN (tiles, styles)
 - Mobile → backend Caddy (`https://148-253-214-156.sslip.io/`) — all API traffic
-- Mobile → MinIO via Caddy (`https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json`) — Plan 08-01 update check (no auth; public-read bucket)
-- Mobile → MinIO presigned URL (`https://s3.148-253-214-156.sslip.io/android-releases/<tag>.apk?...`) — 24h expiry, used by `Linking.openURL(manifest.apk_url)` in `apps/mobile-rn/src/update/UpdateBanner.tsx`
+- Mobile → MinIO via Caddy (`https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json`) — Plan 08-01 update check (no auth; public-read bucket). **GATED OFF** at runtime when `EXPO_PUBLIC_UPDATE_MANIFEST_URL` is unset (current closed-beta state).
+- Mobile → MinIO presigned URL (`https://s3.148-253-214-156.sslip.io/android-releases/<tag>.apk?...`) — 24h expiry, used by `Linking.openURL(manifest.apk_url)` in `apps/mobile-rn/src/update/UpdateBanner.tsx`. Reached only after update check returns `state: 'update-available'` → also gated.
 - Backend notifications → Expo Push API (with optional `EXPO_ACCESS_TOKEN`)
 - CI → GHCR (`ghcr.io/ismaill01/*`)
 - CI → Sigstore/Fulcio (OIDC) + Rekor transparency log
-- CI → MinIO (`s3.148-253-214-156.sslip.io`) via `mc` for APK + manifest upload
-- CI → EAS Cloud (`expo.dev`) for .aab build trigger
+- CI → MinIO (`s3.148-253-214-156.sslip.io`) via `mc` for APK + manifest upload (gated)
+- CI → EAS Cloud (`expo.dev`) for .aab build trigger (release pipeline only; debug-APK pipeline is local Gradle, no EAS)
 
-## OEM/Vendor Integrations (NEW Plan 07-03 Task 3+4)
+## OEM/Vendor Integrations (Plan 07-03 Task 3+4)
 
 Vendor-killer mitigation (foreground-service stoppage on Xiaomi MIUI / Samsung One UI):
 - Detection: `apps/mobile-rn/src/vendor/oem.ts` reads `expo-device` `Device.manufacturer` → returns `'xiaomi' | 'samsung' | 'huawei' | 'generic'` (HyperOS bucketed under Xiaomi; EMUI/HarmonyOS detected but deferred per CONTEXT D-17)
@@ -238,7 +260,7 @@ Vendor-killer mitigation (foreground-service stoppage on Xiaomi MIUI / Samsung O
   - Default: `ActivityAction.APPLICATION_DETAILS_SETTINGS` with `data: package:com.runningecosystem.mobile`
 - First-launch dialog: `apps/mobile-rn/src/vendor/AutostartDialog.tsx` (Modal with MMKV one-shot flag)
 
-## Android Foreground Notifications (NEW active in Plan 07-03 Task 2)
+## Android Foreground Notifications (Plan 07-03 Task 2)
 
 - File: `apps/mobile-rn/src/foreground/notification.ts`
 - Channel: `recording`, importance `AndroidImportance.LOW`, `lockscreenVisibility: PUBLIC`, no sound/vibration
@@ -246,10 +268,12 @@ Vendor-killer mitigation (foreground-service stoppage on Xiaomi MIUI / Samsung O
 - Body: RU-formatted "Запись пробежки активна — %duration% • %distance%" — duration derived from `now - startedAt`, distance from `totalDistance(points)` (util/geo)
 - iOS no-op (Platform.OS guard) — iOS uses SLC + UIBackgroundModes; deferred per ADR-0011 Amendment 3
 
-## Manifest-Driven Auto-Update (NEW Plan 08-01 Task 5)
+## Manifest-Driven Auto-Update (Plan 08-01 Task 5 — code shipped, runtime GATED)
+
+**Gate posture:** Code is fully shipped but runtime-disabled by both mobile (`EXPO_PUBLIC_UPDATE_MANIFEST_URL` unset → `state: 'disabled'` early return) and CI (`DISTRIBUTE_ENABLED=false` → publish steps skip). Per ADR-0011 Amendment 5 — NOT a tech-stack removal, just a closed-beta gate.
 
 - Trigger: `apps/mobile-rn/src/update/useUpdateCheckOnForeground.ts` wires `AppState 'active'` listener + initial fire; calls `checkForUpdate()` in `apps/mobile-rn/src/update/manifestCheck.ts` (6h throttle; force-bypass for manual "Проверить обновления" tap)
-- Fetch: `GET https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json`
+- Fetch: `GET https://s3.148-253-214-156.sslip.io/android-manifest/manifest.json` (only when `EXPO_PUBLIC_UPDATE_MANIFEST_URL` resolves non-empty)
 - Validation: `apps/mobile-rn/src/update/manifestSchema.ts` — hand-rolled (no zod; ~30 KB saved). Regexes for sha256/semver/RFC3339/url/Ed25519 base64 sig
 - Signature: `apps/mobile-rn/src/update/manifestSigning.ts` — `@noble/ed25519` with `@noble/hashes/sha2.js` SHA-512 wired explicitly. Public key HARDCODED (`MANIFEST_PUBKEY_BASE64 = 'rDfoNbDp88ls1yoiuuKONsJ/PdstLOrioQqvXYIA40I='`); rotation = ship new app version
 - Canonical JSON: keys sorted via `Object.keys().sort()`, signature field excluded — must match `scripts/sign-manifest.go` `Manifest` struct alphabetical field declaration byte-for-byte
@@ -262,4 +286,4 @@ Vendor-killer mitigation (foreground-service stoppage on Xiaomi MIUI / Samsung O
 
 ---
 
-*Integration audit: 2026-05-24*
+*Integration audit: 2026-05-25*
