@@ -2,25 +2,24 @@
 
 **Analysis Date:** 2026-05-25
 
-This document is the consolidated risk register for Milestone v1.0 Closed Beta (Android-only). Scope is limited to debt that affects shipping Plan 08-01 → Phase 9 to 5-10 Android testers. Phase 8 is now GATED per ADR-0011 Amendment 5 (code-complete + runtime-disabled; closed beta uses manual sideload by solo dev). Items explicitly scope-cut by ADR-0011 (and its five amendments) are catalogued under §"Deferred to v1.0.1" with the residual risk and the backlog ID that tracks them.
+This document is the consolidated risk register for Milestone v1.0 Closed Beta (Android-only). Scope is limited to debt that affects shipping Plan 08-01 → Phase 9 (and now Phases 10 + 11 per ADR-0011 Amendment 6) to 5-10 Android testers. Phase 8 is GATED per ADR-0011 Amendment 5 (code-complete + runtime-disabled; closed beta uses manual sideload by solo dev). Items explicitly scope-cut by ADR-0011 (and its six amendments) are catalogued under §"Deferred to v1.0.1" with the residual risk and the backlog ID that tracks them.
 
-**Diff since last refresh (commit `ac76df0`, 2026-05-24):**
+**Diff since last refresh (commit `4e34728`, 2026-05-25 PM):**
 
-1. **Phase 8 GATED per ADR-0011 Amendment 5** (commits `6ad0fef` + `a6a6bb7`, 2026-05-24 PM): mobile `EXPO_PUBLIC_UPDATE_MANIFEST_URL` empty default → `{state:'disabled'}` short-circuit; workflow `DISTRIBUTE_ENABLED` derived from `secrets.MINIO_RELEASES_ACCESS_KEY != ''`. Re-enable = config flip, no code rewrite. New backlog: `DISTRIBUTION-PIPELINE-RE-ENABLE`. **Blockers B1+B2 removed from active list** (folded into the backlog item).
-2. **Two quick tasks completed** (2026-05-25): `chat-polish-pass` (7 commits 994f85e..0031359, +31 tests, 6 FE polish items) and `tracker-live-polish-pass` (7 commits bc95c30..da35b5f, +17 tests, 7 polish items). Several v1.0.1 items resolved (warmup gate, time-freeze on pause); 5 new items added from chat-polish discussion + 3 from tracker-live survey.
-3. **debug.keystore committed to git** (commit `0f6f840`, 2026-05-24): standard Android debug key (password=android, public knowledge) committed at `apps/mobile-rn/android/app/debug.keystore` to unblock `android-debug-apk.yml` CI signing. Cert SHA-256 `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C` is NOT in Mapbox dashboard allowlist → debug APKs render blank Mapbox tiles. New backlog: `MAPBOX-DEBUG-CERT-ALLOWLIST` (~5 min user action).
-4. **android-debug-apk.yml iteration debt** (commits `f4d79c6` → `52a73ea` → `0f6f840` → `6755418` → `91cbbf1`): 5 CI iterations to land. Gradle "keystore not found" false-negative after `52a73ea` is unexplained — root cause unclear. New backlog: `GRADLE-KEYSTORE-CI-MYSTERY`.
-5. **Go toolchain bumps** (commits `92fe656` + `69cc8eb`): cleared 8 golangci-lint v2.5 findings + bumped Go 1.25.0 → 1.25.10 + otel v1.32→v1.43 (clears 19-26 govulncheck findings per module). `go mod tidy` per-module hygiene gap surfaced for `identity` (imports `pkg/permissions` via go.work workspace); not a blocker. New backlog: `WORKSPACE-MOD-HYGIENE`.
-6. **Tracker-live polish survey** surfaced 3 items NOT shipped — PauseDetector field-tuning (post Pixel pocket-walk), map "recenter" button when camera released, per-km splits during run. New backlog: `TRACKER-LIVE-FIELD-TUNE`, `MAP-RECENTER-BUTTON`, `RUN-LIVE-SPLITS`.
-7. **Resolved items:** `EAS-PROJECT-INIT` (closed Plan 07-01 commit `5a26c68`); golangci-lint backlog (closed `92fe656`); govulncheck (closed `69cc8eb`); "ПРОДОЛЖИТЬ on start" UX bug (closed by warmup gate `815c0ff`); time-freeze on pause (closed by SessionManager `pausedDurationMs` accumulator `b834eef`).
+1. **Phase 10 backend SHIPPED** (Session 1 of `social-yolo-pass`, commits `a827bc5..830b8db`, 4 commits, lint-clean, build-clean): social-graph `friend_requests` table + send/accept/reject endpoints + `are_friends()` SQL function; messaging `start_conversation` now permission-gated via `are_friends()` cross-service call. **Status: code-complete pending production migration apply + mobile UI**.
+2. **v1.0.1 backlog SHRANK for the first time** (12 → 10): `STORIES-REVIVAL` promoted to Phase 11 (planned), `FRIEND-REQUEST-FLOW` promoted to Phase 10 (backend done). First-ever net-negative backlog delta.
+3. **ADR-0011 Amendment 6 scope expansion** — v1.0 grew from 4 phases (Phases 6-9) to 6 phases (Phases 6-11). First scope expansion since ADR-0011 itself. Fallback noted: **Amendment 7 (re-trim) if Phase 10 OR Phase 11 exceeds 2× day-estimates**. Reversible by design — worth flagging as a watch-item.
+4. **First cross-service permission gate** — messaging queries social-graph's `friend_requests` table via shared Postgres pool + `are_friends()` SQL function. New pitfall added: `CROSS-SERVICE-SCHEMA-COUPLING` (runtime coupling, not compile-time; mitigated by `are_friends()` SQL contract).
+5. **New active blockers** — (a) migration `0022_friend_requests.up.sql` requires production apply on VPS (~5 min user action), (b) Sessions 2-3 of `social-yolo-pass` (mobile friends module + stories revival + chat polish) pending — first multi-session quick task with `yolo: true` flag; resume via `/gsd-quick resume social-yolo-pass`.
+6. **Phase status snapshot:** Phase 6 done · Phase 7 partial (Plan 07-03 Tasks 5+6 device-blocked) · Phase 8 gated · Phase 9 not started · Phase 10 backend-done / mobile-pending · Phase 11 not started.
 
-Source-of-truth references: `docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md` (scope cut + 5 amendments), `docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md` (P0 keystore-password leak + self-inflicted re-incident), `docs/DECISIONS/0010-sentry-saas-and-colocation.md` + amendment D-38 (Sentry deferred), `.planning/phases/08-closed-beta-distribution/08-CONTEXT.md` (25 D-NN decisions for Plan 08-01), `.planning/phases/08-closed-beta-distribution/08-01-PLAN.md`, `.planning/ROADMAP.md` §"v1.0.1 Backlog" (now 12+ items), `.planning/STATE.md` §"Quick Tasks Completed" (2 quick tasks shipped 2026-05-25).
+Source-of-truth references: `docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md` (scope cut + 6 amendments — Amendment 6 added 2026-05-25 PM expanding v1.0 to 4→6 phases), `docs/DECISIONS/0012-keystore-password-leak-2026-05-22.md` (P0 keystore-password leak + self-inflicted re-incident), `docs/DECISIONS/0010-sentry-saas-and-colocation.md` + amendment D-38 (Sentry deferred), `.planning/phases/08-closed-beta-distribution/08-CONTEXT.md` (25 D-NN decisions for Plan 08-01), `.planning/phases/08-closed-beta-distribution/08-01-PLAN.md`, `.planning/ROADMAP.md` §"v1.0.1 Backlog" (10 items, first contraction), `.planning/STATE.md` §"Quick Tasks Completed" + §"Quick Tasks In Flight" (`social-yolo-pass` resume slug active), `.planning/quick/20260525-social-yolo-pass/CONTEXT.md` (Sessions 2-3 plan in progress log).
 
 ---
 
 ## Active blockers — USER ACTION gates open
 
-Only ONE blocker remains for v1.0 acceptance. Plan 08-01 Phase 8 was GATED (parked behind feature flag) so its MinIO provisioning + tag-fire prerequisites left the critical path; tracked instead in the v1.0.1 backlog as `DISTRIBUTION-PIPELINE-RE-ENABLE`.
+Three blockers open as of 2026-05-25 PM. Plan 08-01 Phase 8 was GATED (parked behind feature flag) so its MinIO provisioning + tag-fire prerequisites left the critical path; tracked instead in the v1.0.1 backlog as `DISTRIBUTION-PIPELINE-RE-ENABLE`.
 
 ### B1. Plan 07-03 Tasks 5+6 — physical Pixel device (carry-forward, UNCHANGED)
 
@@ -30,15 +29,71 @@ Only ONE blocker remains for v1.0 acceptance. Plan 08-01 Phase 8 was GATED (park
 - **Status:** Device-blocked since 2026-05-21.
 - **Resolution:** Acquire/borrow a Pixel (any arm64-v8a Android flagship is acceptable).
 
-### B2. Mapbox debug-cert allowlist — required for `android-debug-apk.yml` artifact to actually render maps (NEW, easy user action)
+### B2. Mapbox debug-cert allowlist — required for `android-debug-apk.yml` artifact to actually render maps (UNCHANGED, easy user action)
 
-- **What:** The standard Android `debug.keystore` (now committed at `apps/mobile-rn/android/app/debug.keystore`, commit `0f6f840`) has cert SHA-256 `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`. Production Mapbox `pk.*` token is cert-restricted per ADR-0006 → debug-built APKs from `android-debug-apk.yml` will show blank Mapbox tiles (401 on tile fetch) unless the debug cert SHA-256 is added to the Mapbox dashboard token allowlist.
+- **What:** The standard Android `debug.keystore` (committed at `apps/mobile-rn/android/app/debug.keystore`, commit `0f6f840`) has cert SHA-256 `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`. Production Mapbox `pk.*` token is cert-restricted per ADR-0006 → debug-built APKs from `android-debug-apk.yml` will show blank Mapbox tiles (401 on tile fetch) unless the debug cert SHA-256 is added to the Mapbox dashboard token allowlist.
 - **Files:** `.github/workflows/android-debug-apk.yml` lines 88-93 (workflow header comment surfaces this gotcha explicitly).
 - **Blocks:** Internal-tester / BlueStacks debug-loop usefulness ONLY. Does NOT block Plan 07-03 Tasks 5+6 (those use the production-signed .aab where the `pk.*` token's cert SHA-256 restriction matches the production keystore cert).
 - **Status:** Easy ~5-min user action; deferred until the debug-APK channel actually gets exercised for tester sharing.
 - **Resolution:** Mapbox dashboard → token settings → Add allowed Android cert SHA-256 → paste the debug fingerprint → save.
 
-**Net:** Phase 7 closeout requires B1 resolved. B2 is a small one-time convenience action with a clear scope (debug-APK channel only); production pipeline unaffected.
+### B3. Apply migration `0022_friend_requests.up.sql` on production VPS (NEW 2026-05-25 PM, ~5 min user action)
+
+- **What:** Phase 10 Session 1 (commits `a827bc5..830b8db`) added migration `services/backend/social-graph/migrations/0022_friend_requests.up.sql` creating the `friend_requests` table + `are_friends(user_a, user_b)` SQL function. Until applied on the production Postgres, both social-graph friend-request endpoints (`POST /friend-requests`, `POST /friend-requests/{id}/accept`, etc.) AND messaging `start_conversation` (which now calls `are_friends()` via shared Postgres pool) will 500 on first call.
+- **Files:** `services/backend/social-graph/migrations/0022_friend_requests.up.sql` (+ corresponding `.down.sql`); `services/backend/social-graph/internal/repo/friend_requests.go`; `services/backend/messaging/internal/svc/start_conversation.go` (cross-service `are_friends()` call site).
+- **Blocks:** Phase 10 ship — without the migration applied, the backend endpoints will fail on first call once mobile UI lands in Session 2.
+- **Resolution:**
+  ```bash
+  ssh user@148-253-214-156.sslip.io
+  docker exec <postgres-container> psql -U <user> -d <db> -f /path/to/0022_friend_requests.up.sql
+  # Verify: \dt friend_requests; \df are_friends
+  ```
+  Confirm idempotence (re-running should fail cleanly with "already exists" — schema is forward-only).
+- **Status:** Code-complete on `main`; production apply pending.
+
+### B4. Sessions 2-3 of `social-yolo-pass` (mobile + stories + polish) — IN FLIGHT, NEW 2026-05-25 PM
+
+- **What:** Phase 10 backend done (Session 1); mobile friends module + Phase 11 stories revival + chat polish remain across Sessions 2-3 per `.planning/quick/20260525-social-yolo-pass/CONTEXT.md`. This is the FIRST multi-session quick task (`yolo: true` flag).
+- **Files:** `.planning/quick/20260525-social-yolo-pass/CONTEXT.md` (progress log with Session 2-3 plan); `.planning/quick/20260525-social-yolo-pass/PLAN.md`; `.planning/STATE.md` §"Quick Tasks In Flight" (resume slug: `social-yolo-pass`).
+- **Blocks:** Phase 10 ship (mobile UI side) + Phase 11 (stories revival).
+- **Resolution:** `/gsd-quick resume social-yolo-pass` — picks up Session 2 from the CONTEXT.md progress log.
+- **Status:** In flight, resume-ready.
+
+**Net:** Phase 7 closeout requires B1 resolved. B2 is a small one-time convenience action (debug-APK channel only). B3 is the new ~5-min apply step before Phase 10 mobile work hits production. B4 is the in-flight resume gate for the rest of `social-yolo-pass`.
+
+---
+
+## Watch-Items — reversible scope decisions to monitor
+
+### W1. ADR-0011 Amendment 6 scope expansion (NEW 2026-05-25)
+
+- **What:** Amendment 6 expanded v1.0 from 4 phases (Phases 6-9) to 6 phases (Phases 6-11) by promoting `FRIEND-REQUEST-FLOW` to a full Phase 10 and `STORIES-REVIVAL` to a full Phase 11. First scope expansion since ADR-0011 itself.
+- **Why a watch-item:** ADR-0011's prior 5 amendments only ever cut scope; Amendment 6 is the first net-add. Reversibility is built in via the explicit "Amendment 7 fallback" clause: if Phase 10 OR Phase 11 exceeds 2× day-estimates, re-trim by demoting the slower one back to v1.0.1.
+- **Day-estimate baselines (from Amendment 6):**
+  - Phase 10 (friend-request flow): backend Session 1 done in ~half-day actual vs estimate; mobile Sessions 2-3 still to land.
+  - Phase 11 (stories revival): not started; greenfield mobile module on top of pre-existing `feed` backend service + `stories`/`story_views` v11 SQLite tables.
+- **Trigger condition:** Either phase takes >2× its day-estimate AND the dev judges the residual delta non-essential to closed-beta acceptance.
+- **Mitigation:** Both items have intact v1.0.1 backlog slots ready to re-receive them if Amendment 7 fires. No code burned; the promotion is a planning-doc-only operation.
+- **Tracks:** No backlog row (it IS the backlog row — Amendment 6 itself is the watchpoint).
+
+---
+
+## Architecture Risk — Cross-Service Coupling (NEW)
+
+### A1. Cross-service schema coupling: messaging ↔ social-graph via `friend_requests` table (NEW 2026-05-25 PM)
+
+- **What:** Phase 10 Session 1 introduced the FIRST cross-service permission gate. Messaging's `start_conversation` checks friendship by calling `are_friends(user_a, user_b)` — a SQL function defined in social-graph's migration `0022_friend_requests.up.sql` and queried via the SHARED Postgres connection pool. This crosses service boundaries at the database layer.
+- **Files:** `services/backend/social-graph/migrations/0022_friend_requests.up.sql` (defines table + function); `services/backend/messaging/internal/svc/start_conversation.go` (caller of `are_friends()`); shared Postgres pool wired via `services/backend/pkg/postgres/` (or equivalent — exact path verified per Session 1 commits).
+- **Coupling concerns:**
+  1. **Runtime, not compile-time:** If social-graph renames `friend_requests` table or alters `are_friends()` signature, messaging breaks at runtime on the next `start_conversation` call. No Go build error, no CI catch.
+  2. **No service boundary contract:** Unlike a JSON-over-HTTP API where the contract is the OpenAPI schema, the contract here is whatever the SQL function happens to expose.
+  3. **Deployment ordering:** Migrations to `friend_requests` must apply BEFORE rolling messaging updates that depend on new fields/columns. Currently solo-dev manages this manually; no enforcement.
+- **Mitigation in place:**
+  - `are_friends(user_a, user_b)` SQL function is the STABLE CONTRACT — even if the underlying `friend_requests` table is renamed or restructured, the function signature can be preserved.
+  - Solo-dev controls both services and both migrations — no cross-team coordination required.
+  - Plan 10 documents the dependency explicitly (Session 1 commits include the cross-call wiring).
+- **Long-term improvement path:** Once scale demands service isolation (separate DBs, separate teams), move to inter-service HTTP API — e.g., `social-graph` exposes `GET /friendship/{a}/{b}` that returns a boolean, and messaging makes an HTTP call instead of a direct SQL query. Defer until: (a) deployment ordering causes a real incident, OR (b) social-graph migrates off the shared Postgres pool.
+- **Tracks:** `CROSS-SERVICE-SCHEMA-COUPLING` v1.0.1 backlog (new entry — see below).
 
 ---
 
@@ -123,7 +178,7 @@ Each row = work that the 21-phase enterprise-hardening scope mandated, now retir
 - **Closed-beta mitigation:** Acceptable — Android beta is the v1.0 acceptance gate.
 - **Tracks:** SIGN-02 / BUILD-02 / DIST-02 marked DEFERRED in `.planning/REQUIREMENTS.md`.
 
-### 12. Phase 8 distribution pipeline parked behind feature gate (Amendment 5 of ADR-0011 — NEW 2026-05-24)
+### 12. Phase 8 distribution pipeline parked behind feature gate (Amendment 5 of ADR-0011)
 
 - **Files:** `apps/mobile-rn/src/update/manifestCheck.ts` lines reading `process.env.EXPO_PUBLIC_UPDATE_MANIFEST_URL ?? ''` → `{state:'disabled'}` short-circuit at top of `checkForUpdate`; `.github/workflows/android-release.yml` job-level `env.DISTRIBUTE_ENABLED` derived from `secrets.MINIO_RELEASES_ACCESS_KEY != ''`; 4 step-level `if: env.DISTRIBUTE_ENABLED == 'true'` gates (bundletool install, .aab download, manifest-signing decrypt, release distribute); UpdateBanner in `TrackerStartScreen` / `JournalScreen` / `SettingsScreen` renders no-op when state='disabled'.
 - **Residual risk:** Closed beta uses manual sideload by solo dev — the workflow signs a .aab via EAS Cloud, but the DIST steps don't fire, so APKs aren't uploaded to MinIO and no signed manifest is published. Testers receive APKs via DM-with-link. As tester base grows past ~20, "did everyone update?" overhead surfaces.
@@ -267,7 +322,7 @@ Each row = work that the 21-phase enterprise-hardening scope mandated, now retir
 - **Closed-beta mitigation:** Acceptable. Documented in `apps/mobile-rn/src/update/manifestSigning.ts` lines 1-12 (header comment) + 08-CONTEXT D-09.
 - **Tracks:** `MANIFEST-SIGNING-KEY-ROTATION` v1.0.1 backlog item — codify the rotation runbook as a formal RUNBOOK.md entry; promote ahead of `DISTRIBUTION-PIPELINE-RE-ENABLE` trigger.
 
-### S10. Standard Android debug.keystore committed to git (NEW)
+### S10. Standard Android debug.keystore committed to git
 
 - **Files:** `apps/mobile-rn/android/app/debug.keystore` (committed in commit `0f6f840` 2026-05-24); `.github/workflows/android-debug-apk.yml` lines 86-93 (header comment explaining the debug-cert allowlist gap); `.github/workflows/android-debug-apk.yml` (the workflow that signs the universal debug APK with this keystore).
 - **Root cause / design intent:** Standard Android debug keystore (password=android, key alias=androiddebugkey, public knowledge — `keytool -genkey` produces it everywhere). Committing eliminates the CI signing dance (~6 failed iterations before this commit; see Fragile Areas §F15). NOT a secret — Android tooling generates this same key on first build everywhere.
@@ -306,6 +361,14 @@ Each row = work that the 21-phase enterprise-hardening scope mandated, now retir
 - **Problem:** Every tag pushes a new universal APK (~80-120 MB). With weekly beta cadence + 6-month closed-beta runway = ~26 APKs ≈ 2-3 GB. Storage is on `srv1561293` (single VPS); not catastrophic but unbounded growth is a smell. Currently mooted by ADR-0011 Amendment 5 gate — no APKs uploaded to MinIO until pipeline re-enabled.
 - **Closed-beta mitigation:** N/A while gate-disabled.
 - **Tracks:** `RELEASE-RETENTION-POLICY` v1.0.1 backlog item — MinIO ILM rule on `android-releases` to keep last 5 APKs + expire older after 90 days. Promote ahead of `DISTRIBUTION-PIPELINE-RE-ENABLE` trigger.
+
+### P5. Cross-service `are_friends()` SQL call on every `start_conversation` (NEW 2026-05-25 PM)
+
+- **Files:** `services/backend/messaging/internal/svc/start_conversation.go` (call site); `services/backend/social-graph/migrations/0022_friend_requests.up.sql` (function definition).
+- **Problem:** `are_friends()` executes a Postgres query on every `start_conversation` request, hitting the shared connection pool. Not cached; not memoized; no index hint stored alongside. At closed-beta scale (~10 testers × infrequent conversation creation) the load is negligible — but in any growth scenario, this becomes the messaging service's hottest cross-service hop.
+- **Closed-beta mitigation:** Acceptable at 10-tester scale.
+- **Improvement path:** If profiling shows >5% of `start_conversation` latency in `are_friends()`, consider (a) a short-TTL in-memory friend-cache in messaging, OR (b) a NATS-published `friendship.changed` event that invalidates the cache. Defer until measurement justifies the complexity.
+- **Tracks:** No backlog row yet — covered by the broader `CROSS-SERVICE-SCHEMA-COUPLING` item.
 
 ---
 
@@ -415,7 +478,7 @@ Each row = work that the 21-phase enterprise-hardening scope mandated, now retir
 - **Safe modification:** Use the v3 API pattern: `import { sha512 } from '@noble/hashes/sha2.js'; ed25519.hashes.sha512 = sha512;`. Fixed in commit `721210f`. RESEARCH §1 should be updated on next planning cycle (templates predate the v3 release).
 - **Test coverage:** `apps/mobile-rn/src/update/__tests__/manifestSigning.test.ts` exercises sign+verify on a synthetic keypair → catches injection failure at runtime.
 
-### F15. `android-debug-apk.yml` gradle "keystore not found" false-negative (NEW, mystery)
+### F15. `android-debug-apk.yml` gradle "keystore not found" false-negative (mystery)
 
 - **Files:** `.github/workflows/android-debug-apk.yml` (final form after 5 iterations); `apps/mobile-rn/android/app/debug.keystore` (now committed per `0f6f840` to bypass the symptom).
 - **Why fragile:** Initial workflow attempted to `keytool -genkey` the debug.keystore in-CI at `app/debug.keystore`. Step log showed `[Storing app/debug.keystore]` (keytool's own success line) BUT the subsequent `:app:validateSigningDebug` gradle task still failed with "Keystore file not found for signing config 'debug'." Working directory, ownership, mtime, path-resolution audits all came back inconclusive. Workaround: commit the keystore (`0f6f840`) — symptom disappears, but the root cause of the false-negative is unknown.
@@ -423,11 +486,23 @@ Each row = work that the 21-phase enterprise-hardening scope mandated, now retir
 - **Test coverage:** None automated; investigated via the CI iteration log only.
 - **Tracks:** `GRADLE-KEYSTORE-CI-MYSTERY` v1.0.1 backlog (low priority — workaround is durable).
 
+### F16. Cross-service schema coupling — messaging reads social-graph's `friend_requests` (NEW 2026-05-25 PM)
+
+- **Files:** `services/backend/social-graph/migrations/0022_friend_requests.up.sql` (defines `friend_requests` table + `are_friends(user_a, user_b)` SQL function); `services/backend/messaging/internal/svc/start_conversation.go` (caller); shared Postgres connection pool.
+- **Why fragile:** First cross-service permission gate in the codebase. Messaging code calls `are_friends()` over the SHARED Postgres pool — a SQL-level coupling rather than HTTP/contract-level. If social-graph migrates the `friend_requests` schema (renames columns, splits the table, normalizes a field), the SQL function may continue to "work" against stale assumptions until a runtime mismatch fires. Crucially: NO BUILD-TIME CHECK catches this; everything passes lint + tests until production breaks.
+- **Safe modification:** Treat the `are_friends(user_a, user_b) → boolean` function as the stable contract — even on internal table refactors, preserve the function signature. Document the cross-service dependency in social-graph's repo README (NOT YET DONE — fold into the broader `CROSS-SERVICE-SCHEMA-COUPLING` backlog item). Run an integration test that exercises `start_conversation` against a freshly migrated DB after any social-graph schema change.
+- **Test coverage:** None at the moment. Phase 10 Session 1 commits added unit tests for both services in isolation; cross-service runtime path is only validated by manual smoke. Consider an integration test in `services/backend/messaging/internal/svc/start_conversation_test.go` that requires the migration to be applied (e.g., via a testcontainers-postgres fixture seeded with both services' migrations).
+- **Tracks:** `CROSS-SERVICE-SCHEMA-COUPLING` v1.0.1 backlog (new entry).
+
 ---
 
 ## Deferred to v1.0.1 (the backlog)
 
 Tracked in `.planning/ROADMAP.md` §"v1.0.1 Backlog". One-line summary per item — the ROADMAP has the full triggering conditions.
+
+Two items REMOVED in 2026-05-25 PM (first-ever backlog contraction):
+- `STORIES-REVIVAL` — PROMOTED to Phase 11 (ADR-0011 Amendment 6).
+- `FRIEND-REQUEST-FLOW` — PROMOTED to Phase 10 backend (commits `a827bc5..830b8db`).
 
 | ID | Item | Source |
 |---|---|---|
@@ -451,18 +526,17 @@ Tracked in `.planning/ROADMAP.md` §"v1.0.1 Backlog". One-line summary per item 
 | `RELEASE-RETENTION-POLICY` | MinIO ILM lifecycle rule on `android-releases` bucket — keep last 5 APKs + expire older after 90 days. Prevents unbounded growth at ~80-120 MB per tag × 26 tags / 6-month beta runway. Promote ahead of `DISTRIBUTION-PIPELINE-RE-ENABLE`. | Plan 08-01 — P4 above |
 | `APK-URL-REFRESH-CRON` | Daily cron on `srv1561293` that re-signs the manifest (`scripts/release-distribute.sh` in manifest-only mode) with a fresh 24h presigned APK URL. Prevents expiry-induced 403s when no new tag fires within 24h. Promote ahead of `DISTRIBUTION-PIPELINE-RE-ENABLE`. | Plan 08-01 — S11 prior |
 | `MANIFEST-INVITE-GATING` | Per-tester JWT-gated manifest URL — replace public-read `android-manifest` bucket with an authenticated endpoint (e.g., Caddy reverse proxy + JWT check via identity-svc). Trigger: any tester chat-leaks the URL or beta moves past 50 users. Promote ahead of `DISTRIBUTION-PIPELINE-RE-ENABLE`. | Plan 08-01 — S10 prior + D-08-PRIVATE-INVITE-GATING |
-| `DISTRIBUTION-PIPELINE-RE-ENABLE` (NEW 2026-05-24) | Phase 8 distribution-pipeline (Plan 08-01) is code-complete + runtime-disabled per ADR-0011 Amendment 5. Re-enable = (1) populate `MINIO_RELEASES_*` repo secrets, (2) set `EXPO_PUBLIC_UPDATE_MANIFEST_URL` in mobile env, (3) cut a new beta tag. 638/638 jest tests defend against drift. | ADR-0011 Amendment 5 2026-05-24 |
-| `STORIES-REVIVAL` (NEW 2026-05-25) | Re-introduce stories UI module on mobile (removed Phase 8/C closeout; backend `feed` service + SQLite tables `stories`+`story_views` v11 still exist). Includes viewer with progress bars, creator (camera + upload), ring badge on chat/profile avatars, story-reactions store, sync loop, cleanup-cron client. Needs design decisions on retention (24h?) and visibility model (followers-only vs public). | `/gsd-quick chat-polish-pass` 2026-05-25 |
-| `FRIEND-REQUEST-FLOW` (NEW 2026-05-25) | Symmetric friend-request with accept/reject (current model is asymmetric follow, no accept needed). New `social-graph` endpoints + `friend_requests` schema/migration + mobile `useFriendRequestsStore` + `FriendRequestInboxScreen` + Me-tab badge + notification path. Decide co-exist vs replace follow. | `/gsd-quick chat-polish-pass` 2026-05-25 |
-| `CHAT-TYPING-INDICATOR` (NEW 2026-05-25) | Ghost bubble when peer is typing on ChatScreen. Backend realtime pubsub event (`typing.started` / `typing.stopped`) + mobile listener (5s expiry) + fade animation. ~3h. | `/gsd-quick chat-polish-pass` 2026-05-25 |
-| `CHAT-SWIPE-DELETE` (NEW 2026-05-25) | Left-swipe row on ChatsListScreen → red Delete button → soft-delete chat. `react-native-gesture-handler` Swipeable wrapper. Backend `DELETE /conversations/{id}` (soft-delete `deleted_at`). ~3h. | `/gsd-quick chat-polish-pass` 2026-05-25 |
-| `CHAT-MODULE-MIGRATION` (NEW 2026-05-25) | Move chat code from `src/state/social/`, `src/storage/socialRepository.ts`, `src/domain/social.ts`, `src/ui/social/` into `src/modules/chat/{domain,storage,state,sync,ui}/index.ts` to match the modular pattern. 1-2 days. | `/gsd-quick chat-polish-pass` 2026-05-25 |
-| `MAPBOX-DEBUG-CERT-ALLOWLIST` (NEW 2026-05-25) | One-time ~5-min user action — add debug.keystore cert SHA-256 `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C` to Mapbox dashboard `pk.*` token allowlist so `android-debug-apk.yml` artifacts actually render maps (not blank tiles). | CONCERNS.md §B2 + S10 |
-| `WORKSPACE-MOD-HYGIENE` (NEW 2026-05-25) | `go mod tidy` per-module fails for `identity` service (imports `github.com/runningecosystem/backend/pkg/permissions` via go.work workspace; per-module tidy doesn't honor workspace). Lint/vuln/vet/build all work via workspace mode → not a blocker. Decide: pin module paths or accept workspace-only tidy as documented dev workflow. | Go toolchain bump 2026-05-25 (commit `69cc8eb`) |
-| `GRADLE-KEYSTORE-CI-MYSTERY` (NEW 2026-05-25) | Investigate why `keytool -genkey` storing debug.keystore in `android-debug-apk.yml` succeeded (`[Storing app/debug.keystore]`) but `:app:validateSigningDebug` still reported "Keystore file not found." Workaround: keystore committed to git (`0f6f840`). Root cause undetermined. Low priority — workaround is durable. | android-debug-apk.yml CI iteration debt |
-| `TRACKER-LIVE-FIELD-TUNE` (NEW 2026-05-25) | Tune PauseDetector warmup gate thresholds (currently warmupMs + warmupMeters from `apps/mobile-rn/src/pipeline/filters/PauseDetector.ts`) post Plan 07-03 Pixel pocket-walk. Real-device baseline (GPS lock latency on Pixel vs flagship Galaxy) may justify a different warmup window than the dev-workstation guess. | `/gsd-quick tracker-live-polish-pass` 2026-05-25 survey |
-| `MAP-RECENTER-BUTTON` (NEW 2026-05-25) | Add a "recenter" button to TrackerLive when the camera is released (after closure-fired or when paused). Tracker-live-polish-pass added "freeze map camera on pause" (commit `a3983cc`) — UX-paired follow-up is a one-tap recenter to user location when ready to resume. | `/gsd-quick tracker-live-polish-pass` 2026-05-25 survey |
-| `RUN-LIVE-SPLITS` (NEW 2026-05-25) | Render per-km splits during the run (live), not just at RunDetails post-save. `computeSplits` already exists at `apps/mobile-rn/src/domain/splits.ts`; surfacing live is a TrackerLive UI work item. | `/gsd-quick tracker-live-polish-pass` 2026-05-25 survey |
+| `DISTRIBUTION-PIPELINE-RE-ENABLE` | Phase 8 distribution-pipeline (Plan 08-01) is code-complete + runtime-disabled per ADR-0011 Amendment 5. Re-enable = (1) populate `MINIO_RELEASES_*` repo secrets, (2) set `EXPO_PUBLIC_UPDATE_MANIFEST_URL` in mobile env, (3) cut a new beta tag. 638/638 jest tests defend against drift. | ADR-0011 Amendment 5 2026-05-24 |
+| `CHAT-TYPING-INDICATOR` | Ghost bubble when peer is typing on ChatScreen. Backend realtime pubsub event (`typing.started` / `typing.stopped`) + mobile listener (5s expiry) + fade animation. ~3h. | `/gsd-quick chat-polish-pass` 2026-05-25 |
+| `CHAT-SWIPE-DELETE` | Left-swipe row on ChatsListScreen → red Delete button → soft-delete chat. `react-native-gesture-handler` Swipeable wrapper. Backend `DELETE /conversations/{id}` (soft-delete `deleted_at`). ~3h. | `/gsd-quick chat-polish-pass` 2026-05-25 |
+| `CHAT-MODULE-MIGRATION` | Move chat code from `src/state/social/`, `src/storage/socialRepository.ts`, `src/domain/social.ts`, `src/ui/social/` into `src/modules/chat/{domain,storage,state,sync,ui}/index.ts` to match the modular pattern. 1-2 days. | `/gsd-quick chat-polish-pass` 2026-05-25 |
+| `MAPBOX-DEBUG-CERT-ALLOWLIST` | One-time ~5-min user action — add debug.keystore cert SHA-256 `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C` to Mapbox dashboard `pk.*` token allowlist so `android-debug-apk.yml` artifacts actually render maps (not blank tiles). | CONCERNS.md §B2 + S10 |
+| `WORKSPACE-MOD-HYGIENE` | `go mod tidy` per-module fails for `identity` service (imports `github.com/runningecosystem/backend/pkg/permissions` via go.work workspace; per-module tidy doesn't honor workspace). Lint/vuln/vet/build all work via workspace mode → not a blocker. Decide: pin module paths or accept workspace-only tidy as documented dev workflow. | Go toolchain bump 2026-05-25 (commit `69cc8eb`) |
+| `GRADLE-KEYSTORE-CI-MYSTERY` | Investigate why `keytool -genkey` storing debug.keystore in `android-debug-apk.yml` succeeded (`[Storing app/debug.keystore]`) but `:app:validateSigningDebug` still reported "Keystore file not found." Workaround: keystore committed to git (`0f6f840`). Root cause undetermined. Low priority — workaround is durable. | android-debug-apk.yml CI iteration debt |
+| `TRACKER-LIVE-FIELD-TUNE` | Tune PauseDetector warmup gate thresholds (currently warmupMs + warmupMeters from `apps/mobile-rn/src/pipeline/filters/PauseDetector.ts`) post Plan 07-03 Pixel pocket-walk. Real-device baseline (GPS lock latency on Pixel vs flagship Galaxy) may justify a different warmup window than the dev-workstation guess. | `/gsd-quick tracker-live-polish-pass` 2026-05-25 survey |
+| `MAP-RECENTER-BUTTON` | Add a "recenter" button to TrackerLive when the camera is released (after closure-fired or when paused). Tracker-live-polish-pass added "freeze map camera on pause" (commit `a3983cc`) — UX-paired follow-up is a one-tap recenter to user location when ready to resume. | `/gsd-quick tracker-live-polish-pass` 2026-05-25 survey |
+| `RUN-LIVE-SPLITS` | Render per-km splits during the run (live), not just at RunDetails post-save. `computeSplits` already exists at `apps/mobile-rn/src/domain/splits.ts`; surfacing live is a TrackerLive UI work item. | `/gsd-quick tracker-live-polish-pass` 2026-05-25 survey |
+| `CROSS-SERVICE-SCHEMA-COUPLING` (NEW 2026-05-25 PM) | Address the runtime coupling between messaging ↔ social-graph via `friend_requests` table + `are_friends()` SQL function (first cross-service permission gate, introduced Phase 10 Session 1). Steps: (a) document the dependency in social-graph README; (b) add an integration test in messaging that exercises `start_conversation` against a freshly migrated DB; (c) long-term, if scale demands service isolation, migrate to inter-service HTTP API (e.g., `GET /friendship/{a}/{b}`). Trigger: deployment-ordering incident OR social-graph migrates off shared Postgres pool. | Phase 10 Session 1 commits `a827bc5..830b8db` 2026-05-25 PM |
 
 **Resolved items (intentionally listed for audit trail):**
 
@@ -471,14 +545,16 @@ Tracked in `.planning/ROADMAP.md` §"v1.0.1 Backlog". One-line summary per item 
 - ☑ Govulncheck findings (19-26 per module) — closed commit `69cc8eb` (Go 1.25.0 → 1.25.10 + otel v1.32 → v1.43).
 - ☑ "ПРОДОЛЖИТЬ on start" UX bug — closed commit `815c0ff` (PauseDetector warmup gate).
 - ☑ Time-freeze on pause — closed commit `b834eef` (SessionManager `pausedDurationMs` accumulator + `effectiveElapsedMs` getter; UI consumers updated in `ed5925f`).
+- ☑ `STORIES-REVIVAL` — PROMOTED to Phase 11 (ADR-0011 Amendment 6 2026-05-25 PM). Not yet shipped — see Active Blocker B4. Reverting to backlog is the Amendment 7 fallback path if Phase 11 exceeds 2× day-estimate.
+- ☑ `FRIEND-REQUEST-FLOW` — PROMOTED to Phase 10 backend (commits `a827bc5..830b8db` 2026-05-25 PM). Code-complete pending (a) production migration apply (B3), (b) Sessions 2-3 mobile UI (B4). Reverting to backlog is the Amendment 7 fallback path if Phase 10 mobile exceeds 2× day-estimate.
 
-Total active backlog: ~32 items (+10 since prior refresh; -5 resolved).
+Total active backlog: ~30 items (-2 since prior refresh: net contraction; first-ever net-negative backlog delta).
 
 ---
 
 ## Environment Risks
 
-Workstation-state assumptions that have caused real friction during Phase 6/7/8 execution and that the next executor will hit again without explicit setup.
+Workstation-state assumptions that have caused real friction during Phase 6/7/8/10 execution and that the next executor will hit again without explicit setup.
 
 ### E1. `SOPS_AGE_KEY_FILE` not in shell profile
 
@@ -528,12 +604,12 @@ Workstation-state assumptions that have caused real friction during Phase 6/7/8 
 - **Mitigation:** Replace with `getInstalledVersion()` — one-line fix.
 - **Tracks:** Out-of-scope for Plan 08-01 (D-08-RECORD-NOT-FIX); quick-fix candidate when convenient OR v1.0.1.
 
-### E8. Quick tasks pattern accumulating in STATE.md (NEW 2026-05-25)
+### E8. Quick tasks pattern accumulating in STATE.md (multi-session variant now in play 2026-05-25 PM)
 
-- **What:** `/gsd-quick <slug>` workflow now established (2 completed 2026-05-25: chat-polish-pass + tracker-live-polish-pass). Each leaves a `.planning/quick/YYYYMMDD-slug/` directory with PLAN/CONTEXT/SUMMARY + a row in STATE.md's "Quick Tasks Completed" table.
-- **Risk:** Volume — if the pattern keeps accumulating (5+ quick tasks per fortnight), the STATE.md table will grow unbounded. Discoverability of "what was in quick task X" depends on directory naming + commit message discipline.
-- **Mitigation:** Pattern is structurally sound: SUMMARY.md per quick task captures the substantive findings; backlog items get promoted to ROADMAP.md (5 chat items + 3 tracker items promoted from today's two quick tasks). STATE.md table acts as a lightweight index.
-- **Tracks:** None — operational pattern, working as designed. Re-evaluate at 10+ quick tasks.
+- **What:** `/gsd-quick <slug>` workflow established; 2 completed 2026-05-25 AM (chat-polish-pass + tracker-live-polish-pass — both single-session) + 1 in-flight 2026-05-25 PM (`social-yolo-pass` — FIRST multi-session quick task with `yolo: true` flag). Each leaves a `.planning/quick/YYYYMMDD-slug/` directory with PLAN/CONTEXT/SUMMARY + a row in STATE.md's "Quick Tasks Completed" table (or "Quick Tasks In Flight" for active ones).
+- **Risk:** Volume — if the pattern keeps accumulating (5+ quick tasks per fortnight), the STATE.md tables will grow unbounded. Discoverability of "what was in quick task X" depends on directory naming + commit message discipline. Multi-session variant adds resume-state complexity: CONTEXT.md progress log must capture exact session boundaries for `/gsd-quick resume <slug>` to work correctly.
+- **Mitigation:** Pattern is structurally sound: SUMMARY.md per quick task captures the substantive findings; backlog items get promoted to ROADMAP.md (5 chat items + 3 tracker items promoted from today's two morning quick tasks; multi-session yolo-pass will produce its SUMMARY on close). STATE.md tables act as a lightweight index. Multi-session resume protocol exercised for the first time with `social-yolo-pass` Session 1 → 2 handoff.
+- **Tracks:** None — operational pattern, working as designed. Re-evaluate at 10+ quick tasks OR if multi-session resume produces a stuck state.
 
 ---
 
@@ -587,6 +663,13 @@ Workstation-state assumptions that have caused real friction during Phase 6/7/8 
 - **Files:** `apps/mobile-rn/src/update/__tests__/manifestCheck.test.ts` lines 56-59 (`verifyManifestSignature: jest.fn(() => true)`); `apps/mobile-rn/src/update/__tests__/manifestSigning.test.ts`.
 - **Risk:** If a future code change breaks the integration between `manifestCheck.ts` ↔ `manifestSigning.ts` (e.g., changing the field-stripping logic), the unit tests still pass because the stub accepts everything. End-to-end smoke catches it but only on tag push.
 - **Priority:** Low for closed beta; consider one integration test in `manifestCheck.test.ts` that uses the real `verifyManifestSignature` against a known-good signed fixture.
+
+### TC8. Messaging ↔ social-graph cross-service integration not tested (NEW 2026-05-25 PM)
+
+- **What's not tested:** End-to-end flow `start_conversation` → `are_friends()` lookup → permission decision against a freshly migrated DB containing both services' schemas.
+- **Files:** `services/backend/messaging/internal/svc/start_conversation.go` (caller); `services/backend/social-graph/migrations/0022_friend_requests.up.sql` (function definition); `services/backend/messaging/internal/svc/start_conversation_test.go` (current tests use mocks for the cross-service call, not a real DB).
+- **Risk:** A future social-graph migration that renames `friend_requests` or alters `are_friends()` signature breaks messaging at runtime, not at compile-time or test-time. Pairs with the architecture risk A1 + Fragile Area F16.
+- **Priority:** Medium — write a testcontainers-postgres integration test that applies both services' migrations against a real Postgres, then exercises `start_conversation` end-to-end. Trigger this work alongside `CROSS-SERVICE-SCHEMA-COUPLING` backlog item.
 
 ---
 

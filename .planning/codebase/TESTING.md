@@ -3,18 +3,33 @@
 **Analysis Date:** 2026-05-25
 
 The repo has two distinct test surfaces:
-- **Mobile (Jest + RN Testing Library):** **64 test files, 686 individual cases, 2 snapshots**, all green. Distributed across top-level `apps/mobile-rn/src/__tests__/` (~47 files) + module-local `<module>/__tests__/` directories (17 files).
-- **Backend (Go `testing` + `httptest` + in-memory repos):** **23 `*_test.go` files** across `services/backend/`, executed per-module via the `backend-ci` matrix (race detector enabled).
+- **Mobile (Jest + RN Testing Library):** **64 test files, 686 individual cases, 2 snapshots**, all green. Distributed across top-level `apps/mobile-rn/src/__tests__/` (~47 files) + module-local `<module>/__tests__/` directories (17 files). **Unchanged since prior refresh** — social-yolo-pass session 1 did not touch mobile (next session 2 will add mobile + tests).
+- **Backend (Go `testing` + `httptest` + in-memory repos):** **23 `*_test.go` files** across `services/backend/`, executed per-module via the `backend-ci` matrix (race detector enabled). **Unchanged since prior refresh** — social-yolo-pass session 1 shipped 4 new Go files in `social-graph` + `messaging` but **deliberately deferred test additions** to session 2 (see "Test growth" below).
 
 In addition, `.planning/phases/<NN-…>/evidence/smoke-*.sh` shell smokes exercise cross-language and CI-shape contracts that Jest/Go-test can't reach.
 
-**Test growth since prior refresh (commit `ac76df0` 2026-05-24):**
+**Test growth since prior refresh (commit `ac76df0` 2026-05-24 → today):**
 
 | Source | Tests added | Files added |
 |---|---|---|
-| `chat-polish-pass` (quick task 2026-05-25) | +31 (14 timeFormat + 17 avatarInitials) | 2 new test files |
-| `tracker-live-polish-pass` (quick task 2026-05-25) | +17 (6 PauseDetector warmup + 9 SessionManager time-freeze + 2 pause-flow integration) | 3 new test files |
+| `chat-polish-pass` (quick task 2026-05-25 AM) | +31 (14 timeFormat + 17 avatarInitials) | 2 new test files |
+| `tracker-live-polish-pass` (quick task 2026-05-25 midday) | +17 (6 PauseDetector warmup + 9 SessionManager time-freeze + 2 pause-flow integration) | 3 new test files |
+| `social-yolo-pass` session 1 (quick-XL 2026-05-25 PM, commits `a827bc5..830b8db`) | **+0 (intentionally deferred)** | 0 new test files |
 | **Total delta** | **+48** | **+5 files (638 → 686 tests, 59 → 64 suites)** |
+
+**Session 1 of social-yolo-pass — deliberate test-deferral pattern (NEW):**
+
+The XL multi-session quick-task at `.planning/quick/20260525-social-yolo-pass/` shipped Phase 10 backend in session 1 (4 production Go files: migration `0022_friend_requests`, `social-graph/internal/service/friend_requests.go`, `social-graph/internal/repository/.../friend_requests_repo.go`, `messaging/internal/permissions/friendship_gate.go`) with **zero new `*_test.go` files**.
+
+The CONTEXT.md progress log explicitly captures this as a deliberate decision, not an oversight:
+> "No new Go tests yet — added in session 2 or 3 once mobile lands and full e2e smoke is needed."
+
+Rationale:
+1. **Smoke surface is mobile + backend together** — meaningful coverage for friend-requests requires the mobile client posting to `/friend-requests/{receiverId}`, then the receiver mobile client accepting it, then the messaging service refusing/allowing the DM. A unit test of `SendFriendRequest` alone would re-prove the behavior matrix already documented in the function doc-comment without exercising the cross-service `messaging → social-graph` SQL coupling.
+2. **Test-deferral is now an explicit session-checklist item** — the next session 2 starts with "Mobile friends module" but session 3 closeout includes "backend test gap closure for Phase 10" before SUMMARY.md ships.
+3. **Lint + build + govulncheck remain green** — `golangci-lint v2.5: 0 issues across both services`, both services compile clean, no new vulns. The deferred work is test coverage, not quality gates.
+
+This is opposite the TIGHT-pass cadence (chat-polish-pass + tracker-live-polish-pass both added tests in every feature commit). When deferring, the session checklist MUST flag it explicitly so reviewers know it's deliberate, and the deferred tests MUST land before SUMMARY.md.
 
 ## Test Framework
 
@@ -48,7 +63,7 @@ module.exports = {
 - Standard Go `testing` package + `net/http/httptest` for handler tests
 - In-memory repository implementations (`internal/repository/memory/`) substitute for Postgres in service-level unit tests
 - Race detector enabled: `go test -race -coverprofile=coverage.out ./...` (see `.github/workflows/backend-ci.yml:54`)
-- Tracked-as-clean: 9 backend modules with golangci-lint v2.5.0 + govulncheck both 0-issue (verified `92fe656` + `69cc8eb` 2026-05-24 / 2026-05-25)
+- Tracked-as-clean: 9 backend modules with golangci-lint v2.5.0 + govulncheck both 0-issue (verified `92fe656` + `69cc8eb` 2026-05-24 / 2026-05-25, re-verified after social-yolo-pass session 1 added Phase 10 code)
 
 **Run Commands:**
 
@@ -97,6 +112,8 @@ bash .planning/phases/08-closed-beta-distribution/evidence/smoke-release-distrib
 
 **Convention for NEW tests:** Co-located `<module>/__tests__/` is the preferred default for **new** code. The centralized `src/__tests__/` remains for cross-module integration tests + tests added before the co-location convention took hold. Either location is valid; both are picked up by `jest.config.js:7` `testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx']`.
 
+For Phase 10 + Phase 11 mobile work (`src/modules/friends/` + `src/modules/stories/` landing in social-yolo-pass session 2-3), tests will live at `src/modules/<feature>/<tier>/__tests__/` — e.g., `src/modules/friends/domain/__tests__/`, `src/modules/friends/state/__tests__/`. The modular-layout test placement matches the source code's vertical-slice structure.
+
 **Naming:**
 - Unit tests: `<source>.test.ts(x)` — `manifestSchema.test.ts`, `AutostartDialog.test.tsx`, `timeFormat.test.ts`, `avatarInitials.test.ts`
 - Feature-specific test variants on same source: `<source>.<feature>.test.ts` — `PauseDetector.warmup.test.ts` (tests new warmup gate; doesn't touch existing PauseDetector behavior), `SessionManager.timeFreezing.test.ts` (tests new `effectiveElapsedMs()` API only), `SessionManager.pauseFlow.test.ts` (integration test wiring PauseDetector + SessionManager together)
@@ -109,6 +126,7 @@ bash .planning/phases/08-closed-beta-distribution/evidence/smoke-release-distrib
 - `services/backend/identity/internal/service/auth_test.go` next to `auth.go`
 - `services/backend/identity/internal/handler/http_test.go` next to `http.go`
 - `services/backend/pkg/observability/*_test.go` for shared infrastructure (7 test files; all golangci-lint v2.5 clean post-`92fe656`)
+- **Pending for Phase 10 (deferred):** `services/backend/social-graph/internal/service/friend_requests_test.go` + `services/backend/messaging/internal/permissions/friendship_gate_test.go` — to be added in social-yolo-pass session 2 or 3 alongside mobile-side flow tests
 
 **Smoke shell scripts:** `.planning/phases/<NN-…>/evidence/smoke-*.sh` — one script per cross-cutting concern within a plan. Each script is self-contained, exits non-zero on failure, and is committed alongside the plan it validates.
 
@@ -276,6 +294,21 @@ func TestRegister_RejectsInvalidEmail(t *testing.T) {
 - `t.Helper()` on construction helpers so error lines point at the caller
 - **staticcheck ST1023 convention** (post-`92fe656`): drop redundant type annotations from assignment expressions where Go can infer — use `var capturedLevel = slog.LevelInfo` instead of `var capturedLevel slog.Level = slog.LevelInfo`. Lint flags the redundant form.
 
+**Behavior matrices drive test tables (NEW guidance for deferred Phase 10 tests):**
+
+When a function's doc-comment lists a behavior matrix (the `// → ErrFoo` arrow notation introduced in `SendFriendRequest` — see CONVENTIONS.md "Behavior-matrix doc-comments"), the corresponding `*_test.go` should add one `TestFunction_<Outcome>` per matrix row. Example for the deferred `friend_requests_test.go`:
+
+| Behavior-matrix row (doc-comment) | Test name to add |
+|---|---|
+| `sender == receiver → ErrSelfTarget` | `TestSendFriendRequest_RejectsSelf` |
+| `already friends → ErrAlreadyFriends` | `TestSendFriendRequest_RejectsWhenAlreadyFriends` |
+| `existing pending → idempotent return` | `TestSendFriendRequest_IsIdempotentForPending` |
+| `existing rejected/cancelled → flip back to pending` | `TestSendFriendRequest_FlipsRejectedToPending` |
+| `no prior row → create new pending` | `TestSendFriendRequest_CreatesNewPending` |
+| inverse-direction pending → `ErrFriendRequestExists` | `TestSendFriendRequest_RejectsWhenInversePending` |
+
+The 1:1 mapping makes coverage gaps obvious during code review — any matrix row without a matching test is visible without reading every test body.
+
 ## Mocking
 
 Five mocking patterns documented inline as comments during Plan 08-01 Task 5. Each pattern exists because a specific Jest/ESM/RN gotcha bit a real test.
@@ -415,6 +448,7 @@ This is the closest jest can get to "user starts → pauses → resumes → stop
 - AppState / RN platform globals (when not part of the SUT)
 - The crypto module when testing a state machine that depends on it (focus test on dispatch logic; cover crypto in its own dedicated suite)
 - External boundaries in domain-integration tests: SQLite repos, LocationAdapter, MapAdapter
+- **Cross-service permission gates (when added in session 2-3)**: tests of `messaging` handlers should stub `permissions.FriendshipGate` rather than spinning up Postgres. The gate's `RequireFriends(ctx, u1, u2) error` shape is small enough that a per-test stub returning `nil` or `ErrNotFriends` is trivial. The real gate gets its own test (against a `:memory:` Postgres or testcontainers — TBD in deferred work).
 
 **What NOT to mock:**
 - Pure domain logic (`AreaCalculator`, `Pipeline` filters, `semverLite`, `SessionManager`, `PauseDetector`, `formatChatTime`, `initialsForName`, `colorForName`) — exercised directly with handcrafted inputs
@@ -491,6 +525,13 @@ cd services/backend/<service>
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out                        # HTML view
 ```
+
+**Known coverage gap (Phase 10 deferred):**
+- `services/backend/social-graph/internal/service/friend_requests.go` — 0% coverage as of session 1 (no test file yet)
+- `services/backend/messaging/internal/permissions/friendship_gate.go` — 0% coverage as of session 1
+- `services/backend/social-graph/internal/repository/postgres/friend_requests_repo.go` (or equivalent) — 0% coverage as of session 1
+
+These three files are flagged in `social-yolo-pass` session 2-3 checklist for test addition before SUMMARY.md ships.
 
 ## Test Types
 
@@ -644,7 +685,7 @@ expect(effective).toBeGreaterThan(30_000);
 
 Jobs (each name is a verbatim contract consumed by `Plan 04-05` branch-protection JSON — DO NOT vary the spelling, including the em-dash `—` U+2014 in `secrets-scan-diff`):
 1. **`Test (Go 1.25)`** — `strategy.matrix.service: [pkg, identity, activity-sync, feed, media, messaging, notifications, realtime-gw, social-graph]`. Runs `go test -race -coverprofile=coverage.out ./...` per module + writes coverage summary to `$GITHUB_STEP_SUMMARY`.
-2. **`Lint (golangci-lint v2)`** — pinned to v2.5.0. Loops per module because `services/backend` is a `go.work` workspace root without `go.mod`. **All 9 modules currently 0-issue** post-`92fe656`.
+2. **`Lint (golangci-lint v2)`** — pinned to v2.5.0. Loops per module because `services/backend` is a `go.work` workspace root without `go.mod`. **All 9 modules currently 0-issue** post-`92fe656` (re-verified after social-yolo-pass session 1 Phase 10 additions).
 3. **`SAST (gosec)`** — `-severity high`, blocks on HIGH findings (per D-10).
 4. **`Vuln (govulncheck)`** — per-module loop; blocks on any finding (per D-10). **All 9 modules currently 0-vuln** post-`69cc8eb` (Go `1.25.0 → 1.25.10` + `otel v1.32 → v1.43`; was 19-26 vulns per module pre-bump).
 5. **`SAST (semgrep)`** — container `returntocorp/semgrep`, configs `p/golang` + `p/owasp-top-ten`, severity ERROR, `--error` flag.
@@ -654,8 +695,8 @@ Jobs (each name is a verbatim contract consumed by `Plan 04-05` branch-protectio
 9. **`PII Audit (slog grep)`** — runs `scripts/pii_audit.sh` (Plan OBS-06 / D-14). Blocks if a new `slog.*Context` call uses a PII attribute key from the D-12 deny-list.
 10. **`Cardinality Probe (Prom labels)`** — boots docker-compose, polls `/metrics`, runs `scripts/cardinality_probe.py` to detect forbidden labels (`user_id`, `session_id`, `device_id`, `external_uuid`, `email`, `phone`) and metric families > 1000 series.
 
-**Pre-commit (local, every commit):** `.pre-commit-config.yaml` runs `gitleaks v8.30.1` (staged files only). Custom rules in `.gitleaks.toml` extend defaults for bare Mapbox `sk.` / `pk.` patterns. All commits in 2026-05-24 + 2026-05-25 passed cleanly.
+**Pre-commit (local, every commit):** `.pre-commit-config.yaml` runs `gitleaks v8.30.1` (staged files only). Custom rules in `.gitleaks.toml` extend defaults for bare Mapbox `sk.` / `pk.` patterns. All commits in 2026-05-24 + 2026-05-25 (including social-yolo-pass session 1 `a827bc5..830b8db`) passed cleanly.
 
 ---
 
-*Testing analysis: 2026-05-25*
+*Testing analysis: 2026-05-25 (refresh after social-yolo-pass session 1; mobile test count unchanged at 686, backend Go test count unchanged at 23 files, Phase 10 backend tests deferred to session 2-3)*

@@ -44,6 +44,10 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 │  realtime-gw │ notifications │ media  (each: cmd/server/main.go +        │
 │                                              internal/{handler,service,  │
 │                                              repository,domain})          │
+│                                                                          │
+│  Cross-service permission gate (Phase 10): messaging queries             │
+│  are_friends() from social-graph's friend_requests table via SHARED      │
+│  Postgres pool — no inter-service HTTP.                                  │
 └──────┬──────────────┬──────────────┬──────────────┬──────────────┬──────┘
        ▼              ▼              ▼              ▼              ▼
   PostgreSQL+    Redis        NATS          MinIO          Sentry SaaS
@@ -73,11 +77,28 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 | Design primitives | Cursona tokens + atomic components incl. `TabBar` (with `badges`), `Avatar` (gradient + initials fallback), `Skeleton` family | `apps/mobile-rn/src/design/components/` |
 | Backend gateway | Caddy reverse proxy + admin static UI | `services/backend/gateway/Caddyfile`, `Caddyfile.prod` |
 | Backend services | 8 independent Go binaries under `services/backend/<svc>/cmd/server/main.go` | identity, activity-sync, feed, social-graph, messaging, realtime-gw, notifications, media |
+| Friend-request domain (Phase 10) | Symmetric request lifecycle (pending/accepted/rejected/cancelled); 8 HTTP routes; derives `Relation.FriendStatus` + `CanDM` via `are_friends()` SQL | `services/backend/social-graph/internal/{handler,service,repository/postgres}/friend_requests.go`, `internal/domain/types.go` |
+| Friendship gate (Phase 10) | Cross-service permission check via shared Postgres pool; gates `createOrFindConv` for `type=dm` | `services/backend/messaging/internal/permissions/friendship_gate.go` |
 | Shared Go packages | Cross-service helpers (auth, ratelimit, observability, audit, …) | `services/backend/pkg/*` |
 | OpenAPI contracts | Per-service YAML + `_shared/{parameters,schemas,responses}.yaml` | `services/backend/api/*.yaml` |
 | DB migrations | Numbered `000N_*.up/down.sql` for Postgres + TimescaleDB | `services/backend/migrations/` |
 | Release pipeline | Tag-triggered EAS build + MinIO distribute + Ed25519 manifest sign | `.github/workflows/android-release.yml`, `scripts/release-distribute.sh` |
 | Dev debug APK pipeline | Branch-push universal debug APK artifact (BlueStacks/internal testers) | `.github/workflows/android-debug-apk.yml` |
+
+## Phase Scope (ADR-0011 Amendment 6)
+
+v1.0 closed-beta scope expanded from **4 phases → 6 phases** on 2026-05-25 (Amendment 6 to ADR-0011). Active v1.0 phases:
+
+| Phase | Topic | Status |
+|-------|-------|--------|
+| 6 | Release signing | Shipped |
+| 7 | Release builds + mobile stability (Plans 07-01, 07-03) | Shipped |
+| 8 | Closed-beta distribution (Plan 08-01) | Shipped (gated off until Phase 9) |
+| 9 | (reserved — update flow gate flip) | Pending |
+| **10** | **Friend-request flow** (symmetric DM gate) | **Backend code-complete (Session 1 of `social-yolo-pass`); mobile pending** |
+| **11** | **Stories revival** | **Not started** |
+
+Phases 10 + 11 were promoted from v1.0.1 backlog → active v1.0 scope by Amendment 6, formalising the YOLO scope expansion captured in `.planning/quick/20260525-social-yolo-pass/`.
 
 ## Pattern Overview
 
@@ -91,6 +112,7 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 - Per-service Go layout — `cmd/server/main.go` boots; `internal/handler` exposes HTTP; `internal/service` orchestrates; `internal/repository` persists; `internal/domain` holds entities.
 - Tag-driven distribution — git tag `v1.0.0-beta.*` / `v1.0.0-rc.*` is the only release trigger; manifest signed in CI; mobile verifies on every foreground.
 - Update module is fully gated behind ADR-0011 Amendment 5 — code is in-tree but `manifestCheck.ts` early-returns when `EXPO_PUBLIC_UPDATE_MANIFEST_URL` is unset.
+- **Cross-service permissions via shared DB** (Phase 10): when a permission check requires data owned by another service AND the data is read-mostly + low-latency-critical, the consuming service queries the producing service's Postgres tables/functions directly through the shared pool. No inter-service HTTP. Contrast: the moderation module owns its own permission data and does NOT cross service boundaries this way. See `services/backend/messaging/internal/permissions/friendship_gate.go` for the canonical example.
 
 ## Layers
 
@@ -149,6 +171,7 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 
 **Mobile — Modules (`apps/mobile-rn/src/modules/`):**
 - Purpose: Cross-cutting feature bundles that own their own state/domain/sync/ui: `gamification/`, `moderation/`, `permissions/`. Mini-DDD inside each module.
+- Phase 10/11 convention (per `social-yolo-pass` D-06): new feature modules (`friends/`, `stories/`) MUST use the full mini-DDD subdir layout (`domain/`, `storage/`, `state/`, `sync/`, `ui/`, `index.ts`) — mirror `modules/moderation/`. Existing chat code at root paths stays where it is; `CHAT-MODULE-MIGRATION` is v1.0.1 backlog.
 
 **Mobile — Utility Layer (`apps/mobile-rn/src/util/`):**
 - Purpose: Cross-cutting helpers without platform SDK dependencies.
@@ -157,6 +180,25 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 **Backend — Service Layer (`services/backend/<svc>/`):**
 - Purpose: Each of the 8 services is an independent binary. Layout per service: `cmd/server/main.go` (boot), `internal/handler/` (HTTP), `internal/service/` (business), `internal/repository/` (Postgres + in-memory test impls), `internal/domain/` (entities).
 - Services: `identity`, `activity-sync`, `feed`, `social-graph`, `messaging`, `realtime-gw`, `notifications`, `media`.
+
+**Backend — social-graph service (Phase 10 expansion):**
+- Purpose: Profiles, follows, blocks, search, moderation reports, AND friend-request flow.
+- Friend-request layer files:
+  - `internal/handler/friend_requests.go` — 8 HTTP routes (see "Friend-request endpoints" section below).
+  - `internal/service/friend_requests.go` — business logic with idempotent send, status-transition guards.
+  - `internal/repository/postgres/friend_requests.go` — Postgres impl over `friend_requests` table + `are_friends()` function.
+- Domain entity (`internal/domain/types.go`):
+  - `FriendRequest{ID, SenderID, ReceiverID, Status, CreatedAt, RespondedAt}` with `FriendRequestStatus = "pending"|"accepted"|"rejected"|"cancelled"`.
+  - `Relation` extended with `FriendStatus string` (`none|pending_outgoing|pending_incoming|accepted|rejected|cancelled|self`) + `FriendRequestID string` (present iff `FriendStatus` is `pending_*`).
+  - **Canonical `CanDM` derivation (changed in Phase 10):** `CanDM = areFriends AND !blocked AND !blockedBy`. Previously `CanDM = !blocked AND !blockedBy`. `areFriends` is computed via `are_friends($sender, $receiver)` SQL call.
+  - 4 new domain errors: `ErrFriendRequestExists`, `ErrAlreadyFriends`, `ErrFriendRequestNotPending`, `ErrFriendRequestNotOwned`.
+- `GetRelation` (`internal/service/svc.go`): derives `FriendStatus` by combining (a) `are_friends()` check, (b) pair-direction lookups against `friend_requests` for both `(actor, target)` and `(target, actor)` orderings.
+
+**Backend — messaging service (Phase 10 gate):**
+- Purpose: Conversations, members, messages, read-state.
+- New package `internal/permissions/` with `FriendshipGate` struct wrapping a `pgxpool.Pool` and exposing `RequireFriends(ctx, u1, u2) error` (returns `ErrNotFriends` mapped to HTTP 403 by handler).
+- Gate wired in `cmd/server/main.go`: `friendGate := permissions.NewFriendshipGate(pool)` → `handler.New(svc, signer, limiter, friendGate, logger)`. Handler stores `friendGate *permissions.FriendshipGate` (nil-safe for tests).
+- **Gate placement: `createOrFindConv` only**, NOT `sendMessage`. Rationale (matches Telegram/WhatsApp UX): once a DM conversation exists, friendship was verified at creation. Subsequent sends are not re-checked — un-friending does not retroactively block existing chats. Self-DM ("saved messages" scratchpad) bypasses the gate (`u1 == u2 → return nil`).
 
 **Backend — Shared (`services/backend/pkg/`):**
 - Purpose: Cross-cutting utilities: `auth`, `ratelimit`, `observability`, `audit`, `clientversion`, `gamification`, `permissions`, `featureflags`.
@@ -172,6 +214,27 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 
 **Backend — Observability (`services/backend/observability/`):**
 - Purpose: Prometheus scrape config (`prometheus.yml` + `.j2` template), Loki, Grafana datasources, dashboards.
+
+## Friend-request endpoints (Phase 10)
+
+`social-graph` mounts 8 new routes under the existing service mux (`services/backend/social-graph/internal/handler/http.go:84-91`):
+
+| Method | Path | Handler | Purpose |
+|--------|------|---------|---------|
+| POST | `/friend-requests/{user_id}` | `sendFriendRequest` | Send request to `user_id`. Idempotent on existing pending; flips rejected/cancelled back to pending. Rate-limited via `followsPerMinute` budget. |
+| GET | `/friend-requests/incoming` | `listIncomingFriendRequests` | List pending requests where caller is receiver. |
+| GET | `/friend-requests/outgoing` | `listOutgoingFriendRequests` | List pending requests where caller is sender. |
+| POST | `/friend-requests/{id}/accept` | `acceptFriendRequest` | Receiver accepts; status → `accepted`; `are_friends()` flips true. |
+| POST | `/friend-requests/{id}/reject` | `rejectFriendRequest` | Receiver rejects; status → `rejected`. |
+| DELETE | `/friend-requests/{id}` | `cancelFriendRequest` | Sender cancels own pending; status → `cancelled`. |
+| GET | `/friends` | `listFriends` | Caller's accepted friend user IDs. |
+| GET | `/friends/check/{user_id}` | `checkAreFriends` | Boolean friendship check (server-side, canonical). |
+
+Error mapping (`writeFriendRequestError`):
+- `ErrAlreadyFriends` → 409 `already_friends`
+- `ErrFriendRequestExists` → 409 `friend_request_exists`
+- `ErrFriendRequestNotPending` → 409 `friend_request_not_pending`
+- `ErrFriendRequestNotOwned` → 403 `friend_request_not_owned`
 
 ## Data Flow
 
@@ -207,6 +270,29 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
    - `version > installed` → `useUpdateBannerStore.setState({ available: true, manifest, ... })` → `UpdateBanner.tsx` shows non-blocking banner.
    - Otherwise → silent no-op.
 7. On failure: silent (console.warn in `__DEV__` only); `useUpdateCheckStore.lastError` updated.
+
+### Friend-request lifecycle (Phase 10)
+
+**Send → accept → DM-open path:**
+
+1. User A taps "Add friend" on User B's profile (mobile — pending in v1.0 mobile scope).
+2. Mobile `POST /api/v1/social/friend-requests/{B.id}` → `sendFriendRequest` handler (`social-graph/internal/handler/friend_requests.go:42`).
+3. Service (`internal/service/friend_requests.go:18`) runs idempotent state machine:
+   - `senderID == receiverID` → `ErrSelfTarget` (400).
+   - `are_friends(A, B)` returns true → `ErrAlreadyFriends` (409).
+   - Existing `(A→B)` row pending → return same row (idempotent).
+   - Existing `(A→B)` row rejected/cancelled → flip back to pending (`ResetToPending`).
+   - Existing `(B→A)` row pending → `ErrFriendRequestExists` (409) — caller should accept instead.
+   - Otherwise → INSERT new pending row.
+4. User B `GET /api/v1/social/friend-requests/incoming` → sees request.
+5. User B `POST /api/v1/social/friend-requests/{id}/accept` → `AcceptFriendRequest` validates `actorID == receiverID` (else `ErrFriendRequestNotOwned`) and `status == pending` (else `ErrFriendRequestNotPending`) → `UpdateStatus(id, accepted)`.
+6. Subsequent `GET /api/v1/social/relations/{B.id}` returns `Relation{FriendStatus: "accepted", CanDM: true}` (assuming no blocks).
+7. User A `POST /api/v1/messaging/conversations` with `peerID=B, type=dm`:
+   - Handler (`messaging/internal/handler/conversations.go::createOrFindConv:194-195`) calls `h.friendGate.RequireFriends(ctx, actorID, peerID)`.
+   - Gate executes `SELECT are_friends($1, $2)` on shared pool → returns true → handler proceeds to find-or-create DM channel.
+8. Subsequent `POST /conversations/{id}/messages` is NOT re-gated (Telegram-parity: existing DM survives un-friending).
+
+**Cancel / reject paths:** symmetric — sender DELETEs own pending; receiver POSTs `/reject`. Both transition row to terminal state (`cancelled` / `rejected`); future `sendFriendRequest` from either side flips back to pending.
 
 ### Vendor / autostart path (Plan 07-03)
 
@@ -294,6 +380,21 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 - Files: `apps/mobile-rn/src/util/timeFormat.ts`.
 - Output: `"HH:mm"` (today), `"Вчера"`, `"Пн".."Сб".."Вс"` (within 6 days), `"dd.mm"` (older same year), `"dd.mm.yy"` (older prior year).
 
+**`FriendRequest` + `Relation.FriendStatus` (Phase 10):**
+- Purpose: Symmetric friendship lifecycle + UI button-state.
+- Files: `services/backend/social-graph/internal/domain/types.go:79-86` (entity), `types.go:49-65` (extended `Relation`).
+- Pattern: Pending/accepted/rejected/cancelled status machine; canonical friendship check is the `are_friends(u1, u2)` SQL function (STABLE, partial indexes on `status='accepted'` both directions). Inverse-direction `friend_requests` row (B→A) when A requests counts as `pending_incoming` for A's `Relation.FriendStatus`.
+
+**`FriendshipGate` (Phase 10):**
+- Purpose: Cross-service permission check for messaging.
+- Files: `services/backend/messaging/internal/permissions/friendship_gate.go`.
+- Pattern: Wraps a `*pgxpool.Pool` (shared with social-graph); exposes `RequireFriends(ctx, u1, u2) error`. Returns `ErrNotFriends` mapped to HTTP 403 by the handler. Self-DM (`u1 == u2`) bypasses. Nil-safe at handler boundary so tests can wire a no-op handler without DB.
+
+**`are_friends(uuid, uuid)` SQL function (Phase 10):**
+- Purpose: Canonical friendship check; sole source of truth.
+- Files: `services/backend/migrations/0022_friend_requests.up.sql:47-57`.
+- Pattern: `STABLE LANGUAGE SQL` — PG caches result within a single query. Backed by two partial indexes (`idx_friend_requests_accepted`, `idx_friend_requests_accepted_reverse`) so the lookup is a single-row index hit. Called from: messaging `FriendshipGate.RequireFriends`, social-graph `Service.SendFriendRequest` pre-check, social-graph `GetRelation` derivation.
+
 ## Entry Points
 
 **Mobile root — `apps/mobile-rn/App.tsx`:**
@@ -316,6 +417,7 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 
 **Backend services — `services/backend/<svc>/cmd/server/main.go`:**
 - One `main.go` per service (8 total). Each boots HTTP server, wires handler→service→repository, registers Prometheus metrics from `services/backend/pkg/observability`.
+- Messaging service additionally wires `permissions.NewFriendshipGate(pool)` and passes the gate into `handler.New(...)` (Phase 10; `services/backend/messaging/cmd/server/main.go:138-142`).
 
 **Release pipeline — `.github/workflows/android-release.yml`:**
 - Triggered by: git tag push matching `v1.0.0-beta.*` or `v1.0.0-rc.*`.
@@ -347,6 +449,8 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 - **Update module gating:** `manifestCheck.ts` early-returns when `EXPO_PUBLIC_UPDATE_MANIFEST_URL` is unset. Production builds keep it unset until Phase 9; the module is built and tested but inert.
 - **Force-update store is in-memory:** `useForceUpdateStore` is NOT MMKV-persisted — server re-issues 426 on every request after install, so an at-rest `required: true` would always be stale.
 - **Threading (backend):** Each Go service is a standard `net/http` server, GOMAXPROCS auto. NATS JetStream is the async messaging spine.
+- **Cross-service permission queries (Phase 10):** Messaging is permitted to read `friend_requests` / `are_friends()` directly from the shared Postgres pool because (a) the data is read-mostly and latency-critical, (b) the only call is via the `are_friends()` STABLE function so social-graph owns the predicate logic. Do NOT extend this pattern to mutations — friend-request writes go through social-graph HTTP. Do NOT extend to other cross-service reads without explicit ADR sign-off.
+- **Friendship gate placement:** Gate runs on `createOrFindConv` for `type=dm` ONLY, not on `sendMessage`. Existing DMs survive un-friending (Telegram parity). Self-DM (`u1==u2`) bypasses the gate.
 - **Gradle parameterization:** `apps/mobile-rn/android/app/build.gradle` reads `runningEcoAbiFilters` (default `arm64-v8a`) and `runningEcoEmbedJSInDebug` (default unset → RN default `debuggableVariants`). CI debug workflow sets both; production release uses defaults.
 
 ## Anti-Patterns
@@ -399,6 +503,24 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 **Why it's wrong:** Drift between TabBar badge, ChatsListScreen, and notification badge counts.
 **Do this instead:** Aggregate once in `AppTabs.tsx` and pass via `<TabBar badges={{ chats: totalUnread }} />`. Other consumers can subscribe to the same selector.
 
+### Checking friendship by re-implementing the predicate in each service
+
+**What happens:** Messaging (or feed, or notifications) writes its own SQL `SELECT 1 FROM friend_requests WHERE ...` query.
+**Why it's wrong:** Five copies of "either-direction accepted row" logic drift the moment the predicate changes (e.g., adding a "soft-friend" status). Index hints diverge.
+**Do this instead:** Always call `are_friends($1, $2)` from migration `0022_friend_requests.up.sql`. Wrap in a service-local gate struct (see `messaging/internal/permissions/friendship_gate.go`).
+
+### Gating `sendMessage` on friendship
+
+**What happens:** Adding `friendGate.RequireFriends(...)` to `sendMessage` handler so every message re-checks friendship.
+**Why it's wrong:** (a) Performance — N+1 friendship checks per chat session. (b) UX — if A and B un-friend, their existing conversation must remain readable (Telegram/WhatsApp parity, D-04). (c) Inconsistency — group chats can't be checked the same way.
+**Do this instead:** Gate only at `createOrFindConv` for `type=dm`. Once a DM exists, message-send is authorised by membership in `conversation_members`.
+
+### Inter-service HTTP for read-mostly friendship lookups
+
+**What happens:** Messaging makes an `HTTP GET /api/v1/social/friends/check/{user_id}` call to social-graph on every DM creation.
+**Why it's wrong:** Adds 5-30ms latency, a circular service dependency (social-graph → identity → social-graph), and a new failure mode (social-graph 503 → DMs all fail to create). Social-graph and messaging share a Postgres pool already.
+**Do this instead:** Query `are_friends()` directly via the shared Postgres pool (`FriendshipGate.RequireFriends`). The predicate is owned by the social-graph SQL migration; the function is the contract. Reserve HTTP calls for mutations and cross-region cases.
+
 ## Error Handling
 
 **Strategy:** Surface errors only when actionable; silently degrade for background flows that re-try.
@@ -410,6 +532,8 @@ Running Ecosystem is a polyglot monorepo: an Expo React Native mobile client (`a
 - OEM intent fallbacks: nested `try/catch` chain — vendor-specific intent → generic `APPLICATION_DETAILS_SETTINGS` → return `{launched: false, vendor: 'launch-failed'}` (`src/vendor/openOEMSettings.ts:52-62`).
 - Manifest verification: throws `Error` from `manifestCheck.ts`; caught in same function; `lastError` recorded in `useUpdateCheckStore`; no user-facing toast (CONTEXT D-13).
 - LocationAdapter sampling-mode toggle on pause/resume is non-fatal: caught + `console.error`'d in `SessionManager.setPaused` (`src/domain/session/SessionManager.ts:449`).
+- Friend-request errors (Phase 10): typed domain errors (`ErrAlreadyFriends`, `ErrFriendRequestExists`, `ErrFriendRequestNotPending`, `ErrFriendRequestNotOwned`) mapped to HTTP 4xx via `writeFriendRequestError` in `services/backend/social-graph/internal/handler/friend_requests.go:210`.
+- Friendship gate failures (Phase 10): `permissions.ErrNotFriends` mapped to HTTP 403 in `messaging/internal/handler/conversations.go::createOrFindConv` (so mobile can show "Send friend request first" CTA); DB errors propagate as 500.
 
 ## Cross-Cutting Concerns
 
@@ -515,6 +639,38 @@ Plan 08-01 deliberately introduces NO new force-update UI code:
   - Other: `ActivityAction.APPLICATION_DETAILS_SETTINGS` with `data: package:com.runningecosystem.mobile`.
 - On failure → fall back to generic APPLICATION_DETAILS_SETTINGS → on second failure return `vendor: 'launch-failed'`.
 - `<AutostartDialog />` one-shot Modal gated by MMKV flag in `useSettingsStore`; wired into `TrackerStartScreen`.
+
+## Multi-session quick-task pattern (`yolo: true`)
+
+A new GSD convention emerged on 2026-05-25 with `.planning/quick/20260525-social-yolo-pass/`. Quick tasks are normally single-session, single-scope ad-hoc edits with one terminal `SUMMARY.md`. When user explicitly opts into a YOLO multi-day expansion:
+
+**Frontmatter flag:**
+```yaml
+---
+slug: <name>
+created: <date>
+type: quick-XL
+flags: --discuss --research
+status: in-progress
+yolo: true
+scope-warning: This task INTENTIONALLY breaks /gsd-quick convention
+---
+```
+
+**File layout:** `PLAN.md` + `CONTEXT.md` (no terminal `SUMMARY.md` until ALL sessions complete).
+
+**Progress tracking:** Multi-session checklist lives in `CONTEXT.md`'s "Progress log (multi-session)" section. Each session has its own `### Session N (<date>) — COMPLETE|IN_PROGRESS` heading with `[x]` / `[ ]` checkboxes referencing concrete commit hashes. Example from `social-yolo-pass`:
+
+```markdown
+### Session 1 (2026-05-25 PM) — COMPLETE
+- [x] Scaffolding (PLAN + CONTEXT + Amendment 6) — `a827bc5`
+- [x] Backend friend-requests migration `0022_friend_requests` (up + down) — `46b0d65`
+- [x] Backend social-graph endpoints (8 routes + handlers + service + repo) — `609b0e2`
+```
+
+**Scope expansion requires ADR amendment.** If a YOLO quick-task expands an active phase's scope (here: v1.0 closed-beta phase count 4 → 6), it MUST be accompanied by an ADR amendment in the scaffolding commit. See ADR-0011 Amendment 6.
+
+**When to use:** Only when user explicitly invokes "Yolo" path after a discussion phase has surfaced cleaner alternatives (split into multiple `/gsd-mvp-phase` tasks). Not a default — it intentionally breaks the small/atomic invariant of `/gsd-quick`.
 
 ---
 

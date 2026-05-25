@@ -2,7 +2,7 @@
 
 **Analysis Date:** 2026-05-25
 
-Single-VPS production (148.253.214.156, sslip.io) + colocated observability host (srv1561293, 82.25.71.215). All inbound TLS via Caddy + Let's Encrypt. Closed-beta scope per ADR-0011 — OAuth providers + Sentry remain dormant. Phase 8 distribution code shipped but parked behind two env gates: `EXPO_PUBLIC_UPDATE_MANIFEST_URL` (mobile) and `DISTRIBUTE_ENABLED` derived from `MINIO_RELEASES_ACCESS_KEY` (CI) — see ADR-0011 Amendment 5.
+Single-VPS production (148.253.214.156, sslip.io) + colocated observability host (srv1561293, 82.25.71.215). All inbound TLS via Caddy + Let's Encrypt. Closed-beta scope per ADR-0011 — OAuth providers + Sentry remain dormant. Phase 8 distribution code shipped but parked behind two env gates: `EXPO_PUBLIC_UPDATE_MANIFEST_URL` (mobile) and `DISTRIBUTE_ENABLED` derived from `MINIO_RELEASES_ACCESS_KEY` (CI) — see ADR-0011 Amendment 5. Phase 10 / FRIEND-REQUEST-FLOW promoted from v1.0.1 backlog → active v1.0 scope per ADR-0011 Amendment 6 (2026-05-25), expanding scope from 4 → 6 phases (Phase 11 / STORIES-REVIVAL also promoted; not yet implemented).
 
 ## APIs & External Services
 
@@ -52,7 +52,11 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
   - Image: `timescale/timescaledb:2.17.2-pg16` (`services/backend/docker-compose.prod.yml:25`)
   - Connection (per-service env): `<SVC>_DB_URL` → `postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable`
   - Driver: `github.com/jackc/pgx/v5` v5.9.2 in all services
-  - Migrations: `services/backend/migrations/` — 38 files (`0000`–`0020` numbered + `9990`/`9991` drill migrations for CICD-04). Run via `migrate/migrate:v4.18.1` init container (`docker-compose.prod.yml:101-113`)
+  - Migrations: `services/backend/migrations/` — 40 files (`0000`–`0022` numbered + `9990`/`9991` drill migrations for CICD-04). Run via `migrate/migrate:v4.18.1` init container (`docker-compose.prod.yml:101-113`). **`0022_friend_requests.up.sql` (2026-05-25, Phase 10 / ADR-0011 Amendment 6) NOT yet applied on production VPS** as of commit `830b8db` — apply via standard Ansible deploy + init container before exercising new friend-request endpoints.
+  - **Phase 10 schema additions (migration `0022_friend_requests.up.sql`):**
+    - Table `friend_requests` (id UUID PK, sender_id UUID FK→users, receiver_id UUID FK→users, status TEXT CHECK in ('pending','accepted','rejected','cancelled'), created_at TIMESTAMPTZ, responded_at TIMESTAMPTZ NULL). Constraints: `friend_requests_no_self` (sender≠receiver), `friend_requests_unique_pair` UNIQUE(sender_id, receiver_id). FK cascades on user delete.
+    - 4 partial indexes: `idx_friend_requests_receiver_pending` (receiver_id, created_at DESC WHERE status='pending'), `idx_friend_requests_sender_pending` (sender_id, created_at DESC WHERE status='pending'), `idx_friend_requests_accepted` (sender_id, receiver_id WHERE status='accepted'), `idx_friend_requests_accepted_reverse` (receiver_id, sender_id WHERE status='accepted').
+    - SQL function `are_friends(u1 UUID, u2 UUID) RETURNS BOOLEAN` — STABLE, marked LANGUAGE SQL. Canonical bidirectional friendship check (exists status='accepted' row in either direction). Consumed by messaging service via `services/backend/messaging/internal/permissions/friendship_gate.go`.
   - Mobile: NOT used directly (`apps/mobile-rn/src/auth/apiClient.ts` always goes through HTTP to backend)
 - **SQLite** — mobile local persistence
   - Mobile: `expo-sqlite` ~16.0.10 (storage live in `apps/mobile-rn/src/storage/`)
@@ -92,6 +96,60 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
 - Token storage (mobile): `expo-secure-store` via `apps/mobile-rn/src/auth/tokenStorage.ts` (Keychain/Keystore-backed)
 
 **OAuth (DORMANT):** Strava / Google / Apple — schema present (`.secrets/prod/oauth.yaml`), no live wiring per ADR-0011.
+
+## Cross-Service Permission Gates (NEW Phase 10 / ADR-0011 Amendment 6, 2026-05-25)
+
+**Friendship gate (messaging → social-graph schema):**
+- File: `services/backend/messaging/internal/permissions/friendship_gate.go`
+- Pattern: `messaging` service queries the `are_friends(u1, u2)` SQL function (defined in `services/backend/migrations/0022_friend_requests.up.sql`) directly against the shared Postgres pool. No inter-service HTTP call — both services live in the same DB.
+- API: `FriendshipGate.RequireFriends(ctx, u1, u2) error` — returns `permissions.ErrNotFriends` when no accepted friend_requests row exists in either direction; nil if `u1 == u2` (self-DM "saved messages" pattern allowed).
+- Wiring: `services/backend/messaging/cmd/server/main.go` calls `permissions.NewFriendshipGate(pool)` after pgxpool init; handler accepts nil gate as test-fallback (`if h.friendGate != nil { ... }` guard in `services/backend/messaging/internal/handler/http.go:194-200`).
+- Performance: single-row index lookup against partial index `idx_friend_requests_accepted` / `_reverse`; microseconds per call; no cache layer needed.
+- Production note: requires migration `0022_friend_requests.up.sql` to be applied before runtime — otherwise `SELECT are_friends($1, $2)` returns DB error → handler returns HTTP 500.
+
+## social-graph service endpoint inventory
+
+Auth-required routes registered in `services/backend/social-graph/internal/handler/http.go:84-91` (mux.HandleFunc + `h.requireAuth`):
+
+**Friend-request flow (NEW Phase 10, 2026-05-25):**
+- `POST /friend-requests/{user_id}` — `sendFriendRequest`. Creates pending request from actor → user_id. Returns 201 + `friendRequestDTO {id, senderId, receiverId, status, createdAt, respondedAt?}`. Error responses:
+  - 409 `already_friends` — accepted row already exists
+  - 409 `friend_request_exists` — pending row already exists between this pair (uniqueness via `friend_requests_unique_pair` constraint; SQLSTATE 23505 → mapped via `isUniqueViolation` in `services/backend/social-graph/internal/repository/postgres/friend_requests.go`)
+  - Subject to follows-rate-limit budget (`followsPerMinute` window — friend-requests share the budget as low-volume actions)
+- `GET /friend-requests/incoming` — `listIncomingFriendRequests`. Lists pending requests where actor is receiver. Returns `{items: friendRequestDTO[]}`. Limit query param default 50, max 100.
+- `GET /friend-requests/outgoing` — `listOutgoingFriendRequests`. Same shape but actor is sender. Limit default 50, max 100.
+- `POST /friend-requests/{id}/accept` — `acceptFriendRequest`. Only receiver can call. Returns 200 `{status: "accepted"}`. Errors:
+  - 403 `not_owner` — actor is not receiver
+  - 409 `not_pending` — request is already accepted/rejected/cancelled
+- `POST /friend-requests/{id}/reject` — `rejectFriendRequest`. Only receiver can call. Returns 200 `{status: "rejected"}`. Same error mapping as accept.
+- `DELETE /friend-requests/{id}` — `cancelFriendRequest`. Only sender can call. Returns 200 `{status: "cancelled"}`. Same error mapping; 403 `not_owner` if actor is not sender.
+- `GET /friends` — `listFriends`. Returns `{friendIds: string[]}` — IDs of accepted friends, either-direction. Limit default 100, max 200.
+- `GET /friends/check/{user_id}` — `checkAreFriends`. Returns `{areFriends: bool}`. Server-side friendship check (used by mobile + by other services that need a heads-up before opening a friend-only UI).
+
+**Existing relation/follow endpoints (UNCHANGED in routes; SHAPE EXTENDED):**
+- `GET /relation/{user_id}` — `relationDTO` extended with two new fields:
+  - `friendStatus`: `'none' | 'pending_outgoing' | 'pending_incoming' | 'accepted' | 'rejected' | 'cancelled'` — computed in `services/backend/social-graph/internal/service/svc.go GetRelation`
+  - `friendRequestId`: present iff `friendStatus` starts with `pending_*`; lets mobile call accept/reject/cancel without a separate lookup
+
+**Repository layer (NEW package `services/backend/social-graph/internal/repository/postgres/friend_requests.go`):**
+- Methods: `Create`, `Get(id)`, `UpdateStatus(id, status, respondedAt)`, `ResetToPending(id)`, `ListIncoming(receiverID, limit)`, `ListOutgoing(senderID, limit)`, `AreFriends(u1, u2)` (mirrors SQL function), `ListFriends(userID, limit)`.
+- `isUniqueViolation(err)` helper inspects `pgconn.PgError.Code == "23505"` → `domain.ErrFriendRequestExists`.
+
+**Service layer (NEW file `services/backend/social-graph/internal/service/friend_requests.go`):**
+- Idempotent send: if a rejected/cancelled row exists for this pair, calls `ResetToPending` instead of erroring.
+- Accept/reject ownership: actor must equal `request.ReceiverID`.
+- Cancel ownership: actor must equal `request.SenderID`.
+- Domain errors live in `services/backend/social-graph/internal/domain/types.go`:
+  - `ErrAlreadyFriends`, `ErrFriendRequestExists`, `ErrFriendRequestNotPending`, `ErrFriendRequestNotOwned`
+  - Handler-layer error mapping: `writeFriendRequestError` in `services/backend/social-graph/internal/handler/friend_requests.go:210-229` (delegated from `writeServiceError`)
+
+## messaging service contract changes (NEW Phase 10, 2026-05-25)
+
+**`POST /conversations` (createOrFindConv, `services/backend/messaging/internal/handler/http.go:194-200`):**
+- New precondition: when `req.Type == "dm"`, handler invokes `h.friendGate.RequireFriends(ctx, actorID, req.PeerID)` BEFORE Redis presence check and conversation upsert.
+- Failure response: HTTP 403 with body `{"error": {"code": "requires_friendship", "message": "..."}}`
+- Fallback: when `friendGate == nil` (test/dev wiring), gate is bypassed — production wiring in `services/backend/messaging/cmd/server/main.go` always sets it non-nil
+- Self-DM allowed: `RequireFriends` returns nil when `u1 == u2` (saved-messages scratchpad pattern); no friendship required for self conversation.
 
 ## Monitoring & Observability
 
@@ -216,6 +274,9 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
 - `RUNNING_ECO_RELEASE_STORE_FILE`, `RUNNING_ECO_RELEASE_STORE_PASSWORD`, `RUNNING_ECO_RELEASE_KEY_ALIAS`, `RUNNING_ECO_RELEASE_KEY_PASSWORD` (signing — Gradle reads via `findProperty`; release pipeline only)
 - `MANIFEST_SIGNING_PRIVATE`, `MANIFEST_SIGNING_PUBLIC` (Plan 08-01 Task 5; private masked via `::add-mask::`; consumed only when `DISTRIBUTE_ENABLED=true`)
 
+**Mobile env vars (Phase 10 / friend-request flow, 2026-05-25):**
+- No new mobile env required in session 1. Mobile-side wiring (friend-request UI surfaces + DM-gate UX) is deferred to session 2 of the `social-yolo-pass` quick task. Existing `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_SYNC_URL` reach the new endpoints.
+
 **Secrets location:**
 - SOPS-encrypted YAML bundles in `.secrets/{dev,staging,prod}/*.yaml` (committed to git; ciphertext only)
 - Age recipients DEV_A + CI configured in `.sops.yaml`; DEV_B TODO
@@ -230,12 +291,12 @@ Single-VPS production (148.253.214.156, sslip.io) + colocated observability host
   - `identity`: `:8081`
   - `activity-sync`: `:8082`
   - `messaging`: `:8083`
-  - `social-graph`: `:8084`
+  - `social-graph`: `:8084` — **+8 friend-request routes (Phase 10)**: POST `/friend-requests/{user_id}`, GET `/friend-requests/incoming`, GET `/friend-requests/outgoing`, POST `/friend-requests/{id}/accept`, POST `/friend-requests/{id}/reject`, DELETE `/friend-requests/{id}`, GET `/friends`, GET `/friends/check/{user_id}`
   - `feed`: `:8085`
   - `media`: `:8086`
   - `notifications`: `:8087`
   - `realtime-gw`: `:8090` (WebSocket)
-- All 8 backend services + Postgres + Redis + NATS + MinIO + gateway healthy on 2026-05-25 probe via `https://148-253-214-156.sslip.io/healthz`.
+- All 8 backend services + Postgres + Redis + NATS + MinIO + gateway healthy on 2026-05-25 probe via `https://148-253-214-156.sslip.io/healthz`. **Note:** new friend-request endpoints will not respond correctly until migration `0022` is applied on production.
 - Caddy gateway routes `148-253-214-156.sslip.io/*` + `s3.148-253-214-156.sslip.io/*` (MinIO proxy)
 - Mobile deep-link scheme: `runningecosystem://` (`apps/mobile-rn/android/app/src/main/AndroidManifest.xml:29-34`)
 

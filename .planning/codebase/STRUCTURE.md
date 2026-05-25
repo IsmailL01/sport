@@ -142,14 +142,42 @@ sport/
 │       ├── identity/                # cmd/server/main.go + internal/{handler,service,repository,domain}
 │       ├── activity-sync/
 │       ├── feed/
-│       ├── social-graph/
-│       ├── messaging/
+│       ├── social-graph/            # Phase 10: + friend-request domain (8 endpoints)
+│       │   └── internal/
+│       │       ├── domain/types.go              # + FriendRequest, FriendRequestStatus,
+│       │       │                                # extended Relation (FriendStatus, FriendRequestID),
+│       │       │                                # 4 new ErrFriendRequest* errors
+│       │       ├── handler/
+│       │       │   ├── http.go                  # routes (8 new /friend-requests/* + /friends*)
+│       │       │   ├── friend_requests.go       # NEW — 8 HTTP handlers + error mapping
+│       │       │   └── moderation.go
+│       │       ├── service/
+│       │       │   ├── svc.go                   # GetRelation derives FriendStatus + CanDM via are_friends()
+│       │       │   ├── friend_requests.go       # NEW — Send/Accept/Reject/Cancel + idempotency logic
+│       │       │   └── moderation.go
+│       │       └── repository/postgres/
+│       │           ├── profile.go, follow.go, block.go, reports.go
+│       │           └── friend_requests.go       # NEW — table CRUD + are_friends() wrapper
+│       ├── messaging/               # Phase 10: + friendship gate package
+│       │   └── internal/
+│       │       ├── domain/
+│       │       ├── handler/
+│       │       │   └── (createOrFindConv calls friendGate.RequireFriends for type=dm)
+│       │       ├── outbox/
+│       │       ├── permissions/                 # NEW PACKAGE (Phase 10)
+│       │       │   ├── permissions.go           # existing — moderation role checks
+│       │       │   ├── permissions_test.go
+│       │       │   └── friendship_gate.go       # NEW — RequireFriends(ctx, u1, u2) via shared pool
+│       │       ├── repository/
+│       │       └── service/svc.go
 │       ├── realtime-gw/
 │       ├── notifications/
 │       ├── media/
 │       ├── api/                     # OpenAPI: one yaml per service + _shared/ + redocly.yaml
 │       ├── gateway/                 # Caddyfile (dev + prod) + admin/index.html static UI
 │       ├── migrations/              # 000N_*.up/down.sql (Postgres + TimescaleDB)
+│       │   ├── 0001..0021_*.sql     # existing
+│       │   └── 0022_friend_requests.{up,down}.sql   # NEW — table + are_friends() STABLE function
 │       ├── pkg/                     # Shared Go: auth, ratelimit, observability, audit, …
 │       ├── deploy/helm/             # Helm charts (identity materialised; others pending)
 │       ├── observability/           # Prometheus/Loki/Grafana scrape configs + dashboards JSON
@@ -191,11 +219,11 @@ sport/
 │   ├── AUDIT.md
 │   ├── REVIEW_ROUNDS_1-3.md
 │   ├── v1.0-SCOPE.md
-│   ├── DECISIONS/                   # ADRs 0001-0012
+│   ├── DECISIONS/                   # ADRs 0001-0012 (ADR-0011 has 6 amendments)
 │   └── RUNBOOKS/                    # deploy.md, sops-edit.md, observability.md, sentry-ops.md
 │
 ├── .planning/
-│   ├── STATE.md                     # active phase pointer
+│   ├── STATE.md                     # active phase pointer (total_phases: 6 per Amendment 6)
 │   ├── ROADMAP.md
 │   ├── MILESTONES.md
 │   ├── PROJECT.md
@@ -204,6 +232,12 @@ sport/
 │   ├── codebase/                    # this directory — auto-refreshed snapshots
 │   │   ├── ARCHITECTURE.md
 │   │   └── STRUCTURE.md
+│   ├── quick/                       # ad-hoc /gsd-quick tasks (PLAN + SUMMARY)
+│   │   ├── 20260525-chat-polish-pass/
+│   │   ├── 20260525-tracker-live-polish-pass/
+│   │   └── 20260525-social-yolo-pass/    # NEW — multi-session, yolo:true flag
+│   │       ├── PLAN.md              # scope-warning + intentional convention break
+│   │       └── CONTEXT.md           # progress log (Session 1 COMPLETE; SUMMARY pending)
 │   └── phases/                      # per-phase planning artifacts
 │       ├── 01-release-contract-and-version-baseline/
 │       ├── 02-secrets-and-config-hardening/
@@ -230,7 +264,7 @@ sport/
 ├── .github/
 │   └── workflows/
 │       ├── android-release.yml      # Tag-triggered: EAS build + Plan 08-01 distribute (gated)
-│       ├── android-debug-apk.yml    # NEW: branch-push universal debug APK artifact
+│       ├── android-debug-apk.yml    # Branch-push universal debug APK artifact
 │       ├── backend-ci.yml
 │       ├── backend-cd.yml
 │       └── secret-scan-full.yml
@@ -329,10 +363,31 @@ sport/
 **`apps/mobile-rn/src/modules/`:**
 - Purpose: Cross-cutting feature bundles that own their own state + domain + sync + ui (mini-DDD).
 - Sub-modules: `gamification/`, `moderation/`, `permissions/`.
+- Phase 10/11 expansion target: `friends/` and `stories/` MUST follow the same mini-DDD subdir layout (`domain/`, `storage/`, `state/`, `sync/`, `ui/`, `index.ts`) — see `social-yolo-pass` D-06.
 
 **`services/backend/`:**
 - Purpose: Go monorepo. 8 services + shared `pkg/` + Helm `deploy/` + OpenAPI `api/` + Caddy `gateway/` + `migrations/` + `observability/`.
 - Per-service layout: `cmd/server/main.go` + `internal/{handler,service,repository,domain}/`. `repository/` typically has `memory/` (tests) + `postgres/` (prod) submodules.
+
+**`services/backend/social-graph/` (Phase 10 expansion):**
+- Purpose: Profiles, follows, blocks, search, moderation reports, AND friend-request flow.
+- Phase 10 additions:
+  - `internal/domain/types.go` — added `FriendRequest`, `FriendRequestStatus` constants, extended `Relation` struct with `FriendStatus` + `FriendRequestID`, added 4 `ErrFriendRequest*` errors.
+  - `internal/handler/friend_requests.go` — NEW; 8 HTTP handlers + `writeFriendRequestError` mapper.
+  - `internal/service/friend_requests.go` — NEW; `SendFriendRequest` (idempotent, flips rejected/cancelled to pending, detects inverse-direction pending), `AcceptFriendRequest`, `RejectFriendRequest`, `CancelFriendRequest`, `ListIncomingFriendRequests`, `ListOutgoingFriendRequests`, `ListFriends`, `CheckAreFriends`.
+  - `internal/repository/postgres/friend_requests.go` — NEW; table CRUD + `AreFriends(ctx, u1, u2)` wrapper around `are_friends()` SQL function + `GetByPair`, `ResetToPending`, `UpdateStatus`, `ListByReceiver`, `ListBySender`, `ListAcceptedFriendIDs`.
+  - `internal/service/svc.go` — `GetRelation` extended to derive `FriendStatus` (none/pending_outgoing/pending_incoming/accepted) and `CanDM = areFriends AND !blocked AND !blockedBy`.
+
+**`services/backend/messaging/` (Phase 10 expansion):**
+- Purpose: Conversations, members, messages, read-state.
+- Phase 10 additions:
+  - `internal/permissions/friendship_gate.go` — NEW file (existing `permissions.go` retained for moderation role checks); `FriendshipGate` struct wrapping `*pgxpool.Pool`; `RequireFriends(ctx, u1, u2) error` returns `ErrNotFriends`.
+  - `cmd/server/main.go` — wires `friendGate := permissions.NewFriendshipGate(pool)` and passes into `handler.New(svc, signer, limiter, friendGate, logger)`.
+  - `internal/handler/conversations.go::createOrFindConv` (line ~194) — calls `h.friendGate.RequireFriends(ctx, actorID, req.PeerID)` for `type=dm` only. NOT called from `sendMessage` (intentional, Telegram-parity).
+
+**`services/backend/migrations/`:**
+- Purpose: Numbered Postgres + TimescaleDB migrations.
+- Phase 10 addition: `0022_friend_requests.up.sql` + `.down.sql` — `friend_requests` table (id UUID, sender_id, receiver_id, status CHECK constraint, created_at, responded_at, unique-pair constraint, no-self CHECK), 4 indexes (2 partial for pending lookups, 2 partial for `accepted` both directions), `are_friends(u1 UUID, u2 UUID) RETURNS BOOLEAN LANGUAGE SQL STABLE` function.
 
 **`scripts/` (repo root):**
 - Purpose: Repo-wide tooling shared between CI + dev workstations. NOT mobile-internal or backend-internal.
@@ -348,11 +403,21 @@ sport/
 
 **`docs/`:**
 - Purpose: Authoritative project documentation. Always read `RUNNING_ECOSYSTEM_TZ.md` (spec) + `DEVELOPMENT_PLAN.md` + relevant ADR before tackling a task (per `CLAUDE.md`).
-- Contains: `DECISIONS/` (ADRs), `RUNBOOKS/` (operational procedures), API contracts, audit notes, scope documents.
+- Contains: `DECISIONS/` (ADRs — ADR-0011 has 6 amendments through 2026-05-25), `RUNBOOKS/` (operational procedures), API contracts, audit notes, scope documents.
 
 **`.planning/`:**
 - Purpose: GSD workflow scratchpad — current state, roadmap, milestones, per-phase research/planning artifacts.
-- Sub-dirs: `codebase/` (this dir), `phases/<NN-name>/`, `_archive/`.
+- Sub-dirs: `codebase/` (this dir), `phases/<NN-name>/`, `quick/<YYYYMMDD-slug>/`, `_archive/`.
+
+**`.planning/quick/` (ad-hoc tasks):**
+- Purpose: Smaller-than-phase ad-hoc tasks. Each task gets its own dated slug directory.
+- Conventions:
+  - Standard `/gsd-quick`: `PLAN.md` + `SUMMARY.md` (single session, single scope, no backend changes).
+  - `yolo:true` quick-XL: `PLAN.md` + `CONTEXT.md` with `scope-warning` frontmatter; `SUMMARY.md` only after ALL multi-session work shipped. Multi-session checklist lives in `CONTEXT.md`'s "Progress log" section with `[x] item — <commit-hash>` entries per session.
+- Current entries:
+  - `20260525-chat-polish-pass/` — standard quick (6 UI items, ~3h).
+  - `20260525-tracker-live-polish-pass/` — standard quick (7 items + tests, ~2.5h).
+  - `20260525-social-yolo-pass/` — NEW `yolo:true` quick-XL (3 features, multi-day, multi-session; SUMMARY pending).
 
 **`.planning/phases/08-closed-beta-distribution/`:**
 - Purpose: Plan 08-01 planning artifacts.
@@ -378,7 +443,7 @@ sport/
 - `apps/mobile-rn/App.tsx`: Mobile root. Mounts `subscribeToRecordingTick()` (Plan 07-03 Task 2) + `useUpdateCheckOnForeground()` (Plan 08-01 Task 5; gated).
 - `apps/mobile-rn/src/navigation/RootNavigator.tsx`: Auth gate + push deep-link + realtime/push/wallet bootstrap.
 - `apps/mobile-rn/src/navigation/AppTabs.tsx`: 4-tab bottom nav; aggregates unread counts into `<TabBar badges>`.
-- `services/backend/<svc>/cmd/server/main.go`: One per service (8 total) — identity, activity-sync, feed, social-graph, messaging, realtime-gw, notifications, media.
+- `services/backend/<svc>/cmd/server/main.go`: One per service (8 total) — identity, activity-sync, feed, social-graph, messaging, realtime-gw, notifications, media. Messaging additionally wires `permissions.NewFriendshipGate(pool)`.
 
 **Configuration:**
 - `apps/mobile-rn/app.json`, `eas.json`, `tsconfig.json`, `jest.config.js`, `eslint.config.js`, `.prettierrc.json`.
@@ -398,11 +463,20 @@ sport/
 - `apps/mobile-rn/src/util/timeFormat.ts`: `formatChatTime(ts, nowMs?)` Telegram-style relative formatter.
 - `apps/mobile-rn/src/design/avatarInitials.ts`: deterministic gradient + initials for `<Avatar src={null}>`.
 
+**Core Logic (backend — Phase 10):**
+- `services/backend/migrations/0022_friend_requests.up.sql`: `friend_requests` table + `are_friends(u1, u2) STABLE` SQL function (canonical friendship predicate).
+- `services/backend/social-graph/internal/domain/types.go`: `FriendRequest`, `FriendRequestStatus`, extended `Relation`, `ErrFriendRequest*` errors.
+- `services/backend/social-graph/internal/service/friend_requests.go`: Idempotent `SendFriendRequest` + accept/reject/cancel state machine.
+- `services/backend/social-graph/internal/handler/friend_requests.go`: 8 HTTP handlers + `writeFriendRequestError` 4xx mapper.
+- `services/backend/social-graph/internal/repository/postgres/friend_requests.go`: Table CRUD + `AreFriends()` wrapper.
+- `services/backend/messaging/internal/permissions/friendship_gate.go`: Cross-service `RequireFriends(ctx, u1, u2)` via shared Postgres pool.
+
 **Testing:**
 - `apps/mobile-rn/src/__tests__/`: cross-cutting Jest tests.
 - `apps/mobile-rn/src/<module>/__tests__/`: per-module Jest tests (suite total: 686 tests across 64 test files).
 - `apps/mobile-rn/__mocks__/`: manual Jest mocks.
 - `services/backend/<svc>/cmd/server/main_test.go`: per-service Go tests.
+- `services/backend/messaging/internal/permissions/permissions_test.go`: moderation permissions tests (existing); friendship-gate has no dedicated test file — exercised via messaging handler integration tests.
 
 ## Naming Conventions
 
@@ -413,28 +487,32 @@ sport/
 - Tests: `<Subject>.test.ts(x)`; integration/perf tests use suffixes like `.smoke.test.ts`, `.snapshot.test.tsx`, `.navAfterSave.test.tsx`.
 - Repositories: `<aggregate>Repository.ts` (`sessionRepository.ts`, `pointRepository.ts`).
 - Adapters: `<Domain>Adapter.ts` interface; impls in `adapters/<Concrete>Adapter.ts` (`ExpoLocationAdapter.ts`, `BleSensorAdapter.ts`).
-- Go services: standard `cmd/server/main.go` + `internal/<layer>/<name>.go`.
-- SQL migrations: `<NNNN>_<snake_name>.{up,down}.sql` (`0011_messaging.up.sql`).
+- Go services: standard `cmd/server/main.go` + `internal/<layer>/<name>.go`. Phase 10 uses `friend_requests.go` (snake_case file matching SQL table name) across handler/service/repository layers.
+- SQL migrations: `<NNNN>_<snake_name>.{up,down}.sql` (`0022_friend_requests.up.sql`).
 - Workflows: `<area>-<verb>.yml` (`android-release.yml`, `android-debug-apk.yml`, `backend-ci.yml`).
 - Secrets bundles: `<name>.yaml` per env (`mapbox.yaml`, `manifest-signing.yaml`).
 - Planning artifacts: `<NN>-<KIND>.md` (`08-CONTEXT.md`, `08-RESEARCH.md`) and `<NN>-<PP>-PLAN.md` (`08-01-PLAN.md`).
+- Quick-task artifacts: `<YYYYMMDD>-<slug>/PLAN.md` + `SUMMARY.md` (standard) or `+ CONTEXT.md` (yolo multi-session).
 
 **Directories:**
 - Lowercase kebab-case for top-level (`apps/mobile-rn/`, `services/backend/`, `release-builds-mobile-stability`).
 - Lowercase single-word for mobile `src/` subdirs (`domain`, `state`, `storage`, `pipeline`, `update`, `vendor`, `foreground`).
 - Phase directories: `NN-<topic>/` (`07-release-builds-mobile-stability/`, `08-closed-beta-distribution/`).
+- Quick directories: `<YYYYMMDD>-<slug>/` (`20260525-social-yolo-pass/`).
 
 **Symbols:**
 - React hooks: `use<Name>` (`useUpdateCheckOnForeground`).
 - Zustand stores: `use<Name>Store` (`useActivityStore`, `useForceUpdateStore`, `useUpdateBannerStore`, `useUpdateCheckStore`).
 - Interfaces: `<Domain>Adapter` (`LocationAdapter`, `SensorAdapter`).
-- Domain types: `PascalCase` (`Point`, `Lap`, `PersonalRecord`, `Manifest`, `WarmupConfig`).
+- Domain types: `PascalCase` (`Point`, `Lap`, `PersonalRecord`, `Manifest`, `WarmupConfig`, `FriendRequest`, `FriendRequestStatus`).
+- Go cross-service gates: `<Concept>Gate` struct with `Require<Concept>(ctx, ...)` method returning `Err<Concept>` typed error (`FriendshipGate.RequireFriends → ErrNotFriends`).
 
 ## Where to Add New Code
 
 **New mobile feature (cross-cutting):**
 - Primary code: `apps/mobile-rn/src/modules/<feature>/{domain,state,sync,ui,index.ts}` — mirror `modules/gamification` or `modules/moderation`.
 - Tests: alongside, in `<feature>/__tests__/`.
+- Phase 10/11 expansion: `friends/` and `stories/` modules SHOULD use this full mini-DDD layout (per `social-yolo-pass` D-06).
 
 **New mobile domain entity / pure calculator:**
 - Primary code: `apps/mobile-rn/src/domain/<name>.ts` (or `domain/<group>/<name>.ts` for the `training/` or `session/` groups).
@@ -478,8 +556,16 @@ sport/
 - Helm: `services/backend/deploy/helm/<service-name>/`.
 
 **New backend HTTP handler:**
-- File: `services/backend/<svc>/internal/handler/<name>.go`.
-- Register in: `cmd/server/main.go`.
+- File: `services/backend/<svc>/internal/handler/<name>.go` (snake_case matching the entity/table).
+- Register routes in: `internal/handler/http.go` (the service's `Routes()` mux).
+- Error mapper: a `write<Name>Error(w, err)` helper in the same file that returns `true` when an error was mapped (so the main handler can fall through to a generic mapper).
+
+**New backend cross-service permission check:**
+- Pattern: if the data is read-mostly + latency-critical AND already lives in a sibling service's tables, add a gate struct under `services/backend/<consumer>/internal/permissions/<concept>_gate.go` wrapping a shared `*pgxpool.Pool`.
+- Predicate ownership: the SQL function (e.g., `are_friends()`) MUST live in the producer service's migration. Consumer calls the function; never re-implements the predicate.
+- Wire in `cmd/server/main.go`: `gate := permissions.New<X>Gate(pool)` → pass to `handler.New(...)`.
+- Handler: store as `<x>Gate *permissions.<X>Gate` (nil-safe for tests); call `Require<X>(ctx, ...)` at the entry point that creates the gated resource (NOT on every subsequent action).
+- Do NOT use this pattern for mutations or cross-region cases — use HTTP through the gateway instead.
 
 **New repo-wide release/CI script:**
 - File: `scripts/<name>.{sh,go,py}` (repo root, NOT per-service).
@@ -491,12 +577,17 @@ sport/
 
 **New ADR:**
 - File: `docs/DECISIONS/<NNNN>-<slug>.md` (next sequence after `0012`).
+- ADR amendments (when scope expansion is needed without a new ADR): append `## Amendment N — <title> (<date>)` sections inline. ADR-0011 currently has 6 amendments through 2026-05-25.
 
 **New runbook:**
 - File: `docs/RUNBOOKS/<topic>.md`.
 
 **New phase planning artifacts:**
 - Directory: `.planning/phases/<NN>-<topic>/` with `<NN>-CONTEXT.md`, `<NN>-RESEARCH.md`, `<NN>-DISCUSSION-LOG.md`, `<NN>-PLAN-CHECK.md`, and per-plan `<NN>-<PP>-PLAN.md` / `<NN>-<PP>-SUMMARY.md`.
+
+**New quick task:**
+- Standard `/gsd-quick`: `.planning/quick/<YYYYMMDD>-<slug>/{PLAN.md,SUMMARY.md}`. Single session, single scope, no backend changes.
+- YOLO multi-session: `.planning/quick/<YYYYMMDD>-<slug>/{PLAN.md,CONTEXT.md}`. Add `yolo: true` + `scope-warning` frontmatter; track progress via session-headed checklist in `CONTEXT.md`; SUMMARY only written when ALL sessions complete. If scope expands an active phase, accompany the scaffolding commit with an ADR amendment (see ADR-0011 Amendment 6 + `social-yolo-pass`).
 
 **New secret:**
 - File: `.secrets/<env>/<name>.yaml` (encrypted via `sops -e -i`).
@@ -535,6 +626,10 @@ sport/
 **`.planning/phases/<NN-...>/evidence/`:**
 - Purpose: Per-task evidence captures (logs, screenshots, output files) referenced by SUMMARY.md.
 - Committed: Yes (small text/log files); large binaries gitignored selectively.
+
+**`.planning/quick/<YYYYMMDD-slug>/`:**
+- Purpose: Ad-hoc task scratchpad. PLAN.md (mandatory) + SUMMARY.md (standard) OR CONTEXT.md (yolo multi-session).
+- Committed: Yes — small markdown only.
 
 **`.secrets/`:**
 - Purpose: SOPS-encrypted YAML.

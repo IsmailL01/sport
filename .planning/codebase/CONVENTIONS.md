@@ -27,7 +27,7 @@ Both share the same commit conventions, secret-handling discipline, and Russian-
 - Smoke shell scripts: `smoke-<area>.sh` in `evidence/` — e.g., `.planning/phases/08-closed-beta-distribution/evidence/smoke-manifest-sign-roundtrip.sh`
 
 **Go (backend):**
-- `lower_snake_case.go` aligned with package name — e.g., `services/backend/identity/internal/service/auth.go`
+- `lower_snake_case.go` aligned with package name — e.g., `services/backend/identity/internal/service/auth.go`, `services/backend/social-graph/internal/service/friend_requests.go`, `services/backend/messaging/internal/permissions/friendship_gate.go`
 - Tests in same package: `*_test.go` — e.g., `services/backend/identity/internal/service/auth_test.go`
 - Standard layout: `cmd/<binary>/main.go`, `internal/<layer>/*.go`, `pkg/<shared>/*.go`
 
@@ -35,7 +35,7 @@ Both share the same commit conventions, secret-handling discipline, and Russian-
 
 **TypeScript:** `camelCase` verbs — `checkForUpdate`, `parseManifest`, `canonicalJsonWithoutSignature`, `verifyManifestSignature`, `getInstalledVersion`, `formatChatTime`, `initialsForName`, `colorForName`, `hashName`, `effectiveElapsedMs`. React components are `PascalCase`. Test helpers inside test files are also `camelCase` (`signTestManifest`, `squareAround`, `makePoint`, `makeRaw`, `makeManager`).
 
-**Go:** `PascalCase` for exported (`Register`, `NewAuthService`, `Refresh`), `camelCase` for unexported (`bcryptC`). Constructors are `New<Type>` (`NewAuthService`, `NewSigner`).
+**Go:** `PascalCase` for exported (`Register`, `NewAuthService`, `Refresh`, `SendFriendRequest`, `AcceptFriendRequest`, `RequireFriends`), `camelCase` for unexported (`bcryptC`). Constructors are `New<Type>` (`NewAuthService`, `NewSigner`, `NewFriendshipGate`).
 
 ### Variables and Constants
 
@@ -78,7 +78,7 @@ Both share the same commit conventions, secret-handling discipline, and Russian-
 - Mode: `default: none` — explicit-enable only, 15 conservative linters: `govet`, `ineffassign`, `unused`, `errcheck`, `staticcheck`, `bodyclose`, `errorlint`, `rowserrcheck`, `sqlclosecheck`, `contextcheck`, `copyloopvar`, `nilerr`, `misspell` (+ exclusion presets)
 - Test files relax `errcheck, dupl, gocyclo, bodyclose, govet`
 - Rule: **never silently disable a linter** — every disabled rule has an inline `# Disabled — <rationale>; revisit v1.0.1` annotation (see `.golangci.yml:24-32`)
-- **All 9 backend modules now 0 lint issues** (commit `92fe656` 2026-05-24 cleared the `pkg/observability` backlog of 8 issues: 5 gofmt + 2 staticcheck ST1023 + 1 contextcheck `//nolint`). Prior modules (identity/activity-sync/feed/media/messaging/notifications/realtime-gw/social-graph) were already clean from Phase 5 wave 6.
+- **All 9 backend modules now 0 lint issues** post-`92fe656` (2026-05-24); confirmed still clean after social-yolo-pass session 1 added Phase 10 friend-request code to `social-graph` + `messaging` (commits `46b0d65..7e70a4f`).
 
 **`//nolint:CHECK // <rationale>` annotation convention (Go):**
 Established by `92fe656`: when a linter must be intentionally bypassed, place `//nolint:<check>` on the SAME line as the flagged statement, with a `//` comment explaining WHY this is correct (not just suppression):
@@ -125,7 +125,8 @@ Backend keeps Go runtime + critical dependencies bumped to clear `govulncheck` (
 - **Throw `Error('<tag>: …')`** inside catch-wrapped paths so error.message carries a grep-able tag — `throw new Error('signature verification failed')`, `throw new Error(\`schema: ${parsed.error}\`)`, `throw new Error('replay: manifest older than installed baseline')`.
 
 **Go:**
-- Sentinel errors in `internal/domain` — `domain.ErrEmailAlreadyExists`, `domain.ErrInvalidCredentials`
+- Sentinel errors in `internal/domain` — `domain.ErrEmailAlreadyExists`, `domain.ErrInvalidCredentials`, `domain.ErrSelfTarget`, `domain.ErrAlreadyFriends`, `domain.ErrFriendRequestExists`, `domain.ErrFriendRequestNotOwned`, `domain.ErrFriendRequestNotPending` (Phase 10 set).
+- Permissions package introduces `permissions.ErrNotFriends` co-located with the gate that produces it (`services/backend/messaging/internal/permissions/friendship_gate.go:16`) — the same pattern used by `domain.Err*` but scoped to the cross-service concern instead of the domain.
 - `errors.Is(err, sentinel)` for comparison (enforced by `errorlint` linter)
 - User-enumeration mitigation: `Login` returns `ErrInvalidCredentials` for both unknown user AND wrong password (see `services/backend/identity/internal/service/auth_test.go:98-105`)
 
@@ -152,9 +153,32 @@ Backend keeps Go runtime + critical dependencies bumped to clear `govulncheck` (
 ```
 The header cites the originating phase/plan/task (or quick-task slug + date) + states purpose, dispatch behavior, throttle, and decision-anchors. Examples: `apps/mobile-rn/src/update/manifestCheck.ts:1-15`, `apps/mobile-rn/src/pipeline/filters/__tests__/PauseDetector.warmup.test.ts:1-2` (`Tests for PauseDetector warmup gate (2026-05-25 polish pass)`), `apps/mobile-rn/src/util/timeFormat.ts:1-10` (strategy block).
 
+**Header block convention (Go packages):** Package-level docs go on the `package <name>` line of the file the user is most likely to open first, written as a SHORT module-scope statement that names the originating phase/ADR amendment + a why-not-elsewhere note. Reference shape (from `services/backend/messaging/internal/permissions/friendship_gate.go:1-6`):
+```go
+// Package permissions — Phase 10 / ADR-0011 Amendment 6 friendship gate.
+//
+// Messaging service queries the are_friends() SQL function (from migration
+// 0022_friend_requests) directly. Both services share the same Postgres pool
+// so an inter-service HTTP call is avoided.
+package permissions
+```
+The "Both services share the same Postgres pool" sentence is doing real work — it pre-empts the next reviewer's question ("why isn't this an HTTP call to social-graph?"). Similar pattern: `services/backend/social-graph/internal/service/friend_requests.go:1` ("Package service — friend-request business logic (Phase 10 / ADR-0011 Amendment 6).").
+
 **Russian inline comments** are the norm in domain/state/UI modules — e.g., `apps/mobile-rn/src/state/forceUpdate.ts:1-12`, `apps/mobile-rn/src/__tests__/pipeline.test.ts:23-30`. Module headers + ADRs may use English when documenting incidents/infrastructure (e.g., `apps/mobile-rn/src/update/manifestCheck.ts`).
 
 **Pitfall citations:** Comments reference specific RESEARCH pitfalls when defending non-obvious code — `// RESEARCH Pitfall 4 — @noble/ed25519 requires explicit hash injection`, `// RESEARCH Pitfall 5 — no Buffer in RN runtime`. See `apps/mobile-rn/src/update/manifestSigning.ts:17-22, 49`.
+
+**Behavior-matrix doc-comments (NEW, Phase 10):** For functions whose return value is non-trivially derived from input combinations, document the matrix inline above the signature. Reference: `services/backend/social-graph/internal/service/friend_requests.go:11-17`:
+```go
+// SendFriendRequest creates a pending request from senderID → receiverID.
+// Behavior matrix:
+//   - sender == receiver           → ErrSelfTarget
+//   - already friends              → ErrAlreadyFriends
+//   - existing pending row         → idempotent return of that row
+//   - existing rejected/cancelled  → flip back to pending
+//   - no prior row                 → create new pending row
+```
+The matrix maps an input class to a return class with `→` arrows. Use this shape whenever a function has >3 distinct return outcomes — it doubles as the test-table for the eventual `*_test.go` (see TESTING.md "Behavior matrices drive test tables" note).
 
 **JSDoc/TSDoc:** Reserved for exported public surface (functions, constants, types) where the contract is non-obvious — see `verifyManifestSignature` docblock in `apps/mobile-rn/src/update/manifestSigning.ts:63-72`, `formatChatTime` parameter doc in `apps/mobile-rn/src/util/timeFormat.ts:16-22` (documents the injectable clock pattern). Not enforced as a lint rule.
 
@@ -179,6 +203,18 @@ For functions where the clock is read deeply inside (e.g., `SessionManager.setPa
 **Testability override — closure-bound constant:**
 When a function depends on a module-level constant the tests need to override, **add an optional parameter** rather than relying on `jest.mock`. Closure-bound `const`s cannot be swapped via mock-spread (Plan 08-01 Task 5 — see `verifyManifestSignature(manifest, pubkeyBase64: string = MANIFEST_PUBKEY_BASE64)` in `apps/mobile-rn/src/update/manifestSigning.ts:73-79`). The production caller omits the arg; tests pass an override.
 
+**Idempotent request-creation pattern (NEW, Phase 10):**
+For any "user-initiated request" entity where a duplicate creation attempt is a legitimate retry rather than an error (network blip, double-tap, app foreground re-fetch), the create-mutation function should:
+
+1. Check for an existing row keyed on the natural identity (e.g., `(sender_id, receiver_id)` pair).
+2. If the existing row is in the desired terminal state for the request (`pending`), **return that same row** as if creation succeeded. No `ErrDuplicate`.
+3. If the existing row is in a recoverable non-terminal state (`rejected` / `cancelled`), **flip status back to `pending`** rather than creating a second row. Preserves the UNIQUE constraint on the natural-identity pair.
+4. If no prior row exists, create normally.
+
+Reference: `SendFriendRequest` at `services/backend/social-graph/internal/service/friend_requests.go:18-63`. The matrix above its signature spells out all five outcomes including the inverse-direction case (`u2 → u1` pending = `ErrFriendRequestExists`, signaling caller should call `Accept`, not `Send`).
+
+This pattern is preferred over returning a `409 Conflict` because mobile retry logic + double-tap protection is much simpler when the same `POST /friend-requests/{receiverId}` always succeeds (or fails for a substantive reason, not a duplicate). The receiver-side UNIQUE index `(sender_id, receiver_id)` still protects DB integrity if a misbehaving client bypasses the service layer.
+
 **Return values:** Tagged unions for fallible operations (above); never use `null` ambiguously when an error state needs distinguishing from absent-data state.
 
 ## Module Design
@@ -202,7 +238,7 @@ When a function depends on a module-level constant the tests need to override, *
 The mobile codebase has TWO valid layouts living side by side:
 
 1. **Flat-by-concern (legacy, dominant):** Top-level `apps/mobile-rn/src/<concern>/` directories — `auth/`, `design/`, `domain/`, `foreground/`, `health/`, `location/`, `map/`, `media/`, `navigation/`, `notifications/`, `pipeline/`, `realtime/`, `sensors/`, `state/`, `storage/`, `sync/`, `ui/`, `update/`, `util/`, `vendor/`. Each carries its own `__tests__/` subdirectory.
-2. **Modular (Phase 8/C + 8/E pattern):** `apps/mobile-rn/src/modules/<feature>/{domain,state,sync,ui,storage}/` — currently used by `modules/gamification/`, `modules/moderation/`, `modules/permissions/`. Each feature is a self-contained vertical slice.
+2. **Modular (Phase 8/C + 8/E pattern, now also Phase 10/11):** `apps/mobile-rn/src/modules/<feature>/{domain,state,sync,ui,storage}/` — currently used by `modules/gamification/`, `modules/moderation/`, `modules/permissions/`, and planned for `modules/friends/` (Phase 10) + `modules/stories/` (Phase 11) once session 2 of social-yolo-pass lands. Each feature is a self-contained vertical slice.
 
 **Convention for NEW code:** Stay in the flat-by-concern layout for cross-cutting helpers (e.g., `src/util/`, `src/design/`); reach for `src/modules/<feature>/` only when adding a fully self-contained vertical feature with its own domain + sync + state + UI tier. Migrating existing flat-layout code (e.g., chat code currently spread across `src/state/social/`, `src/storage/`, `src/domain/`, `src/ui/social/`) into the modular pattern is tracked as **v1.0.1 backlog item `CHAT-MODULE-MIGRATION`** (see `.planning/quick/20260525-chat-polish-pass/CONTEXT.md` §D-02).
 
@@ -225,9 +261,65 @@ apps/mobile-rn/src/update/
 ```
 Notable: no `index.ts` barrel; each test file imports directly from `../<module>`.
 
+## Service-Boundary Conventions (Backend Go)
+
+The backend is a Go workspace with 9 independent service modules (`identity`, `social-graph`, `messaging`, `feed`, `media`, `activity-sync`, `notifications`, `realtime-gw`, plus shared `pkg/`). Cross-service interaction follows these patterns:
+
+### Cross-service permission gates (NEW, Phase 10)
+
+The friend-request flow established the first cross-service permission gate in the codebase: `messaging` checks `social-graph`-owned data to authorize DM creation. The chosen wiring is **shared Postgres pool** rather than an HTTP call between services.
+
+Reference shape (`services/backend/messaging/internal/permissions/friendship_gate.go`):
+
+```go
+// Package permissions — Phase 10 / ADR-0011 Amendment 6 friendship gate.
+//
+// Messaging service queries the are_friends() SQL function (from migration
+// 0022_friend_requests) directly. Both services share the same Postgres pool
+// so an inter-service HTTP call is avoided.
+package permissions
+
+type FriendshipGate struct { pool *pgxpool.Pool }
+
+func (g *FriendshipGate) RequireFriends(ctx context.Context, u1, u2 string) error {
+    if u1 == u2 { return nil }                                  // self-DM allowed
+    var ok bool
+    if err := g.pool.QueryRow(ctx, `SELECT are_friends($1, $2)`, u1, u2).Scan(&ok); err != nil {
+        return err
+    }
+    if !ok { return ErrNotFriends }
+    return nil
+}
+```
+
+**Tradeoff captured in the package doc:** tighter coupling between services (`messaging` now knows about a SQL function owned by `social-graph` migrations) — accepted because:
+1. No inter-service HTTP latency on every DM POST
+2. The SQL function (`are_friends(u1, u2)`) is the canonical authority; an HTTP indirection would just shell out to a service that runs this same query
+3. `messaging` already shares the Postgres pool — there is no new dependency surface
+
+**When the pattern is appropriate:**
+- The permission check is a single STABLE function with index-backed query (<1ms latency budget)
+- Both services already share the same Postgres instance
+- The owning service exposes a canonical SQL function (not raw table access) so the schema can evolve without breaking the consumer
+
+**When to use HTTP instead:**
+- Permissions require cross-service business logic, not just data lookup
+- Services run on different DB clusters
+- The owning service needs an audit log of every permission check (HTTP gives a clear access point)
+
+**Naming convention for gates:** `<Subject>Gate` struct, exported `Require<Verb>(ctx, ...)` method returning `error` (`nil` = allowed, sentinel `Err<NotVerb>` = denied). Wired once at service boot, reused per request. Reference: `permissions.NewFriendshipGate(pool)` in `services/backend/messaging/internal/permissions/friendship_gate.go:27`.
+
+### Prior gating patterns (single-service)
+
+Before Phase 10, all permission gates were single-service (the consumer was the data owner). Examples:
+- `moderation` checks in `social-graph` — gates posting on the user's own ban status
+- Auth-token validation in `identity` — gates token refresh on the same service's `refresh_tokens` table
+
+The cross-service pattern (`messaging` → `social-graph`'s `are_friends()`) is a **deliberate departure** documented in the package doc; future cross-service gates should follow the same shared-pool-via-SQL-function shape and document the tradeoff at the package level.
+
 ## Quick Task Workflow Convention (established 2026-05-25)
 
-Two TIGHT-scope polish passes shipped 2026-05-25 established a standardized lightweight workflow for non-phase tactical improvements:
+Three quick-task workflows have shipped 2026-05-25 establishing a standardized lightweight workflow for non-phase tactical improvements:
 
 **Directory:** `.planning/quick/YYYYMMDD-<slug>/`
 
@@ -245,25 +337,111 @@ Two TIGHT-scope polish passes shipped 2026-05-25 established a standardized ligh
 
 **Discussion phase artifact:** Any scope ambiguity is resolved BEFORE writing code — user is offered Tight/Mid/Full options with effort estimates ("Go tight" / "Расширяй" pattern), and the chosen scope is captured in CONTEXT.md §"Discussion phase decisions".
 
-**Two reference examples:**
-- `.planning/quick/20260525-chat-polish-pass/` — 7 commits, +31 tests (14 timeFormat + 17 avatarInitials)
-- `.planning/quick/20260525-tracker-live-polish-pass/` — 8 commits, +17 tests (6 PauseDetector warmup + 9 SessionManager time-freeze + 2 pause-flow integration)
+**Three reference examples:**
+- `.planning/quick/20260525-chat-polish-pass/` — TIGHT, 7 commits, +31 tests (14 timeFormat + 17 avatarInitials). Standard 3-doc trio + SUMMARY at end.
+- `.planning/quick/20260525-tracker-live-polish-pass/` — TIGHT, 8 commits, +17 tests (6 PauseDetector warmup + 9 SessionManager time-freeze + 2 pause-flow integration). Standard 3-doc trio + SUMMARY at end.
+- `.planning/quick/20260525-social-yolo-pass/` — **YOLO-XL** (multi-session), session 1 = 5 commits (Phase 10 backend only), no tests added in session 1, SUMMARY deferred until all sessions complete. **First multi-session quick-task pattern** (see next subsection).
+
+### Multi-session quick-task pattern (NEW, social-yolo-pass)
+
+The third quick-task on 2026-05-25 (`social-yolo-pass`) was an XL-scope task that intentionally broke the standard /gsd-quick convention. The workflow that emerged becomes the template for any future multi-day quick-task:
+
+**PLAN.md frontmatter flags the deviation explicitly:**
+```yaml
+---
+slug: social-yolo-pass
+created: 2026-05-25
+type: quick-XL
+flags: --discuss --research
+status: in-progress
+yolo: true
+scope-warning: This task INTENTIONALLY breaks /gsd-quick convention
+---
+```
+The `yolo: true` + `scope-warning` fields are required signals so future readers see "this is not a standard tight pass" before reading scope. Reference: `.planning/quick/20260525-social-yolo-pass/PLAN.md:1-9`.
+
+**PLAN.md "scope warning" section** sits at the top, explaining exactly which /gsd-quick conventions are being broken and why the user chose this path despite the discussion-phase recommendation to split. Reference: `.planning/quick/20260525-social-yolo-pass/PLAN.md:13-29`.
+
+**CONTEXT.md "Progress log (multi-session)" section** replaces the single closeout checklist. Each session gets its own subsection:
+```
+### Session 1 (2026-05-25 PM) — COMPLETE
+- [x] Scaffolding (PLAN + CONTEXT + Amendment 6) — a827bc5
+- [x] Backend friend-requests migration — 46b0d65
+- [x] Backend social-graph endpoints — 609b0e2
+- [x] Backend messaging gate — 7e70a4f
+
+### Session 2 (TBD) — Mobile friends + stories
+- [ ] Mobile friends module: domain + storage + state + sync
+- [ ] Mobile UI: ForeignProfileScreen + FriendRequestsInboxScreen
+- [ ] Stories module shells
+- [ ] Status report
+
+### Session 3 (TBD) — Stories UI + chat polish + closeout
+- [ ] ...
+```
+Reference: `.planning/quick/20260525-social-yolo-pass/CONTEXT.md:74-106`. Each session ends with a status report that updates the checklist + commits the progress log.
+
+**SUMMARY.md is deferred** until all planned sessions complete. STATE.md "Quick Tasks Completed" table does NOT get a row until SUMMARY ships — instead, an "in-progress" row may live in a separate "Quick Tasks In-Progress" table (or just be inferable from the directory + frontmatter `status: in-progress`).
+
+**Resume command** lives in CONTEXT.md tail so the next session knows how to pick up:
+```bash
+/gsd-quick resume social-yolo-pass
+```
+Reference: `.planning/quick/20260525-social-yolo-pass/CONTEXT.md:108-115`. The resume command + CONTEXT.md's "Discussion phase decisions" + "Architectural notes" sections together let session N+1 start writing code immediately without re-doing scope discussion.
+
+**Test-deferral pattern in multi-session quick tasks:** If a session lands a backend-only first half + a mobile-only second half, it is acceptable to add **no tests in session 1** when the meaningful end-to-end smoke can only run once mobile is in flight. Reference: social-yolo-pass session 1 commits `46b0d65..7e70a4f` shipped 4 new Go files with **0 new `*_test.go` files**, with the progress log explicitly noting "No new Go tests yet — added in session 2 or 3 once mobile lands and full e2e smoke is needed." This is opposite to the TIGHT-pass test-per-commit cadence and must be flagged in the session checklist so reviewers understand it's a deliberate deferral, not a forgotten step.
+
+## ADR Amendment Patterns
+
+ADRs in `docs/DECISIONS/` accumulate amendments over their lifetime. Two distinct amendment shapes have stabilized:
+
+### Scope-cut amendments (Amendments 1-5 of ADR-0011)
+
+The dominant shape so far. Each amendment removes something from the active scope and either defers it to a v1.0.1 backlog row or kills it outright. Examples:
+- **ADR-0011 Amendment 4** — Keystore backup deferred (Plan 06-01 Tasks 5-6 → v1.0.1 backlog as `KEYSTORE-CLOUD-BACKUP`)
+- **ADR-0011 Amendment 5** — Phase 8 distribution pipeline parked behind feature gate (Plan 08-01 stays code-shipped but runtime-disabled; v1.0.1 promotion item `DISTRIBUTION-PIPELINE-RE-ENABLE`)
+
+Common structure:
+1. Trigger statement (what user action / discovery prompted the amendment)
+2. Before/after table contrasting old scope vs new scope
+3. "v1.0.1 backlog entry" naming the promoted backlog item + the criteria for re-promotion
+4. Files affected / Files NOT touched
+
+### Scope-expansion amendments (NEW — Amendment 6, first of its kind in ADR-0011)
+
+**ADR-0011 Amendment 6** (2026-05-25) inverts the pattern: instead of cutting scope, it **PROMOTES** items from v1.0.1 backlog back into active v1.0 scope:
+- `STORIES-REVIVAL` (v1.0.1 backlog) → Phase 11 (active v1.0)
+- `FRIEND-REQUEST-FLOW` (v1.0.1 backlog) → Phase 10 (active v1.0)
+- `total_phases: 4 → 6` in STATE.md
+
+Reference: `docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md:340-429`.
+
+**Structural differences from scope-cut amendments:**
+1. **Justification block is longer** — scope additions need explicit defense (user-is-owner argument + features-already-in-backlog argument + small-incremental-cost argument). Cuts can be justified by "complexity/risk too high"; additions need "value > cost".
+2. **"Concrete scope additions" table** lists new phases with effort estimates, NOT a "before/after" table (there is no "before" since the new items were in backlog, not active).
+3. **"v1.0.1 backlog impact" section** says "items REMOVED, promoted to v1.0" instead of "items ADDED to v1.0.1 backlog".
+4. **Re-expansion trigger says "none. Forward-only scope expansion."** — symmetric to scope-cut amendments which say "promote when ANY of: …".
+
+**When to write a scope-expansion amendment vs starting a new ADR:** If the addition is incremental to an existing ADR's principle (here: ADR-0011's lean-closed-beta principle expands from 4 to 6 lean phases, NOT a return to the 21-phase scope it retired), use an amendment. If the addition contradicts the existing ADR's principle, write a new ADR that supersedes (status `superseded by ADR-NNNN`). Amendment 6 chose the former because the closed-beta-lean principle still holds; only the phase count changed.
+
+ADR-0011 now has 6 amendments total (5 cuts + 1 expansion). The Amendment 4 (cut) + Amendment 6 (expand) pair are documented inverse examples of the same ADR-mutation discipline — future contributors should reference both when writing their own amendments to clarify which shape applies.
 
 ## Commit Conventions
 
 **Format:** `<type>(<scope>): <summary> [(<TASK-ID>)]`
 
 **Types observed (recent 50 commits):**
-- `feat(<plan-or-area>): <description> [(<TASK-ID>)]` — code tasks (e.g., `feat(08-01): mobile update module — manifest fetch + Ed25519 verify + dispatch (DIST-01)`, `feat(util): timeFormat helper — Telegram-style chat timestamps`, `feat(pipeline): PauseDetector warmup gate — fixes "ПРОДОЛЖИТЬ on start" UX`)
+- `feat(<plan-or-area>): <description> [(<TASK-ID>)]` — code tasks (e.g., `feat(08-01): mobile update module — manifest fetch + Ed25519 verify + dispatch (DIST-01)`, `feat(util): timeFormat helper — Telegram-style chat timestamps`, `feat(pipeline): PauseDetector warmup gate — fixes "ПРОДОЛЖИТЬ on start" UX`, `feat(social-graph): Phase 10 friend-request endpoints + service + repo`, `feat(messaging): friendship gate on DM creation (Phase 10)`, `feat(migration): 0022_friend_requests — Phase 10 FRIEND-REQUEST-FLOW`)
 - `chore(<plan>): <description> (<TASK-ID>)` — evidence scaffolding, tool-version audits
 - `fix(<plan-or-area>): <description>` — in-task corrections (`fix(pkg/observability): clear golangci-lint v2.5 backlog (8 issues, pkg-only)`, `fix(backend): bump Go 1.25.0→1.25.10 + otel v1.32→v1.43 to clear govulncheck`)
-- `docs(<area>): <description>` — ADRs, plans, RESEARCH, STATE updates, quick-task scaffolding (`docs(quick/chat-polish): PLAN + CONTEXT for chat-polish-pass`, `docs(quick/tracker-live): SUMMARY + STATE table — closeout`)
+- `docs(<area>): <description>` — ADRs, plans, RESEARCH, STATE updates, quick-task scaffolding (`docs(quick/chat-polish): PLAN + CONTEXT for chat-polish-pass`, `docs(quick/tracker-live): SUMMARY + STATE table — closeout`, `docs(quick/social-yolo): PLAN + CONTEXT + ADR-0011 Amendment 6`, `docs(quick/social-yolo): session 1 progress log update`)
 - `test(<area>): <description>` — pure test-additions when scope is the test file itself (`test(session): integration test for PauseDetector+SessionManager flow`)
 
 **Scopes:**
 - Numeric plan ID: `01`, `02`, `04-02`, `06-01`, `07-01`, `08`, `08-01` (matches `.planning/phases/<NN-<slug>>/<NN-MM>-PLAN.md`)
 - Cross-cutting tags: `state`, `planning`, `codebase`, `security`, `util`, `design`, `chats`, `session`, `tracker-live`, `pipeline`, `ci`, `backend`, `pkg/<name>`
-- Quick-task scope: `quick/<slug>` — e.g., `docs(quick/chat-polish)`, `docs(quick/tracker-live)`
+- Service-name tags (NEW, Phase 10): `social-graph`, `messaging`, `migration` — used when the scope is a single Go backend service and the originating plan-ID would be too abstract
+- Quick-task scope: `quick/<slug>` — e.g., `docs(quick/chat-polish)`, `docs(quick/tracker-live)`, `docs(quick/social-yolo)`
 
 **Task ID suffix:** `(DIST-01)`, `(STAB-01)`, `(BUILD-01)`, `(SIGN-01)` — matches the requirement-ID in `docs/REQUIREMENTS.md` / `docs/DEVELOPMENT_PLAN.md`. Omit when scope already disambiguates (e.g., quick-task feature commits, lint/vuln-clearing fixes, in-task `fix(07-01)`).
 
@@ -276,7 +454,7 @@ Two TIGHT-scope polish passes shipped 2026-05-25 established a standardized ligh
 - `gitleaks v8.30.1` via `.pre-commit-config.yaml` (staged-files-only)
 - Custom rules in `.gitleaks.toml` extend defaults to catch bare Mapbox `pk.` + `sk.` literals (RESEARCH Pitfall 2)
 - ESLint v9 (mobile) + trufflehog config (full-history scan runs in `secret-scan-full.yml` cron, not pre-commit)
-- All recent commits (Plan 08-01 + 2026-05-25 quick tasks + 92fe656 lint cleanup + 69cc8eb dep bump) passed the gate cleanly
+- All recent commits (Plan 08-01 + 2026-05-25 quick tasks + 92fe656 lint cleanup + 69cc8eb dep bump + social-yolo-pass session 1 `a827bc5..830b8db`) passed the gate cleanly
 
 ## CI Gates Currently Active (2026-05-25)
 
@@ -380,4 +558,4 @@ After the self-inflicted chat-dump leak documented in `docs/DECISIONS/0012-keyst
 
 ---
 
-*Convention analysis: 2026-05-25*
+*Convention analysis: 2026-05-25 (refresh after social-yolo-pass session 1, commits `a827bc5..830b8db`)*

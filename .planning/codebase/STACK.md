@@ -15,7 +15,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - Bash — CI scripts (`scripts/release-distribute.sh`, `scripts/debug-tail.sh`, `scripts/deploy_observability_stack.sh`, `scripts/pii_audit.sh`)
 - Python (stdlib only, no pip) — observability probes (`scripts/cardinality_probe.py`, `scripts/smoke_grafana_alerts.py`, `scripts/smoke_metrics.py`, `scripts/smoke_observability_stack.py`, `scripts/pii_live_probe.py`)
 - Go (script form) — manifest signing/verification: `scripts/sign-manifest.go`, `scripts/verify-manifest.go` (invoked via `go run` from `scripts/release-distribute.sh`; Phase 8 code parked behind `DISTRIBUTE_ENABLED` gate per ADR-0011 Amendment 5)
-- SQL — `services/backend/migrations/` (38 files, golang-migrate flat directory)
+- SQL — `services/backend/migrations/` (40 files; was 38 — added `0022_friend_requests.up.sql` + `.down.sql` for Phase 10 / ADR-0011 Amendment 6 on 2026-05-25)
 - Groovy/Gradle DSL — `apps/mobile-rn/android/build.gradle` + `apps/mobile-rn/android/app/build.gradle`
 
 ## Runtime
@@ -54,12 +54,16 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 
 **Backend core:**
 - Standard library `net/http` (no Gin/Echo/Chi) — handlers in `services/backend/<svc>/internal/handler/http.go`
-- `github.com/jackc/pgx/v5` v5.9.2 — PostgreSQL driver across all services
+- `github.com/jackc/pgx/v5` v5.9.2 — PostgreSQL driver across all services. **NEW pattern (Phase 10 / ADR-0011 Amendment 6, 2026-05-25):** cross-service DB-level permission queries — see `permissions` package below.
 - `github.com/nats-io/nats.go` v1.39.1 — JetStream client (messaging, feed, social-graph, notifications, activity-sync, realtime-gw)
 - `github.com/coder/websocket` v1.8.13 — WebSocket terminus in `services/backend/realtime-gw/`
 - `github.com/golang-jwt/jwt/v5` v5.3.1 — JWT verification across services (`IDENTITY_JWT_SECRET` shared env)
 - `github.com/redis/go-redis/v9` v9.19.0 — rate limiting, presence, hot cache
 - `github.com/minio/minio-go/v7` v7.0.78 — S3 client in `services/backend/media/`
+
+**Backend internal packages (per-service `internal/` libraries):**
+- `services/backend/messaging/internal/permissions/` — **NEW Phase 10 (2026-05-25)**. Hosts `FriendshipGate` struct (`friendship_gate.go`) that wraps the `are_friends(u1, u2)` Postgres SQL function added by migration `0022_friend_requests.up.sql`. Pattern: cross-service permission check done by direct SQL call against shared Postgres pool (no inter-service HTTP). Wired in `services/backend/messaging/cmd/server/main.go` via `permissions.NewFriendshipGate(pool)`. Consumed by `Handler.createOrFindConv` to enforce DM friendship precondition.
+- No new external libraries needed — uses existing `github.com/jackc/pgx/v5` + `github.com/jackc/pgx/v5/pgxpool`.
 
 **Mapping:**
 - `@rnmapbox/maps` ^10.3.0 (mobile) — quarantined to `apps/mobile-rn/src/map/`; ESLint `no-restricted-imports` enforced via `apps/mobile-rn/eslint.config.js:34-46`
@@ -106,7 +110,8 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - `uuid` ^14.0.0
 
 **Critical backend:**
-- `github.com/jackc/pgx/v5` v5.9.2 — Postgres driver
+- `github.com/jackc/pgx/v5` v5.9.2 — Postgres driver. **As of 2026-05-25:** also drives cross-service permission checks (`messaging` queries `social-graph`-owned `are_friends()` SQL function via shared Postgres pool — see `services/backend/messaging/internal/permissions/friendship_gate.go`)
+- `github.com/jackc/pgx/v5/pgconn` — used for `isUniqueViolation` helper in `services/backend/social-graph/internal/repository/postgres/friend_requests.go` (PgErr SQLSTATE 23505 → `domain.ErrFriendRequestExists`)
 - `github.com/nats-io/nats.go` v1.39.1 — NATS JetStream
 - `github.com/getsentry/sentry-go` v0.46.2 — Sentry SDK (dormant per ADR-0010 / D-38 — empty DSN no-op path enforced in `services/backend/pkg/observability/sentry_init.go:6-17`)
 - `github.com/prometheus/client_golang` v1.20.5 — `/metrics` handler in each service
@@ -118,7 +123,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - nats:2.11-alpine with JetStream + 7d retention
 - minio/minio:RELEASE.2025-01-20T14-49-07Z (write side gated by `DISTRIBUTE_ENABLED` per ADR-0011 Amendment 5; runtime container always present)
 - redis:7-alpine with `--maxmemory 256mb --maxmemory-policy allkeys-lru`
-- migrate/migrate:v4.18.1 — run-once init job
+- migrate/migrate:v4.18.1 — run-once init job. **Migration count: 22 numbered + 2 drill (was 21 numbered)** — `0022_friend_requests` (Phase 10) added 2026-05-25 (`830b8db`). **Migration `0022` is NOT yet applied on the production VPS** as of `830b8db`; the new friend-request endpoints will return DB errors until applied.
 - caddy:2.8-alpine — gateway, Let's Encrypt via sslip.io
 - grafana/loki:3.2.0, grafana/grafana:11.3.0, prom/prometheus:v2.55.0 — observability stack (`infra/observability-stack/docker-compose.yml`, runs on srv1561293 colocated with niko-prod, Caddy :8443 self-signed sole ingress)
 
@@ -128,6 +133,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - Mobile: `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`, `EXPO_PUBLIC_IDENTITY_URL`, `EXPO_PUBLIC_SYNC_URL`, `EXPO_PUBLIC_API_URL` (read in `apps/mobile-rn/src/auth/apiClient.ts:22-30`). Defaults to `http://10.0.2.2:8081` (Android emulator). ESLint blocks `EXPO_PUBLIC_*_SECRET` syntax + literal `sk.<40+>` Mapbox secret-token shape (`apps/mobile-rn/eslint.config.js:47-60`).
 - **`EXPO_PUBLIC_UPDATE_MANIFEST_URL`** (NEW Plan 08-01; GATED per ADR-0011 Amendment 5) — when unset/empty, `manifestCheck.ts` returns `state: 'disabled'` early without making any network call. No production manifest URL is currently set.
 - Backend (per-service env): `<SVC>_HTTP_ADDR`, `<SVC>_DB_URL`, `IDENTITY_JWT_SECRET` (shared, ≥32 chars), `NATS_URL`, `REDIS_URL`, `S3_*` (media), `EXPO_ACCESS_TOKEN` (notifications), `CADDY_ACME_EMAIL` (gateway). Compose enforces required vars via `${VAR:?need VAR}` syntax in `services/backend/docker-compose.prod.yml`.
+- **Messaging service (2026-05-25):** `MESSAGING_DB_URL` now consumed for *two* purposes — its own conversation/message tables AND the friendship-gate query (`SELECT are_friends($1, $2)`). Same connection pool serves both (`services/backend/messaging/cmd/server/main.go` wires the pool into `permissions.NewFriendshipGate(pool)` before passing it to `handler.New`).
 - Prod env file on VPS: `/run/sport.env` (rendered by Ansible; consumed by `services/backend/docker-compose.prod.yml`)
 
 **Secrets (SOPS + age):**
@@ -192,7 +198,7 @@ Monorepo layout — mobile (Expo React Native) + backend (Go workspace, 8 micros
 - macOS or Linux dev workstation (Android Studio + JDK 17 for native debugging)
 
 **Production:**
-- Single VPS (148.253.214.156) running `services/backend/docker-compose.prod.yml` via systemd sport-stack umbrella (`/opt/sport/services/backend/`, env file `/run/sport.env`). Image tags pinned via `SPORT_STACK_TAG` env. `make rollback v=<tag>` (root `Makefile`) wraps `migrate down 1` + ansible re-deploy + smoke probe. 8 services healthy on 2026-05-25 probe.
+- Single VPS (148.253.214.156) running `services/backend/docker-compose.prod.yml` via systemd sport-stack umbrella (`/opt/sport/services/backend/`, env file `/run/sport.env`). Image tags pinned via `SPORT_STACK_TAG` env. `make rollback v=<tag>` (root `Makefile`) wraps `migrate down 1` + ansible re-deploy + smoke probe. 8 services healthy on 2026-05-25 probe. **Pending action 2026-05-25:** Migration `0022_friend_requests.up.sql` must be applied on the prod VPS before the new social-graph friend-request endpoints + messaging DM-gate behave correctly. Not yet applied as of `830b8db`.
 - Observability VPS (srv1561293, 82.25.71.215) — separate host running `infra/observability-stack/docker-compose.yml`. All 3 containers bound to 127.0.0.1; Caddy :8443 (self-signed) sole public ingress. Memory caps: loki 512m, prom 512m, grafana 768m.
 - Android device: arm64-v8a only for release builds (`abiFilters` set in `apps/mobile-rn/android/app/build.gradle:111-113`). minSdk / targetSdk inherit from Expo SDK 54.
 - Distribution: tag push `v1.0.0-beta.*` | `v1.0.0-rc.*` → `.github/workflows/android-release.yml` → if `MINIO_RELEASES_ACCESS_KEY` is set (i.e., `DISTRIBUTE_ENABLED=true`), APK lands in MinIO `android-releases` (24h presigned) + signed manifest in `android-manifest` (public-read). When the secret is unset (current closed-beta posture per ADR-0011 Amendment 5), the .aab build still runs but distribution steps skip via `if: env.DISTRIBUTE_ENABLED == 'true'`.
