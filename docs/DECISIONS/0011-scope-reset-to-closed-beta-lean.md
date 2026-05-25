@@ -335,3 +335,96 @@ Promotion path: (a) populate `MINIO_RELEASES_ACCESS_KEY` + `MINIO_RELEASES_SECRE
 
 **Re-expansion trigger for THIS amendment:** any of the 4 `DISTRIBUTION-PIPELINE-RE-ENABLE` v1.0.1 backlog triggers above. At that point, re-enable is a 3-step config change (no code rewrite); Plan 08-01 promotes from "code-complete, gated" to "fully closed" via a 08-01-SUMMARY.md write + STATE.md status flip.
 
+---
+
+## Amendment 6 2026-05-25 — Social features (friend-requests + stories) promoted to v1.0 active scope
+
+**Trigger:** User instruction 2026-05-25 PM, during `/gsd-quick social-yolo-pass` task. Original ask: «теперь доведи до идеала чаты, чтобы ты мог человеку писать ты должен отправить ему заявку в друзья а если примет заявку то только тогда можешь ему писать ... а также чтобы были сторисы также были».
+
+Three discussion-phase options were proposed:
+1. Tight `/gsd-quick` — UI-only chat polish; defer friend-request + stories
+2. Split into 2 `/gsd-mvp-phase` tasks (Phase 10 friend-requests + Phase 11 stories) + 1 `/gsd-quick` UI polish
+3. "Yolo" — all in one `/gsd-quick` (NOT RECOMMENDED — breaks /gsd-quick convention)
+
+User chose **option 3 (Yolo)**, executed via `.planning/quick/20260525-social-yolo-pass/`. This amendment FORMALIZES the resulting scope expansion so the audit trail is honest.
+
+**Re-evaluation of ADR-0011 closed-beta scope:**
+
+Original ADR-0011 (2026-05-20) reduced v1.0 to 4 lean phases (6-9) with the core value statement: "Записать пробежку → увидеть свою территорию на карте → сохранить → видеть историю. Офлайн, точно, без сбоев фоновой записи."
+
+The current scope addition is **NOT core-value-aligned** — friend-requests and stories are social features that don't relate to running/territory/recording. They're additive features the user wants for the closed-beta experience.
+
+The justification for accepting the expansion despite ADR-0011 lean posture:
+
+1. **User is the project owner.** Closed-beta success criteria are subjective ("does this feel ready to share?"). If the owner judges that 5-10 friend testers need social features to engage meaningfully with the closed beta, that's a legitimate scope call.
+2. **The features were in v1.0.1 backlog already.** Promotion to v1.0 vs deferral to v1.0.1 is a sequencing decision, not a scope-creation decision. The features were going to be built eventually.
+3. **Stories backend already exists** (`feed` service on port 8085 + SQLite tables) — Phase 8/C closeout deprecated only the mobile UI module. Revival is mobile-only work + existing backend reuse.
+4. **Friend-request flow is small backend addition** (~1 migration + 6 endpoints + 1 gate function in messaging) — proportional to v1.0 closed-beta scope already.
+
+**New principle (governs Phase 10 + Phase 11; extends Amendments 2-5):**
+
+> **v1.0 closed-beta scope expands from 4 phases to 6 phases.** Phase 10 (friend-requests) + Phase 11 (stories revival) are now active v1.0 deliverables. Both are mobile-heavy with minimal backend additions. This is a deliberate scope expansion for product-quality reasons, NOT a return to the 21-phase scope that ADR-0011 retired.
+
+**Concrete scope additions:**
+
+| Phase | Title | Backend | Mobile | Effort |
+|---|---|---|---|---|
+| 10 (NEW) | Friend-request flow | migration `0022_friend_requests` + 6 endpoints in `social-graph` + gate in `messaging` | new `src/modules/friends/` + SQLite v13 + UI screens | ~1-2 days |
+| 11 (NEW) | Stories revival | nothing new (reuse existing `feed` service on 8085) | rebuild `src/modules/stories/` + SQLite v14 + viewer + creator + tray + ring | ~2-4 days |
+
+**Frontmatter updates:**
+
+- `.planning/STATE.md` — `total_phases: 4 → 6`, `total_plans` increased accordingly when planned
+- `.planning/ROADMAP.md` — new Phase 10 + Phase 11 rows (status `[ ]` initially; promoted from v1.0.1 backlog rows STORIES-REVIVAL + FRIEND-REQUEST-FLOW which are removed from backlog table)
+
+**Promotion rationale per feature:**
+
+### FRIEND-REQUEST-FLOW (was v1.0.1 backlog → Phase 10)
+
+Current closed-beta DM model is asymmetric follow (anyone can DM if `canDm` flag allows). For 5-10 friend testers this might be fine, but for any wider invite-list (~20+) the lack of an explicit accept-step creates noise. Friend-request gate adds a small UX layer that:
+- Prevents unsolicited DMs from non-mutual contacts
+- Provides a clear "accept this person as a contact" gesture
+- Aligns with messaging-app norms (WhatsApp, Telegram contact-based DMs, Signal accept-message-request)
+
+Estimated effort: 1-2 days (per Phase 10 plan).
+
+### STORIES-REVIVAL (was v1.0.1 backlog → Phase 11)
+
+Phase 8/C originally shipped stories then deprecated the mobile UI module before v1.0 redefinition. Backend `feed` service still runs on port 8085 with `stories` + `story_views` SQL tables intact (v11 SQLite migration mobile-side). Reviving requires only mobile rebuild.
+
+User explicitly asked «чтобы были сторисы». Closed-beta testers likely expect stories given the chat/social shell. Adding them at this point keeps the closed-beta UX feeling complete.
+
+Estimated effort: 2-4 days (per Phase 11 plan). Includes:
+- Viewer (full-screen modal, progress bars, swipe gestures)
+- Creator (camera + gallery picker, upload via MediaAdapter)
+- Tray (horizontal avatar scroll at top of Chats or Feed)
+- Ring badge on Avatar component (unviewed indicator)
+- Retention (24h client-side expiry honor; backend cron handles server side)
+
+**v1.0.1 backlog impact (items REMOVED, promoted to v1.0):**
+
+- `STORIES-REVIVAL` → Phase 11 (active v1.0)
+- `FRIEND-REQUEST-FLOW` → Phase 10 (active v1.0)
+
+**v1.0.1 backlog items NOT promoted (remain in backlog):**
+
+- `CHAT-TYPING-INDICATOR` (small follow-up after Phase 10)
+- `CHAT-SWIPE-DELETE` (needs separate backend endpoint)
+- `CHAT-MODULE-MIGRATION` (refactor, non-urgent)
+- All other items unchanged
+
+**Files affected by Amendment 6:**
+
+- `docs/DECISIONS/0011-scope-reset-to-closed-beta-lean.md` — this amendment block
+- `.planning/STATE.md` — `total_phases: 6` + new Phase 10/11 status rows
+- `.planning/ROADMAP.md` — new Phase 10 + Phase 11 sections; `STORIES-REVIVAL` + `FRIEND-REQUEST-FLOW` removed from v1.0.1 backlog table
+- `.planning/PROJECT.md` — Phase tally updated if rendered there
+- `.planning/quick/20260525-social-yolo-pass/{PLAN.md, CONTEXT.md, SUMMARY.md}` — quick-task artifacts capturing the implementation work
+
+**Files NOT touched by Amendment 6:**
+
+- `REQUIREMENTS.md` (closed-beta success criteria unchanged — Phase 10/11 don't change tag-published + 72h-clean gates)
+- `MILESTONES.md` (v1.0 still the active milestone; just gains 2 more phases)
+
+**Re-expansion trigger for THIS amendment:** none. Forward-only scope expansion. If Phase 10 or Phase 11 prove harder than estimated (>2× the day-estimates above), a Re-trim Amendment 7 could narrow them back to v1.0.1 — but as of writing the scope is committed.
+
