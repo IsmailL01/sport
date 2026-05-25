@@ -1,12 +1,14 @@
 // Один чат — inverted FlatList сообщений + Composer.
 // Phase 8 / A5.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform,
-  Pressable, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView,
+  type NativeScrollEvent, type NativeSyntheticEvent,
+  Platform, Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 
+import { Avatar, MessageBubbleSkeleton } from '../../design';
 import type { Chat, Message } from '../../domain/social';
 import { canDeleteMessage } from '../../domain/social';
 import { getMediaAdapter } from '../../media';
@@ -16,6 +18,10 @@ import { useChatStore } from '../../state/social/useChatStore';
 import { useChatsStore } from '../../state/social/useChatsStore';
 import { useUsersStore } from '../../state/social/useUsersStore';
 import { ReportSheet } from '../../modules/moderation';
+
+// Threshold (px from bottom = contentOffset.y for inverted FlatList) above which
+// the scroll-to-bottom FAB becomes visible. 600 ≈ 3-4 message bubbles up.
+const SCROLL_FAB_THRESHOLD_PX = 600;
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -62,10 +68,38 @@ export function ChatScreen({ chat, myUserId, onBack, onOpenSettings, onPeerPress
 
   const [draft, setDraft] = useState('');
 
+  // Initial-load tracking — true on mount, flips false after the first
+  // messages state update (whether empty or populated). Lets us show a
+  // skeleton on cold open without false-flashing the "empty chat" state.
+  const [initialLoad, setInitialLoad] = useState(true);
+
+  // Scroll-to-bottom FAB visibility. Inverted FlatList: contentOffset.y > 0
+  // means user has scrolled UP from the most-recent message.
+  const listRef = useRef<FlatList<Message>>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const next = y > SCROLL_FAB_THRESHOLD_PX;
+    if (next !== showScrollDown) setShowScrollDown(next);
+  };
+  const scrollToBottom = () => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  };
+
   useEffect(() => {
     open(chat.id);
     return () => close();
   }, [chat.id, open, close]);
+
+  // Flip initialLoad off as soon as we've received the first state push from
+  // useChatStore (open() either resolves to messages[] or to []). Single-shot.
+  useEffect(() => {
+    if (initialLoad) {
+      const id = setTimeout(() => setInitialLoad(false), 350);
+      return () => clearTimeout(id);
+    }
+    return undefined;
+  }, [initialLoad, messages.length]);
 
   // Mark read когда новое сообщение приходит и мы внизу.
   useEffect(() => {
@@ -211,28 +245,60 @@ export function ChatScreen({ chat, myUserId, onBack, onOpenSettings, onPeerPress
         )}
       </View>
 
-      <FlatList
-        data={messages}
-        inverted
-        keyExtractor={(m) => m.clientId}
-        renderItem={({ item }) => (
-          <Bubble
-            msg={item}
-            mine={item.senderId === myUserId}
-            showSender={chat.type === 'group' && item.senderId !== myUserId}
-            myUserId={myUserId}
-            onLongPress={() => handleLongPress(item)}
-            onReactionPress={(emoji) => toggleReaction(item.id, myUserId, emoji)}
+      {initialLoad && messages.length === 0 ? (
+        // First-load skeleton: 5 alternating bubble shapes. Replaces the
+        // brief blank-screen flash between open() and first render.
+        <View style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: 8 }}>
+          <MessageBubbleSkeleton side="left" />
+          <MessageBubbleSkeleton side="right" />
+          <MessageBubbleSkeleton side="left" />
+          <MessageBubbleSkeleton side="right" />
+          <MessageBubbleSkeleton side="left" />
+        </View>
+      ) : (
+        <View style={{ flex: 1 }}>
+          <FlatList
+            ref={listRef}
+            data={messages}
+            inverted
+            keyExtractor={(m) => m.clientId}
+            renderItem={({ item }) => (
+              <Bubble
+                msg={item}
+                mine={item.senderId === myUserId}
+                showSender={chat.type === 'group' && item.senderId !== myUserId}
+                myUserId={myUserId}
+                onLongPress={() => handleLongPress(item)}
+                onReactionPress={(emoji) => toggleReaction(item.id, myUserId, emoji)}
+              />
+            )}
+            contentContainerStyle={styles.messagesList}
+            onEndReached={loadOlder}
+            onEndReachedThreshold={0.5}
+            onScroll={handleScroll}
+            scrollEventThrottle={64}
+            ListFooterComponent={isLoadingOlder ? <ActivityIndicator style={{ margin: 16 }} /> : null}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Avatar
+                  size={72}
+                  src={peer?.avatarUrl ?? null}
+                  name={title}
+                />
+                <Text style={styles.emptyTitle}>{title}</Text>
+                <Text style={styles.emptyBody}>
+                  Это начало вашей беседы.{'\n'}Напишите первое сообщение.
+                </Text>
+              </View>
+            }
           />
-        )}
-        contentContainerStyle={styles.messagesList}
-        onEndReached={loadOlder}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={isLoadingOlder ? <ActivityIndicator style={{ margin: 16 }} /> : null}
-        ListEmptyComponent={
-          <Text style={styles.empty}>Пока нет сообщений. Напиши первое.</Text>
-        }
-      />
+          {showScrollDown ? (
+            <Pressable onPress={scrollToBottom} style={styles.scrollDownFab}>
+              <Text style={styles.scrollDownFabText}>↓</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      )}
 
       {(replyTo !== null || editing !== null) && (
         <View style={styles.replyChip}>
@@ -517,6 +583,53 @@ const styles = StyleSheet.create({
 
   messagesList: { paddingHorizontal: 12, paddingVertical: 8, flexGrow: 1 },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 100 },
+  // ListEmptyComponent renders on inverted FlatList already in flex column-reverse;
+  // we counter-flip the inner View so peer-avatar/title/body still read top-to-bottom.
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+    transform: [{ scaleY: -1 }],
+    minHeight: 280,
+  },
+  emptyTitle: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0A0A0A',
+    textAlign: 'center',
+  },
+  emptyBody: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  scrollDownFab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#1F2937',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  scrollDownFabText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
   bubble: {
     maxWidth: '78%', paddingHorizontal: 12, paddingVertical: 8,
     borderRadius: 12, marginVertical: 3,
