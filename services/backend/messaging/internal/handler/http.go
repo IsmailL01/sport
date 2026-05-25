@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/runningecosystem/backend/messaging/internal/domain"
+	"github.com/runningecosystem/backend/messaging/internal/permissions"
 	"github.com/runningecosystem/backend/messaging/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
 	"github.com/runningecosystem/backend/pkg/ratelimit"
@@ -26,14 +27,21 @@ const (
 )
 
 type Handler struct {
-	svc     *service.Service
-	signer  *auth.Signer
-	log     *slog.Logger
-	limiter *ratelimit.Limiter // nil → no rate limiting
+	svc        *service.Service
+	signer     *auth.Signer
+	log        *slog.Logger
+	limiter    *ratelimit.Limiter          // nil → no rate limiting
+	friendGate *permissions.FriendshipGate // nil → friendship gate disabled (test fallback)
 }
 
-func New(svc *service.Service, signer *auth.Signer, limiter *ratelimit.Limiter, log *slog.Logger) *Handler {
-	return &Handler{svc: svc, signer: signer, limiter: limiter, log: log}
+func New(
+	svc *service.Service,
+	signer *auth.Signer,
+	limiter *ratelimit.Limiter,
+	friendGate *permissions.FriendshipGate,
+	log *slog.Logger,
+) *Handler {
+	return &Handler{svc: svc, signer: signer, limiter: limiter, friendGate: friendGate, log: log}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -179,6 +187,20 @@ func (h *Handler) createOrFindConv(w http.ResponseWriter, r *http.Request) {
 		if req.PeerID == "" {
 			writeError(w, http.StatusBadRequest, "invalid_request", "peerId required for dm")
 			return
+		}
+		// Phase 10 / ADR-0011 Amendment 6: friendship gate.
+		// Creating a DM conversation requires accepted friend-request between
+		// the two users. Self-DM (actor == peer) is allowed (saved-messages).
+		if h.friendGate != nil {
+			if err := h.friendGate.RequireFriends(ctx, actorID, req.PeerID); err != nil {
+				if errors.Is(err, permissions.ErrNotFriends) {
+					writeError(w, http.StatusForbidden, "requires_friendship",
+						"send a friend request and wait for acceptance before starting a DM")
+					return
+				}
+				writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
 		}
 		conv, _, err := h.svc.FindOrCreateDM(ctx, actorID, req.PeerID)
 		if err != nil {

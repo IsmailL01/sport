@@ -26,6 +26,7 @@ import (
 
 	"github.com/runningecosystem/backend/messaging/internal/handler"
 	"github.com/runningecosystem/backend/messaging/internal/outbox"
+	"github.com/runningecosystem/backend/messaging/internal/permissions"
 	"github.com/runningecosystem/backend/messaging/internal/repository/postgres"
 	"github.com/runningecosystem/backend/messaging/internal/service"
 	"github.com/runningecosystem/backend/pkg/auth"
@@ -134,7 +135,11 @@ func run() error {
 	// consumed by DebugSessionMiddleware (tester_debug_logging gate).
 	flagStore := featureflags.NewPostgresStore(pool, 30*time.Second)
 
-	h := handler.New(svc, signer, limiter, logger)
+	// Phase 10 / ADR-0011 Amendment 6: friendship gate on DM creation.
+	// Queries are_friends() SQL function directly via shared Postgres pool.
+	friendGate := permissions.NewFriendshipGate(pool)
+
+	h := handler.New(svc, signer, limiter, friendGate, logger)
 
 	// Outbox publisher sidecar.
 	go outbox.Run(ctx, outboxRepo, nc, logger)
