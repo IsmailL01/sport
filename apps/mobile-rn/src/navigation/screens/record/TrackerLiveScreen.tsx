@@ -61,6 +61,8 @@ export function TrackerLiveScreen() {
 
   const points = useActivityStore((s) => s.points);
   const startedAt = useActivityStore((s) => s.startedAt);
+  const pausedAt = useActivityStore((s) => s.pausedAt);
+  const pausedDurationMs = useActivityStore((s) => s.pausedDurationMs);
   const stopActivity = useActivityStore((s) => s.stop);
   const resetActivity = useActivityStore((s) => s.reset);
   const markLap = useActivityStore((s) => s.markLap);
@@ -79,7 +81,15 @@ export function TrackerLiveScreen() {
   const distanceM = useMemo(() => totalDistance(points), [points]);
   const speedMs = useMemo(() => currentSpeed(points), [points]);
   const paceMinKm = currentPace(speedMs);
-  const durationS = startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
+  // 2026-05-25: durationS uses effective elapsed (subtracts paused windows)
+  // so the timer freezes during pause. See SessionManager.effectiveElapsedMs.
+  const durationS = (() => {
+    if (startedAt === null) return 0;
+    const rawElapsedMs = now - startedAt;
+    const openPauseMs = pausedAt !== null ? now - pausedAt : 0;
+    const effectiveMs = rawElapsedMs - pausedDurationMs - openPauseMs;
+    return Math.max(0, Math.floor(effectiveMs / 1000));
+  })();
   // M10.4: avg + best 1km pace на лету (cheap при <1000 точек).
   const avgPaceMinKm = (distanceM > 0 && durationS > 0)
     ? durationS / 60 / (distanceM / 1000)
@@ -214,11 +224,20 @@ export function TrackerLiveScreen() {
         {/* Row из 3 sub-метрик */}
         <View style={{ flexDirection: 'row', marginTop: 14, gap: 16 }}>
           <SubMetric label="ВРЕМЯ" value={formatDuration(durationS)} t={t} />
-          <SubMetric label="ТЕМП" value={`${formatPace(paceMinKm)}`} sub="/км" t={t} />
+          {/* 2026-05-25: pace null-guard parity with avgPace/bestPace below */}
+          <SubMetric
+            label="ТЕМП"
+            value={paceMinKm !== null ? formatPace(paceMinKm) : '—'}
+            sub={paceMinKm !== null ? '/км' : ''}
+            t={t}
+          />
+          {/* 2026-05-25: HR NaN guard — protects against malformed BLE reads */}
           <SubMetric
             label="ПУЛЬС"
-            value={liveHr === null ? '—' : String(liveHr)}
-            sub={liveHr === null ? '' : 'уд/мин'}
+            value={
+              liveHr === null || !Number.isFinite(liveHr) ? '—' : String(liveHr)
+            }
+            sub={liveHr === null || !Number.isFinite(liveHr) ? '' : 'уд/мин'}
             t={t}
           />
         </View>
@@ -258,18 +277,24 @@ export function TrackerLiveScreen() {
           gap: 10,
         }}
       >
+        {/* 2026-05-25: extract `lapDisabled` so opacity reflects disabled state
+            cleanly without precedence ambiguity (was `pressed ? 0.85 : disabled ? 0.4 : 1`
+            which is correct but reads awkwardly). */}
         <Pressable
           onPress={markLap}
           disabled={pauseUi.isPaused || points.length < 2}
-          style={({ pressed }) => ({
-            width: 64,
-            height: 64,
-            borderRadius: 32,
-            backgroundColor: t.surface,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed ? 0.85 : pauseUi.isPaused || points.length < 2 ? 0.4 : 1,
-          })}
+          style={({ pressed }) => {
+            const lapDisabled = pauseUi.isPaused || points.length < 2;
+            return {
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: t.surface,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: lapDisabled ? 0.4 : pressed ? 0.85 : 1,
+            };
+          }}
         >
           <Icon name="stopwatch" size={22} color={t.text} />
           {laps.length > 0 ? (
