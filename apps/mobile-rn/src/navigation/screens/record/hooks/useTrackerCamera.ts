@@ -5,6 +5,8 @@
 // Поведение:
 //   - Пока recording идёт и зона ещё НЕ замкнута → camera следует за пользователем (followUserLocation=true).
 //   - После closureFired=true → освобождаем камеру (followUserLocation=false), чтобы вызвать fitToBounds.
+//   - При isPaused=true (auto OR manual) → освобождаем камеру (2026-05-25): не следим за
+//     GPS drift пока пользователь стоит; камера замирает там, где остановили.
 //   - fitToBounds — стабильная по ссылке функция (useCallback). Возвращает computed bbox + padding.
 //
 // Layering: hook живёт в navigation/screens/record/hooks/ и НЕ импортирует @rnmapbox/maps —
@@ -34,11 +36,14 @@ export function useTrackerCamera(): {
   const state = useActivityStore((s) => s.state);
   const pointsLength = useActivityStore((s) => s.points.length);
   const closureFired = useActivityStore((s) => s.closureFired);
+  const isPaused = useActivityStore((s) => s.isPaused);
 
   // Камера следует за пользователем во время записи; после закрытия зоны — отпускаем
-  // (Plan 03+ может вызвать fitToBounds для показа полного контура).
+  // (Plan 03+ может вызвать fitToBounds для показа полного контура). 2026-05-25:
+  // при isPaused тоже отпускаем — нет смысла следить за GPS-drift пока бегун
+  // стоит, плюс на iOS continuous camera tracking жрёт батарею.
   const isFollowing =
-    state === 'recording' && pointsLength > 0 && !closureFired;
+    state === 'recording' && pointsLength > 0 && !closureFired && !isPaused;
 
   const cameraProps: CameraProps = {
     followUserLocation: isFollowing,
