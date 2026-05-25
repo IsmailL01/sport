@@ -109,6 +109,33 @@ export function TrackerLiveScreen() {
   }, [nav]);
 
   const handleStop = () => {
+    // 2026-05-25: empty-session guard — short or pointless sessions can't
+    // produce a meaningful Журнал entry. Common cases: accidental tap on
+    // СТАРТ → immediate СТОП (no points), or quick demo with <5s. Offer
+    // the user a way out that doesn't pollute history with garbage rows.
+    const tooShort = durationS < 5 || points.length < 2;
+    if (tooShort) {
+      Alert.alert(
+        'Пустая сессия',
+        points.length === 0
+          ? 'Нет ни одной GPS-точки. Завершить и удалить?'
+          : 'Меньше 5 секунд / 2 точек. Сохранять нечего.',
+        [
+          { text: 'Продолжить запись', style: 'cancel' },
+          {
+            text: 'Удалить и выйти',
+            style: 'destructive',
+            onPress: async () => {
+              await locationAdapter.stop();
+              stopActivity();
+              resetActivity();
+              nav.goBack();
+            },
+          },
+        ],
+      );
+      return;
+    }
     Alert.alert(
       'Завершить запись?',
       'Сохранить пробежку или удалить?',
