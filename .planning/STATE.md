@@ -236,6 +236,15 @@ Plan 07-01 + the code portion of Plan 07-03 are closed. Remaining work needs a p
 
 **Next action:** `eas init` complete; .aab in hand. Either acquire Pixel + run Tasks 5+6, OR `/gsd-discuss-phase 8` in parallel.
 
+## Quick Tasks Completed
+
+Small, ad-hoc work items run via `/gsd-quick`. Each has its own
+`.planning/quick/YYYYMMDD-slug/` directory with PLAN + CONTEXT + SUMMARY.
+
+| Date | Slug | Description | Commits | Tests | Notes |
+|---|---|---|---|---|---|
+| 2026-05-25 | [chat-polish-pass](quick/20260525-chat-polish-pass/SUMMARY.md) | 6 FE-only chat polish items: scroll-FAB, skeleton loading, peer-avatar empty state, Telegram-style timestamps, deterministic avatar gradients, aggregate tab unread badge | 7 (`994f85e..0031359`) | +31 (638 → 669) | TIGHT scope per --discuss; 4 backlog items captured for v1.0.1: STORIES-REVIVAL, FRIEND-REQUEST-FLOW, CHAT-TYPING-INDICATOR, CHAT-SWIPE-DELETE |
+
 ## Artifacts Created (cumulative — high-level; see `.planning/codebase/` for full inventory)
 
 **Planning artifacts (`.planning/`):**
