@@ -20,7 +20,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { Avatar, Icon, useTheme } from '../../../design';
+import { Avatar, ChatRowSkeleton, Icon, useTheme } from '../../../design';
+import { formatChatTime } from '../../../util/timeFormat';
 import { lastMessagePreview, type Chat, type SocialUser } from '../../../domain/social';
 import { useChatsStore } from '../../../state/social/useChatsStore';
 import { useUsersStore } from '../../../state/social/useUsersStore';
@@ -219,8 +220,14 @@ export function ChatsListScreen() {
 
       {/* Body */}
       {loading && chats.length === 0 && !showingSearch ? (
-        <View style={{ paddingTop: 60, alignItems: 'center' }}>
-          <ActivityIndicator color={t.text2} />
+        <View style={{ paddingHorizontal: 20 }}>
+          <ChatRowSkeleton />
+          <View style={{ height: 1, backgroundColor: t.divider, marginLeft: 60 }} />
+          <ChatRowSkeleton />
+          <View style={{ height: 1, backgroundColor: t.divider, marginLeft: 60 }} />
+          <ChatRowSkeleton />
+          <View style={{ height: 1, backgroundColor: t.divider, marginLeft: 60 }} />
+          <ChatRowSkeleton />
         </View>
       ) : !showingSearch && chats.length === 0 ? (
         <View style={{ alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 }}>
@@ -448,7 +455,7 @@ function ChatRow({
     peer?.username ??
     (chat.type === 'group' ? 'Группа' : '...');
   const preview = lastMessagePreview(chat.lastMessage) || '—';
-  const time = chat.lastMessage !== null ? formatTime(chat.lastMessage.ts) : '';
+  const time = chat.lastMessage !== null ? formatChatTime(chat.lastMessage.ts) : '';
 
   return (
     <Pressable onPress={onPress}>
@@ -524,11 +531,3 @@ function ChatRow({
   );
 }
 
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  }
-  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
-}
