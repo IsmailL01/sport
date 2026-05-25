@@ -22,6 +22,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { Avatar, ChatRowSkeleton, Icon, useTheme } from '../../../design';
 import { sendFriendRequest } from '../../../modules/friends';
+import { StoryTrayHeader } from '../../../modules/stories';
 import { ChatsFriendshipError } from '../../../state/social/useChatsStore';
 import { formatChatTime } from '../../../util/timeFormat';
 import { lastMessagePreview, type Chat, type SocialUser } from '../../../domain/social';
@@ -303,9 +304,24 @@ export function ChatsListScreen() {
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 100 }}
           ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: t.divider, marginLeft: 60 }} />}
           ListHeaderComponent={
-            showingSearch && filteredChats.length > 0 ? (
-              <SectionLabel text="В твоих чатах" t={t} />
-            ) : null
+            showingSearch ? (
+              filteredChats.length > 0 ? (
+                <SectionLabel text="В твоих чатах" t={t} />
+              ) : null
+            ) : (
+              // Phase 11 / STORIES-REVIVAL — tray of avatars with story rings.
+              // Renders null when no active stories from followees/self.
+              // Tap → opens StoryViewerScreen (UI deferred to session 3; for
+              // now Alert placeholder so user gets feedback the tap was seen).
+              <StoryTrayHeader
+                onPickAuthor={(authorId) => {
+                  Alert.alert(
+                    'Сторис скоро',
+                    `Просмотр историй от ${authorId.slice(0, 8)}… появится в следующем апдейте`,
+                  );
+                }}
+              />
+            )
           }
           ListEmptyComponent={
             showingSearch ? null : (
