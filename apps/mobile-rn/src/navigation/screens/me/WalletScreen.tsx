@@ -83,36 +83,6 @@ export function WalletScreen() {
           </Text>
         </Card>
 
-        {/* Shop entry */}
-        <Pressable onPress={() => nav.navigate('Shop')}>
-          {({ pressed }) => (
-            <Card style={{ marginTop: 12, padding: 16, opacity: pressed ? 0.7 : 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 19,
-                    backgroundColor: t.surface2,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Icon name="bolt" size={18} color={t.text2} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: t.text, fontSize: 14 * t.fontScale, fontWeight: '700', fontFamily: t.font }}>
-                    Магазин
-                  </Text>
-                  <Text style={{ color: t.text3, fontSize: 12 * t.fontScale, marginTop: 2, fontFamily: t.font }}>
-                    Косметика, премиум, входные билеты в челленджи
-                  </Text>
-                </View>
-                <Icon name="chevron" size={18} color={t.text3} />
-              </View>
-            </Card>
-          )}
-        </Pressable>
       </View>
 
       {/* Transactions */}

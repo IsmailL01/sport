@@ -28,7 +28,6 @@ import { CreateClubScreen } from './screens/me/CreateClubScreen';
 import { RecordsScreen } from './screens/me/RecordsScreen';
 import { StatsScreen } from './screens/me/StatsScreen';
 import { WalletScreen } from './screens/me/WalletScreen';
-import { ShopScreen } from './screens/me/ShopScreen';
 import { RegionPickerScreen } from './screens/me/RegionPickerScreen';
 
 // Chats stack — Phase M9 real screens.
@@ -104,7 +103,6 @@ function MeStackNav() {
       <MStack.Screen name="Records" component={RecordsScreen} />
       <MStack.Screen name="Stats" component={StatsScreen} />
       <MStack.Screen name="Wallet" component={WalletScreen} />
-      <MStack.Screen name="Shop" component={ShopScreen} />
       <MStack.Screen name="RegionPicker" component={RegionPickerScreen} />
       {/* Phase 10 / ADR-0011 Amendment 6 — friend-request inbox. */}
       <MStack.Screen name="FriendRequests" component={FriendRequestsInboxScreen} />

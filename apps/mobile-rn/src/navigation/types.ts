@@ -91,8 +91,6 @@ export type MeStackParamList = {
   Stats: undefined;
   /** Внутренняя валюта (см. docs/CURRENCY.md). */
   Wallet: undefined;
-  /** Магазин (траты валюты — Round 3 scaffold). */
-  Shop: undefined;
   /** PHASE1-10: manual offline tile-region picker (см. CONTEXT.md D-23..D-26). */
   RegionPicker: undefined;
   /** Phase 10 / ADR-0011 Amendment 6: incoming + outgoing friend requests. */
