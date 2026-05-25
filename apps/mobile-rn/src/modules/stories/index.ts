@@ -43,3 +43,6 @@ export type { StoryRingAvatarProps } from './ui/StoryRingAvatar';
 
 export { StoryTrayHeader } from './ui/StoryTrayHeader';
 export type { StoryTrayHeaderProps } from './ui/StoryTrayHeader';
+
+export { StoryViewerScreen } from './ui/StoryViewerScreen';
+export { StoryCreatorScreen } from './ui/StoryCreatorScreen';

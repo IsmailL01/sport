@@ -19,19 +19,24 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { CompositeNavigationProp } from '@react-navigation/native';
 
 import { Avatar, ChatRowSkeleton, Icon, useTheme } from '../../../design';
 import { sendFriendRequest } from '../../../modules/friends';
 import { StoryTrayHeader } from '../../../modules/stories';
 import { ChatsFriendshipError } from '../../../state/social/useChatsStore';
 import { formatChatTime } from '../../../util/timeFormat';
+import type { RootStackParamList } from '../../types';
 import { lastMessagePreview, type Chat, type SocialUser } from '../../../domain/social';
 import { useChatsStore } from '../../../state/social/useChatsStore';
 import { useUsersStore } from '../../../state/social/useUsersStore';
 import { normalizePhoneE164, useSettingsStore } from '../../../state/settings';
 import type { ChatsStackParamList } from '../../types';
 
-type Nav = NativeStackNavigationProp<ChatsStackParamList, 'ChatsList'>;
+type Nav = CompositeNavigationProp<
+  NativeStackNavigationProp<ChatsStackParamList, 'ChatsList'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 export function ChatsListScreen() {
   const t = useTheme();
@@ -315,10 +320,9 @@ export function ChatsListScreen() {
               // now Alert placeholder so user gets feedback the tap was seen).
               <StoryTrayHeader
                 onPickAuthor={(authorId) => {
-                  Alert.alert(
-                    'Сторис скоро',
-                    `Просмотр историй от ${authorId.slice(0, 8)}… появится в следующем апдейте`,
-                  );
+                  // Phase 11 / STORIES-REVIVAL session 3: full-screen modal
+                  // registered at RootStack level alongside ForeignProfile.
+                  nav.navigate('StoryViewer', { authorId });
                 }}
               />
             )

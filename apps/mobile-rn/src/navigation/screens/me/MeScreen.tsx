@@ -15,6 +15,7 @@
 import { useEffect, useMemo } from 'react';
 import { Alert, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { Avatar, Card, GradeBadge, HeatmapCalendar, Icon, useTheme } from '../../../design';
@@ -26,9 +27,12 @@ import { useFriendsStore } from '../../../modules/friends';
 import { useWalletStore } from '../../../state/wallet';
 import { aggregateSessions } from '../../../domain/stats';
 import { formatDistance, formatDuration } from '../../../ui/format';
-import type { MeStackParamList } from '../../types';
+import type { MeStackParamList, RootStackParamList } from '../../types';
 
-type Nav = NativeStackNavigationProp<MeStackParamList, 'Profile'>;
+type Nav = CompositeNavigationProp<
+  NativeStackNavigationProp<MeStackParamList, 'Profile'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 const APP_VERSION = '0.9';
 
@@ -255,6 +259,13 @@ export function MeScreen() {
             }
             badge={incomingFriendCount}
             onPress={() => nav.navigate('FriendRequests')}
+            t={t}
+          />
+          <ActionRow
+            icon="camera"
+            label="Опубликовать историю"
+            sub="фото на 24 часа"
+            onPress={() => nav.navigate('StoryCreator')}
             t={t}
           />
           <ActionRow

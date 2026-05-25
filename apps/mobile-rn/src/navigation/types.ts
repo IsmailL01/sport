@@ -20,6 +20,10 @@ export type RootStackParamList = {
   Onboarding: NavigatorScreenParams<OnboardingStackParamList>;
   /** Modal-style чужой профиль с кнопкой «Подписаться» — Phase M9.7. */
   ForeignProfile: { userId: string };
+  /** Phase 11 / STORIES-REVIVAL — full-screen viewer for a single author's story group. */
+  StoryViewer: { authorId: string; startIndex?: number };
+  /** Phase 11 / STORIES-REVIVAL — composer (image pick + overlay text + publish). */
+  StoryCreator: undefined;
 };
 
 // === Onboarding stack (post-signup wizard) ===

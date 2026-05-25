@@ -24,6 +24,7 @@ import { AppTabs } from './AppTabs';
 import { AuthStack } from './AuthStack';
 import { OnboardingStack } from './OnboardingStack';
 import { ForeignProfileScreen } from './screens/ForeignProfileScreen';
+import { StoryCreatorScreen, StoryViewerScreen } from '../modules/stories';
 import type { RootStackParamList } from './types';
 
 /** Global navigation ref — used for push deep-link routing from outside React. */
@@ -150,6 +151,24 @@ export function RootNavigator() {
                 <Stack.Screen
                   name="ForeignProfile"
                   component={ForeignProfileScreen}
+                  options={{
+                    presentation: 'modal',
+                    animation: 'slide_from_bottom',
+                  }}
+                />
+                {/* Phase 11 / STORIES-REVIVAL — modal viewer + creator. */}
+                <Stack.Screen
+                  name="StoryViewer"
+                  component={StoryViewerScreen}
+                  options={{
+                    presentation: 'fullScreenModal',
+                    animation: 'fade',
+                    gestureEnabled: false,
+                  }}
+                />
+                <Stack.Screen
+                  name="StoryCreator"
+                  component={StoryCreatorScreen}
                   options={{
                     presentation: 'modal',
                     animation: 'slide_from_bottom',
