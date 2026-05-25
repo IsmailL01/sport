@@ -273,6 +273,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } catch (e) {
       console.warn('[auth] records clearAll failed', e);
     }
+    // Quick-task profile-clubs-polish: drop clubs (local-first, per-user).
+    try {
+      const { useClubsStore } = await import('../modules/clubs/state/useClubsStore');
+      useClubsStore.getState().clearAll();
+    } catch (e) {
+      console.warn('[auth] clubs clearAll failed', e);
+    }
     // Phase 1 / REL-03: drop feature flag overrides — fresh login can be a
     // different user with a different rollout bucket.  Dynamic import per
     // CONVENTIONS.md §State Mgmt (avoids circular dep at module-load time).
