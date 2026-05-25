@@ -90,19 +90,36 @@ Tests/lint:
 - No new Go tests yet — added in session 2 or 3 once mobile lands and
   full e2e smoke is needed
 
-### Session 2 (TBD) — Mobile friends + stories
+### Session 2 (2026-05-25 PM, continued) — COMPLETE
 
-- [ ] Mobile friends module: domain + storage + state + sync
-- [ ] Mobile UI: ForeignProfileScreen friend button + FriendRequestsInboxScreen
-- [ ] Stories module shells (domain + storage + state)
-- [ ] Status report
+- [x] Mobile friends module: domain + sync + state + UI components — `0228ccf`
+- [x] Module barrel index.ts (included in 0228ccf)
+- [x] Wire FriendRequestsInboxScreen into MeStack navigation + Me-tab badge — `625da53`
+- [x] ChatsListScreen createOrFindDM friendship error handling — `c02328b`
+- [x] ForeignProfileScreen uses FriendActionButton (follow demoted to secondary) — `77ff16c`
+- [x] Stories module shells (domain + sync + state + StoryRingAvatar + StoryTrayHeader + ChatsListScreen integration) — `7f480aa`
 
-### Session 3 (TBD) — Stories UI + chat polish + closeout
+Phase 10 FRIEND-REQUEST-FLOW = **end-to-end UX complete** (backend +
+mobile shipped). Phase 11 STORIES-REVIVAL = **read-side scaffolds
+shipped** (tray + ring + state + sync; creator and viewer screens
+remaining for session 3).
 
-- [ ] Stories UI (tray + viewer + creator scaffolds)
+Tests/lint state:
+- tsc clean across all commits
+- jest 686/686 passing (no new tests yet; friend-request and stories
+  integration tests batched for session 3 with full e2e smoke)
+
+### Session 3 (TBD) — Stories viewer + creator + chat polish + closeout
+
+- [ ] StoryViewerScreen (full-screen, progress bars, swipe nav, mark-viewed)
+- [ ] StoryCreatorScreen (camera + gallery + overlay text + upload via MediaAdapter)
+- [ ] LocalStoryDraft offline-first persistence (SQLite v14)
+- [ ] Wire viewer route in RootStack; replace ChatsListScreen Alert placeholder
 - [ ] Chat polish items (reactions popup, linkified text, reply scroll, status icons)
-- [ ] SUMMARY.md + STATE.md + ROADMAP.md (Phase 10 + Phase 11 entries)
-- [ ] Push session 2-3 commits
+- [ ] Integration tests (friend-request flow + stories markViewed)
+- [ ] SUMMARY.md + STATE.md "Quick Tasks Completed" entry + ROADMAP.md
+      Phase 10 + Phase 11 status updates ([x] for Phase 10, partial for Phase 11)
+- [ ] Push session 3 commits
 
 ### Resume command for next session
 
@@ -110,9 +127,20 @@ Tests/lint:
 /gsd-quick resume social-yolo-pass
 ```
 
-Pick up at "Mobile friends module domain + storage + state". CONTEXT.md
-captures all architectural decisions (D-01..D-09) and module structure
-diagrams needed to continue without re-discussing scope.
+Pick up at "StoryViewerScreen + StoryCreatorScreen". Session 1 + 2
+context preserved in PLAN/CONTEXT.md; D-01..D-09 still load-bearing.
+
+### Session 2 commit summary
+
+8 commits shipped (`a827bc5..7f480aa` total = 12 commits for the task so far):
+
+| # | Commit | What |
+|---|---|---|
+| 6 | `0228ccf` | src/modules/friends — domain + sync + state + UI (6 new files, 1008 LOC) |
+| 7 | `625da53` | MeStack FriendRequests route + Me-tab badge + ActionRow badge prop |
+| 8 | `c02328b` | ChatsFriendshipError + inline send-request prompt |
+| 9 | `77ff16c` | ForeignProfileScreen FriendActionButton (follow → secondary) |
+| 10 | `7f480aa` | src/modules/stories revival — domain + sync + state + tray UI (7 new files, 567 LOC) |
 
 ## Architectural notes
 
