@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'running_ecosystem.db';
-const TARGET_VERSION = 19;
+const TARGET_VERSION = 20;
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -518,6 +518,41 @@ function runMigrationsOn(db: SQLite.SQLiteDatabase): void {
       db.execSync(`ALTER TABLE wallet_balance_new RENAME TO wallet_balance;`);
     });
     current = 19;
+  }
+
+  if (current < 20) {
+    // Quick task: profile-clubs-polish — clubs end-to-end (local-first).
+    // Никакого backend пока нет: данные живут только на этом устройстве,
+    // owner_id = текущий пользователь, member-ids = выбранные друзья.
+    // Будущая backend-синхронизация (CLUBS-BACKEND-SYNC, v1.0.1) использует
+    // ту же схему.
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS clubs (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        avatar_color TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_clubs_owner ON clubs (owner_id);`,
+    );
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS club_members (
+        club_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        joined_at INTEGER NOT NULL,
+        PRIMARY KEY (club_id, user_id)
+      );
+    `);
+    db.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_club_members_user ON club_members (user_id);`,
+    );
+    current = 20;
   }
 
   if (current !== TARGET_VERSION) {
