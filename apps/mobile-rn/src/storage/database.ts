@@ -46,6 +46,31 @@ export function getDatabase(): SQLite.SQLiteDatabase {
 }
 
 /**
+ * Полный сброс локальной SQLite-базы: закрыть singleton, удалить файл,
+ * на следующем `getDatabase()` БД будет переоткрыта пустой и миграции
+ * прокатятся заново. Используется в delete-account flow
+ * (settings → «Удалить аккаунт»).
+ *
+ * Безопасно вызывать когда _db === null (no-op закрытие).
+ */
+export async function wipeDatabase(): Promise<void> {
+  if (_db !== null) {
+    try {
+      await _db.closeAsync();
+    } catch (e) {
+      console.warn('[storage] closeAsync failed during wipe', e);
+    }
+    _db = null;
+  }
+  try {
+    await SQLite.deleteDatabaseAsync(DB_NAME);
+  } catch (e) {
+    // Если файла нет — это OK, ничего удалять не нужно.
+    console.warn('[storage] deleteDatabaseAsync failed (ok if file missing)', e);
+  }
+}
+
+/**
  * Test-only hook: подменить module-level singleton БД. Используется в
  * `src/__tests__/sessionRepository.integration.test.ts` для подачи `:memory:`
  * экземпляра, заполняемого через `runMigrations()` в `beforeEach`. PHASE1-07.

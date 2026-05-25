@@ -49,6 +49,12 @@ type AuthStore = {
   register: (email: string, password: string, displayName: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * Local-only account-delete: logout (clears tokens + all stores), затем
+   * полный wipe SQLite файла. Backend-side deletion (GDPR-эндпоинт) пока
+   * отсутствует — backlogged как BACKEND-ACCOUNT-DELETE для v1.0.1.
+   */
+  deleteAccountLocal: () => Promise<void>;
   /** Очистить error (после показа в UI). */
   clearError: () => void;
   /** Завершить onboarding → пускает на AppTabs. */
@@ -290,6 +296,24 @@ export const useAuthStore = create<AuthStore>((set) => ({
       console.warn('[auth] featureflags clearAll failed', e);
     }
     set({ state: 'unauthenticated', user: null, error: null, needsOnboarding: false });
+  },
+
+  deleteAccountLocal: async () => {
+    // 1. Прогнать logout: токены, все zustand-стораджи, локальный кэш отношений
+    //    и записей, feature flags — всё чистится одной точкой входа.
+    try {
+      await get().logout();
+    } catch (e) {
+      console.warn('[auth] logout failed during deleteAccountLocal', e);
+    }
+    // 2. Полный wipe SQLite файла. На следующем getDatabase() БД создаётся
+    //    заново с v0 user_version и миграции прокатываются на пустой схеме.
+    try {
+      const { wipeDatabase } = await import('../storage/database');
+      await wipeDatabase();
+    } catch (e) {
+      console.warn('[auth] wipeDatabase failed during deleteAccountLocal', e);
+    }
   },
 
   clearError: () => set({ error: null }),

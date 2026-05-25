@@ -63,6 +63,7 @@ export function SettingsScreen() {
   };
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const deleteAccountLocal = useAuthStore((s) => s.deleteAccountLocal);
   const units = useSettingsStore((s) => s.units);
   const setUnits = useSettingsStore((s) => s.setUnits);
   const mapStyle = useSettingsStore((s) => s.mapStyle);
@@ -91,13 +92,17 @@ export function SettingsScreen() {
   const handleDelete = () => {
     Alert.alert(
       'Удалить аккаунт?',
-      'Действие необратимо. Все пробежки, посты и подписки будут удалены через 30 дней.',
+      'Все локальные данные (пробежки, маршруты, клубы, кошелёк) будут безвозвратно удалены с этого устройства. Вы выйдете из аккаунта.',
       [
         { text: 'Отмена', style: 'cancel' },
         {
           text: 'Удалить',
           style: 'destructive',
-          onPress: () => Alert.alert('Скоро', 'Удаление аккаунта будет доступно в Phase E.'),
+          onPress: () => {
+            deleteAccountLocal().catch((e) =>
+              console.warn('[Settings] deleteAccountLocal failed', e),
+            );
+          },
         },
       ],
     );
