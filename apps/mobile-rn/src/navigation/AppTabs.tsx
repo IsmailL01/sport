@@ -7,6 +7,7 @@ import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigat
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { TabBar, type TabId } from '../design';
+import { useChatsStore } from '../state/social/useChatsStore';
 
 // Record stack — Phase M6 real screens.
 import { TrackerStartScreen } from './screens/record/TrackerStartScreen';
@@ -128,9 +129,16 @@ const TABID_TO_ROUTE: Record<TabId, keyof AppTabParamList> = {
 function CursonaTabBar({ state, navigation }: BottomTabBarProps) {
   const current = state.routes[state.index].name as keyof AppTabParamList;
   const activeId = ROUTE_TO_TABID[current] ?? 'record';
+  // Aggregate per-chat unreadCount → single badge number on "Чаты" tab.
+  // Subscribes via selector so changes (mark-read, incoming message) re-render
+  // only the TabBar, not the entire tab navigator.
+  const totalUnread = useChatsStore((s) =>
+    s.chats.reduce((acc, c) => acc + (c.unreadCount ?? 0), 0),
+  );
   return (
     <TabBar
       active={activeId}
+      badges={{ chats: totalUnread }}
       onTab={(id) => {
         const target = TABID_TO_ROUTE[id];
         navigation.navigate(target as never);
