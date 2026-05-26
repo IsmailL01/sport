@@ -25,6 +25,10 @@
       },
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_IDENTITY_URL": "https://api.messenger-am.duckdns.org:8444",
+        "EXPO_PUBLIC_SYNC_URL": "https://api.messenger-am.duckdns.org:8444"
       }
     },
     "production": {
@@ -36,7 +40,9 @@
         "credentialsSource": "local",
         "env": {
           "RUNNING_ECO_RELEASE_STORE_FILE": "release.keystore",
-          "RUNNING_ECO_RELEASE_KEY_ALIAS": "runningecosystem-release"
+          "RUNNING_ECO_RELEASE_KEY_ALIAS": "runningecosystem-release",
+          "EXPO_PUBLIC_IDENTITY_URL": "https://api.messenger-am.duckdns.org:8444",
+          "EXPO_PUBLIC_SYNC_URL": "https://api.messenger-am.duckdns.org:8444"
         },
         "image": "latest"
       }
