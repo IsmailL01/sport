@@ -1,0 +1,55 @@
+# Self-hosted deploy override for srv1561293 (82.25.71.215).
+#
+# Co-tenant с niko-prod casino — нельзя занимать :80/:443 и niko-prod docker
+# networks. Этот override:
+#   - билдит образы на сервере (не тянет из GHCR)
+#   - gateway слушает 8444 (не 80/443)
+#   - Caddyfile.server вместо Caddyfile.prod (tls internal вместо LE)
+#   - CADDY_ACME_EMAIL не нужен (LE отключён) — заглушка через `:-`
+#
+# Использование:
+#   cd /opt/running-ecosystem
+#   docker compose -f docker-compose.prod.yml -f docker-compose.deploy.yml \
+#       --env-file .env.prod build
+#   docker compose -f docker-compose.prod.yml -f docker-compose.deploy.yml \
+#       --env-file .env.prod up -d
+#
+# Все 8 сервисов получают локальный тег `re-<service>:local` через override
+# поля `image:`. `SPORT_STACK_TAG` в .env.prod установлен в `local` для
+# валидации compose-парсера (поле обязательное в base prod compose).
+
+services:
+  identity:
+    image: re-identity:local
+
+  activity-sync:
+    image: re-activity-sync:local
+
+  media:
+    image: re-media:local
+
+  notifications:
+    image: re-notifications:local
+
+  realtime-gw:
+    image: re-realtime-gw:local
+
+  messaging:
+    image: re-messaging:local
+
+  feed:
+    image: re-feed:local
+
+  social-graph:
+    image: re-social-graph:local
+
+  gateway:
+    volumes:
+      - ./gateway/Caddyfile.server:/etc/caddy/Caddyfile:ro
+      - ./gateway/admin:/srv/admin:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports: !override
+      - "8444:8444"
+    environment:
+      CADDY_ACME_EMAIL: "noreply@local.invalid"
