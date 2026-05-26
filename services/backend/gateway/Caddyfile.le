@@ -1,0 +1,181 @@
+# Self-hosted deploy with real Let's Encrypt via DNS-01.
+# Successor to Caddyfile.server (which uses tls internal). Activated by
+# docker-compose.deploy-le.yml. See deploy/SRV1561293.md §«Migrating to
+# real LE certs».
+#
+# Two env vars REQUIRED:
+#   BACKEND_DOMAIN       — e.g. api.basicworld.online (root + s3.* subdomain)
+#   CLOUDFLARE_API_TOKEN — scoped: Zone:Read + Zone.DNS:Edit on the zone
+#
+# Co-tenant invariants (same as Caddyfile.server):
+#   - casino nginx owns :80 + :443 — NEVER touch
+#   - we bind only :8444 here too (sslip.io workaround no longer needed,
+#     but :443 still blocked, so port stays 8444 unless casino moves)
+
+{
+    admin off
+    email {env.CADDY_ACME_EMAIL}
+    auto_https disable_redirects
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# MinIO S3-compatible proxy. SNI-routed; same certs as the API host.
+s3.{env.BACKEND_DOMAIN}:8444 {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+
+    reverse_proxy minio:9000
+
+    log {
+        output stdout
+        format json
+    }
+}
+
+{env.BACKEND_DOMAIN}:8444 {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+
+    # CORS для будущего веб-клиента.
+    @cors_preflight method OPTIONS
+    header @cors_preflight Access-Control-Allow-Origin "*"
+    header @cors_preflight Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    header @cors_preflight Access-Control-Allow-Headers "Authorization, Content-Type"
+    respond @cors_preflight 204
+
+    header Access-Control-Allow-Origin "*"
+
+    handle /healthz {
+        respond `{"status":"ok"}` 200
+    }
+
+    handle /admin {
+        root * /srv/admin
+        try_files /index.html
+        file_server
+    }
+    handle /admin/ {
+        root * /srv/admin
+        try_files /index.html
+        file_server
+    }
+    handle /admin/index.html {
+        root * /srv/admin
+        file_server
+    }
+
+    handle /auth/* {
+        reverse_proxy identity:8081
+    }
+    handle /me {
+        reverse_proxy identity:8081
+    }
+
+    handle /sessions {
+        reverse_proxy activity-sync:8082
+    }
+    handle /sessions/* {
+        reverse_proxy activity-sync:8082
+    }
+
+    handle /devices {
+        reverse_proxy notifications:8087
+    }
+    handle /devices/* {
+        reverse_proxy notifications:8087
+    }
+    handle /notifications {
+        reverse_proxy notifications:8087
+    }
+    handle /notifications/* {
+        reverse_proxy notifications:8087
+    }
+    handle /preferences {
+        reverse_proxy notifications:8087
+    }
+
+    handle /ws {
+        reverse_proxy realtime-gw:8090
+    }
+
+    handle /conversations {
+        reverse_proxy messaging:8083
+    }
+    handle /conversations/* {
+        reverse_proxy messaging:8083
+    }
+    handle /messages/* {
+        reverse_proxy messaging:8083
+    }
+
+    handle /uploads {
+        reverse_proxy media:8086
+    }
+    handle /uploads/* {
+        reverse_proxy media:8086
+    }
+    handle /media/* {
+        reverse_proxy media:8086
+    }
+
+    handle /stories {
+        reverse_proxy feed:8085
+    }
+    handle /stories/* {
+        reverse_proxy feed:8085
+    }
+    handle /posts {
+        reverse_proxy feed:8085
+    }
+    handle /posts/* {
+        reverse_proxy feed:8085
+    }
+    handle /feed/* {
+        reverse_proxy feed:8085
+    }
+
+    handle /profiles/* {
+        reverse_proxy social-graph:8084
+    }
+    handle /profiles {
+        reverse_proxy social-graph:8084
+    }
+    handle /search/users {
+        reverse_proxy social-graph:8084
+    }
+    handle /relations/* {
+        reverse_proxy social-graph:8084
+    }
+    handle /follows/* {
+        reverse_proxy social-graph:8084
+    }
+    handle /blocks/* {
+        reverse_proxy social-graph:8084
+    }
+    handle /reports {
+        reverse_proxy social-graph:8084
+    }
+    handle /reports/* {
+        reverse_proxy social-graph:8084
+    }
+    handle /friend-requests {
+        reverse_proxy social-graph:8084
+    }
+    handle /friend-requests/* {
+        reverse_proxy social-graph:8084
+    }
+    handle /admin/* {
+        reverse_proxy social-graph:8084
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}

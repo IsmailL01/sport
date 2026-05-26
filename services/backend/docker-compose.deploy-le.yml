@@ -1,0 +1,51 @@
+# Self-hosted deploy override — Let's Encrypt via DNS-01 variant.
+# Successor to docker-compose.deploy.yml once the user has:
+#   1. A DNS name with API-accessible provider (Cloudflare by default)
+#   2. CLOUDFLARE_API_TOKEN scoped Zone:Read + Zone.DNS:Edit
+#
+# Set in .env.prod (do NOT commit):
+#   BACKEND_DOMAIN=api.basicworld.online            # or whatever you chose
+#   CLOUDFLARE_API_TOKEN=<token-from-dash.cloudflare.com>
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.deploy-le.yml \
+#       --env-file .env.prod up -d --build
+#
+# Builds a custom Caddy image with caddy-dns/cloudflare plugin baked in
+# (stock caddy:2.8-alpine has no DNS providers). Cert issuance happens on
+# first request; subsequent renewals are automatic (~30 days before expiry).
+
+services:
+  identity:
+    image: re-identity:local
+  activity-sync:
+    image: re-activity-sync:local
+  media:
+    image: re-media:local
+  notifications:
+    image: re-notifications:local
+  realtime-gw:
+    image: re-realtime-gw:local
+  messaging:
+    image: re-messaging:local
+  feed:
+    image: re-feed:local
+  social-graph:
+    image: re-social-graph:local
+
+  gateway:
+    image: re-gateway:le
+    build:
+      context: gateway
+      dockerfile: Dockerfile
+    volumes:
+      - ./gateway/Caddyfile.le:/etc/caddy/Caddyfile:ro
+      - ./gateway/admin:/srv/admin:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports: !override
+      - "8444:8444"
+    environment:
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?need CADDY_ACME_EMAIL for LE notifications}
+      BACKEND_DOMAIN: ${BACKEND_DOMAIN:?need BACKEND_DOMAIN — e.g. api.basicworld.online}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?need CLOUDFLARE_API_TOKEN with Zone:Read + Zone.DNS:Edit}
