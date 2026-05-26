@@ -60,6 +60,13 @@
         respond `{"status":"ok"}` 200
     }
 
+    # Temporary APK download path for closed-beta tester install.
+    # Remove after distribution pipeline (MinIO + manifestCheck) is enabled.
+    handle_path /downloads/* {
+        root * /srv/admin
+        file_server
+    }
+
     handle /admin {
         root * /srv/admin
         try_files /index.html
@@ -79,6 +86,18 @@
         reverse_proxy identity:8081
     }
     handle /me {
+        reverse_proxy identity:8081
+    }
+    # Feature flags (public read at /featureflags, admin CRUD at /admin/featureflags
+    # — the latter falls through the social-graph /admin/* rule below; identity
+    # owns /featureflags and /admin/featureflags per identity http.go:78-82).
+    handle /featureflags {
+        reverse_proxy identity:8081
+    }
+    handle /admin/featureflags {
+        reverse_proxy identity:8081
+    }
+    handle /admin/featureflags/* {
         reverse_proxy identity:8081
     }
 
