@@ -1,16 +1,19 @@
-# Self-hosted deploy with real Let's Encrypt via DNS-01.
-# Successor to Caddyfile.server (which uses tls internal). Activated by
-# docker-compose.deploy-le.yml. See deploy/SRV1561293.md §«Migrating to
-# real LE certs».
+# Self-hosted deploy with real Let's Encrypt via DNS-01 (DuckDNS).
+# See deploy/SRV1561293.md §«Migrating to real LE certs».
 #
-# Two env vars REQUIRED:
-#   BACKEND_DOMAIN       — e.g. api.basicworld.online (root + s3.* subdomain)
-#   CLOUDFLARE_API_TOKEN — scoped: Zone:Read + Zone.DNS:Edit on the zone
+# Required env in .env.prod:
+#   BACKEND_DOMAIN       — e.g. messenger-am.duckdns.org
+#   DUCKDNS_API_TOKEN    — single account-level token from www.duckdns.org
+#   CADDY_ACME_EMAIL     — real address (LE rejects .invalid TLD)
 #
-# Co-tenant invariants (same as Caddyfile.server):
-#   - casino nginx owns :80 + :443 — NEVER touch
-#   - we bind only :8444 here too (sslip.io workaround no longer needed,
-#     but :443 still blocked, so port stays 8444 unless casino moves)
+# DuckDNS subtlety: TXT records can only be set at the apex of the
+# duckdns.org subdomain (e.g. _acme-challenge.messenger-am.duckdns.org).
+# Per-subdomain DNS-01 (e.g. for s3.messenger-am.duckdns.org) is
+# impossible. Workaround: ONE multi-SAN cert covering apex + wildcard,
+# obtained in a single ACME order (one TXT set, one verify). Caddy
+# achieves this by having both names in the same site block.
+#
+# Co-tenant invariant: casino nginx owns :80 + :443 — NEVER touch.
 
 {
     admin off
@@ -23,26 +26,28 @@
     }
 }
 
-# MinIO S3-compatible proxy. SNI-routed; same certs as the API host.
-s3.{env.BACKEND_DOMAIN}:8444 {
+*.{env.BACKEND_DOMAIN}:8444 {
     tls {
-        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+        dns duckdns {env.DUCKDNS_API_TOKEN}
     }
 
-    reverse_proxy minio:9000
-
-    log {
-        output stdout
-        format json
-    }
-}
-
-{env.BACKEND_DOMAIN}:8444 {
-    tls {
-        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    # MinIO S3-compatible proxy (host-matched). Caddy preserves Host header
+    # by default → MinIO signature validation works against the public
+    # s3.* hostname.
+    @s3 host s3.{env.BACKEND_DOMAIN}
+    handle @s3 {
+        reverse_proxy minio:9000
     }
 
-    # CORS для будущего веб-клиента.
+    # Anything that's neither s3.* nor api.* → 404 (no accidental exposure).
+    @not_api not host api.{env.BACKEND_DOMAIN}
+    handle @not_api {
+        respond 404
+    }
+
+    # ─── API routes — only fire for api.* host (s3.* already returned,
+    #     non-api/non-s3 already returned) ───
+
     @cors_preflight method OPTIONS
     header @cors_preflight Access-Control-Allow-Origin "*"
     header @cors_preflight Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"

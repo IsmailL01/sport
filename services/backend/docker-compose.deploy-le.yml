@@ -1,11 +1,13 @@
 # Self-hosted deploy override — Let's Encrypt via DNS-01 variant.
 # Successor to docker-compose.deploy.yml once the user has:
-#   1. A DNS name with API-accessible provider (Cloudflare by default)
-#   2. CLOUDFLARE_API_TOKEN scoped Zone:Read + Zone.DNS:Edit
+#   1. A DuckDNS hostname (e.g. messenger-am.duckdns.org) pointing at the
+#      server IP — set via the DuckDNS API or web UI
+#   2. The DuckDNS account token (one token per account; DNS-01 plugin
+#      uses it to publish/clear TXT records on _acme-challenge.<host>)
 #
 # Set in .env.prod (do NOT commit):
-#   BACKEND_DOMAIN=api.basicworld.online            # or whatever you chose
-#   CLOUDFLARE_API_TOKEN=<token-from-dash.cloudflare.com>
+#   BACKEND_DOMAIN=<your-name>.duckdns.org
+#   DUCKDNS_API_TOKEN=<token-from-www.duckdns.org-after-sign-in>
 #
 # Usage:
 #   docker compose -f docker-compose.prod.yml -f docker-compose.deploy-le.yml \
@@ -48,4 +50,4 @@ services:
     environment:
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?need CADDY_ACME_EMAIL for LE notifications}
       BACKEND_DOMAIN: ${BACKEND_DOMAIN:?need BACKEND_DOMAIN — e.g. api.basicworld.online}
-      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?need CLOUDFLARE_API_TOKEN with Zone:Read + Zone.DNS:Edit}
+      DUCKDNS_API_TOKEN: ${DUCKDNS_API_TOKEN:?need DUCKDNS_API_TOKEN from www.duckdns.org}
