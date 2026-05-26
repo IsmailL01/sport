@@ -51,7 +51,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       # ADR-0011 Amendment 5 (2026-05-24) — Phase 8 distribution-pipeline gate.
       # When MINIO_RELEASES_ACCESS_KEY secret is not configured, all post-EAS
