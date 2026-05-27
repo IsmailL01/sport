@@ -17,7 +17,7 @@ import 'react-native-get-random-values';
 import { Component, useEffect, type ErrorInfo, type ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Text, View } from 'react-native';
+import { ScrollView, Text } from 'react-native';
 
 import { setMapboxAccessToken } from './src/map';
 import { setSpeechAdapter } from './src/util/speech';
@@ -47,28 +47,76 @@ void useFeatureFlagsStore.getState().refresh();
 
 // === Error boundary ===
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
+class ErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null; componentStack: string | null }
+> {
+  state = { error: null as Error | null, componentStack: null as string | null };
 
   static getDerivedStateFromError(error: Error) {
-    return { error };
+    return { error, componentStack: null };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[App ErrorBoundary]', error, info.componentStack);
+    this.setState({ componentStack: info.componentStack ?? null });
   }
 
   render() {
     if (this.state.error) {
+      const err = this.state.error;
       return (
-        <View style={{ flex: 1, backgroundColor: '#0A0A0A', padding: 24, justifyContent: 'center' }}>
+        <ScrollView
+          style={{ flex: 1, backgroundColor: '#0A0A0A' }}
+          contentContainerStyle={{ padding: 24, paddingTop: 56, paddingBottom: 80 }}
+        >
           <Text style={{ color: '#FF4D2E', fontSize: 22, fontWeight: '800', marginBottom: 8 }}>
             Приложение упало
           </Text>
-          <Text style={{ color: '#FFFFFF', fontSize: 14, lineHeight: 20 }}>
-            {this.state.error.name}: {this.state.error.message}
+          <Text
+            style={{ color: '#FFFFFF', fontSize: 14, lineHeight: 20, marginBottom: 16 }}
+            selectable
+          >
+            {err.name}: {err.message}
           </Text>
-        </View>
+          {err.stack ? (
+            <>
+              <Text style={{ color: '#FFB020', fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
+                STACK
+              </Text>
+              <Text
+                style={{
+                  color: '#C0C0C0',
+                  fontSize: 10,
+                  lineHeight: 14,
+                  fontFamily: 'Courier',
+                  marginBottom: 16,
+                }}
+                selectable
+              >
+                {err.stack}
+              </Text>
+            </>
+          ) : null}
+          {this.state.componentStack ? (
+            <>
+              <Text style={{ color: '#FFB020', fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
+                COMPONENT STACK
+              </Text>
+              <Text
+                style={{
+                  color: '#C0C0C0',
+                  fontSize: 10,
+                  lineHeight: 14,
+                  fontFamily: 'Courier',
+                }}
+                selectable
+              >
+                {this.state.componentStack}
+              </Text>
+            </>
+          ) : null}
+        </ScrollView>
       );
     }
     return this.props.children;
