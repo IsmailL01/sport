@@ -150,11 +150,20 @@ function CursonaTabBar({ state, navigation }: BottomTabBarProps) {
   );
 }
 
+// tabBar is a RENDER PROP (function returning a React element), NOT a
+// component reference — React Navigation v7 calls it as a regular function:
+// `props.tabBar(barProps)`. Passing CursonaTabBar directly would invoke the
+// function outside React's render lifecycle, so the hooks inside
+// (useChatsStore / useFriendsStore) throw «Invalid hook call» the moment
+// AppTabs mounts after auth. Wrapping in `(props) => <CursonaTabBar ... />`
+// makes RN render it as a proper component element.
+const renderTabBar = (props: BottomTabBarProps) => <CursonaTabBar {...props} />;
+
 export function AppTabs() {
   return (
     <Tab.Navigator
       initialRouteName="Record"
-      tabBar={CursonaTabBar}
+      tabBar={renderTabBar}
       screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Record" component={RecordStackNav} />
