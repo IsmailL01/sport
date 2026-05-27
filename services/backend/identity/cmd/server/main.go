@@ -74,6 +74,13 @@ func run() error {
 	// DevMode = выводить devCode в response /auth/request-code (для smoke,
 	// staging). Дефолт false; включить вручную для local dev.
 	devMode := envOr("IDENTITY_DEV_MODE", "false") == "true"
+	// IDENTITY_DEV_OTP_BYPASS — narrower escape hatch для closed-beta когда
+	// SMTP ещё не настроен: bypass'ит ТОЛЬКО проверку OTP-кода (LoginWithCode
+	// принимает любой 6-digit), не активируя остальные devMode-фичи.
+	// prod-guard ниже не срабатывает: bypass допустим и в проде (см. ADR-0011
+	// closed-beta lean scope — 5-10 тестеров через manual sideload, реальный
+	// SMTP запланирован на v1.0.1).
+	devOtpBypass := envOr("IDENTITY_DEV_OTP_BYPASS", "false") == "true"
 
 	// Phase 2 / SEC-05: prod-detection guard. Если DEV_MODE включён в окружении,
 	// где DB URL НЕ указывает на localhost — это почти наверняка ошибка оператора
@@ -87,6 +94,9 @@ func run() error {
 			os.Exit(1)
 		}
 		slog.Warn("IDENTITY_DEV_MODE=true — OTP devCode WILL be returned in /auth/request-code; this MUST NOT happen in prod")
+	}
+	if devOtpBypass {
+		slog.Warn("IDENTITY_DEV_OTP_BYPASS=true — ANY 6-digit code accepted by /auth/login-with-code; closed-beta scope, remove once SMTP is wired")
 	}
 
 	signer, err := auth.NewSigner(jwtSecret)
@@ -140,9 +150,13 @@ func run() error {
 	otpRepo := postgres.NewOtpRepo(pool)
 	authSvc := service.NewAuthService(userRepo, tokenRepo, signer)
 	otpSvc := service.NewOtpService(otpRepo, userRepo, tokenRepo, authSvc)
-	h := handler.NewAuthHandler(authSvc, otpSvc, signer, logger, devMode).
+	// Handler.DevMode controls (a) returning devCode in /auth/request-code
+	// response, (b) accepting ANY 6-digit in /auth/login-with-code. Both
+	// trigger if EITHER IDENTITY_DEV_MODE or IDENTITY_DEV_OTP_BYPASS is true.
+	effectiveOtpDev := devMode || devOtpBypass
+	h := handler.NewAuthHandler(authSvc, otpSvc, signer, logger, effectiveOtpDev).
 		WithFeatureFlags(flagStore, auditLogger, pool)
-	logger.Info("identity ready", "devMode", devMode)
+	logger.Info("identity ready", "devMode", devMode, "devOtpBypass", devOtpBypass)
 
 	// === Outermost middleware stanza (Plan 01-02 / REL-02) ===
 	// Constructor order: pool → flagStore (Plan 03 / REL-03) → handler →

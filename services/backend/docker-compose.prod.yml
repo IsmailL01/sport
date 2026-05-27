@@ -123,6 +123,9 @@ services:
       CLIENT_MIN_VERSION: "${CLIENT_MIN_VERSION:-1.0.0}"
       IDENTITY_DB_URL: "postgres://re:${POSTGRES_PASSWORD}@postgres:5432/running_ecosystem?sslmode=disable"
       IDENTITY_JWT_SECRET: "${JWT_SECRET:?need JWT_SECRET >=32 chars}"
+      # Closed-beta SMTP bypass — see main.go safety guard. Default false;
+      # set "true" to accept ANY 6-digit OTP in /auth/login-with-code.
+      IDENTITY_DEV_OTP_BYPASS: "${IDENTITY_DEV_OTP_BYPASS:-false}"
     depends_on:
       postgres:
         condition: service_healthy
